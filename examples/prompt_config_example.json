@@ -1,0 +1,6 @@
+{
+  "system_prompt": "你是專業的台灣股市技術分析師，專精於台股市場動態。請給出精確且簡潔的買賣建議。",
+  "extra_stocks": ["2330", "2317", "2454"],
+  "signal_sources": ["twse", "volume", "price_action"],
+  "analysis_template": "你是台灣股市分析師。請分析以下股票資訊，給出買入/賣出/觀望建議：\n股票：%s (%s)\n現價：%.2f 元，漲跌：%.2f%%\n今日區間：%.2f - %.2f 元，成交量：%ld 張\n%s\n\n請以 JSON 格式回應：\n{\"signal\": \"buy|sell|hold\", \"confidence\": 0-100, \"analysis\": \"說明（繁體中文，100字以內）\"}"
+}
