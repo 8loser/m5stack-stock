@@ -102,8 +102,9 @@ static void refresh_wifi_icon(void)
         lv_label_set_text(s_wifi_lbl, LV_SYMBOL_WIFI);
         lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0xFFB300), 0);
     } else {
-        lv_label_set_text(s_wifi_lbl, LV_SYMBOL_CLOSE);
-        lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0x888888), 0);
+        /* Keep the same glyph width for all states to avoid layout jitter. */
+        lv_label_set_text(s_wifi_lbl, LV_SYMBOL_WIFI);
+        lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0xB71C1C), 0);
     }
 }
 
@@ -142,9 +143,8 @@ static void status_update_cb(lv_timer_t *t)
         lv_label_set_text(s_batt_lbl, batt);
         lv_obj_set_style_text_color(s_batt_lbl, BAR_TEXT_COLOR, 0);
     }
-    layout_topbar_items();
-
     refresh_wifi_icon();
+    layout_topbar_items();
 }
 
 void status_bar_create_on(lv_obj_t *parent)
@@ -183,8 +183,8 @@ void status_bar_create_on(lv_obj_t *parent)
     /* 電量 */
     s_wifi_lbl = lv_label_create(bar);
     lv_obj_align(s_wifi_lbl, LV_ALIGN_RIGHT_MID, -48, 0);
-    lv_label_set_text(s_wifi_lbl, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0x888888), 0);
+    lv_label_set_text(s_wifi_lbl, LV_SYMBOL_WIFI);
+    lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0xB71C1C), 0);
     lv_obj_set_style_text_font(s_wifi_lbl, &lv_font_montserrat_14, 0);
 
     s_batt_lbl = lv_label_create(bar);
@@ -194,8 +194,8 @@ void status_bar_create_on(lv_obj_t *parent)
     lv_obj_set_style_text_font(s_batt_lbl, &lv_font_montserrat_10, 0);
 
     refresh_page_message();
-    layout_topbar_items();
     refresh_wifi_icon();
+    layout_topbar_items();
 
     /* 定時更新：每 10 秒 */
     if (!s_update_timer) {
@@ -215,6 +215,7 @@ void status_bar_update_wifi(int state, const char *ip)
     }
     refresh_page_message();
     refresh_wifi_icon();
+    layout_topbar_items();
 }
 
 void status_bar_set_page(screen_id_t page)
