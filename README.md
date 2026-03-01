@@ -1,6 +1,6 @@
 # M5Stack Core2 台灣股票監測應用
 
-在 M5Stack Core2 上運行的台股即時報價看板，支援 AI 分析（Gemini / Claude / OpenAI）、自動排程更新與遠端設定管理。
+在 M5Stack Core2 上運行的台股即時報價看板，支援 AI 分析（Gemini / Claude / OpenAI）與自動排程更新。
 
 ---
 
@@ -217,16 +217,8 @@ cd m5stack_stock
 ├─────────────────────────────────────────┤
 │ AI Provider:        [Gemini / Claude / OpenAI ▼] │
 │                                         │
-│ API Key（備用）:                         │
+│ API Key:                                │
 │ [●●●●●●●●●●●●●●●●●●●●●●●●●●●●●] │
-│                                         │
-│ 遠端 Token 設定 URL:                    │
-│ （開機自動抓取 provider + api_key）      │
-│ [https://example.com/token.json       ] │
-│                                         │
-│ 遠端 Prompt URL:                        │
-│ （JSON 格式，指定分析股票與訊號來源）    │
-│ [https://example.com/prompt.json      ] │
 │                                         │
 │ 監控股票（逗號分隔）:                    │
 │ [2330,2317,2454,2412,3008            ] │
@@ -239,59 +231,11 @@ cd m5stack_stock
 | 設定項目 | 說明 |
 |----------|------|
 | **AI Provider** | 選擇使用的 AI 服務（Gemini / Claude / OpenAI）|
-| **API Key（備用）** | 本地儲存的 API Key（遠端 Token URL 優先）|
-| **遠端 Token 設定 URL** | 開機自動從此 URL 下載 provider + api_key |
-| **遠端 Prompt URL** | 自訂分析提示詞、額外股票清單、訊號來源 |
+| **API Key** | 儲存於 NVS 的 API Key |
 | **監控股票** | 以逗號分隔的台股代號（最多 10 支）|
 | **WiFi設定** | 切換至 WiFi 設定頁面 |
 | **排程設定** | 切換至排程設定頁面 |
 | **儲存全部** | 儲存所有設定並立即套用 |
-
----
-
-## 遠端設定檔格式
-
-### 遠端 Token 設定（`token.json`）
-
-```json
-{
-  "provider": "claude",
-  "api_key": "sk-ant-YOUR_API_KEY"
-}
-```
-
-- `provider`：`"gemini"` / `"claude"` / `"openai"`
-- `api_key`：對應服務的 API Key
-- **開機時自動抓取**，僅存於記憶體，不寫入 Flash
-
-### 建議使用 GitHub Gist 存放 token.json
-
-1. 前往 [gist.github.com](https://gist.github.com)
-2. 檔名設為 `token.json`，貼入 JSON 內容
-3. 點「Create public gist」
-4. 點右上角「Raw」按鈕，複製網址
-
-```
-https://gist.githubusercontent.com/你的帳號/gist_id/raw/token.json
-```
-
-> **注意：** 要用 `gist.githubusercontent.com` 開頭的 Raw URL，
-> 不是 `gist.github.com` 開頭的頁面 URL。
-> 裝置支援 302 自動重定向，最多跟隨 3 次。
-
-### 遠端 Prompt 設定（`prompt.json`）
-
-```json
-{
-  "system_prompt": "你是專業的台灣股市技術分析師...",
-  "extra_stocks": ["2330", "2317"],
-  "signal_sources": ["twse", "volume"],
-  "analysis_template": "自訂分析模板（可選）"
-}
-```
-
-- `extra_stocks`：額外加入監控清單的股票（自動合併）
-- `analysis_template`：覆蓋預設的 AI 提示詞模板
 
 ---
 
@@ -301,8 +245,6 @@ https://gist.githubusercontent.com/你的帳號/gist_id/raw/token.json
 |------|------|
 | 台股即時報價 | TWSE 官方 API，免費無 Key |
 | AI 分析 | Gemini / Claude / OpenAI 三選一 |
-| 遠端 Token 管理 | 開機自動從 URL 取得 API Key，方便集中管理 |
-| 遠端 Prompt 設定 | 從 URL 自訂分析模板與股票清單 |
 | 自動排程 | 報價 30s-10min，AI 分析 5min-2hr 可調 |
 | 市場時段過濾 | 非開盤時間不抓取（省電省流量）|
 | DeepSleep | 休市時段自動深睡，08:55 喚醒 |
