@@ -4,14 +4,19 @@
 #include "freertos/semphr.h"
 #include "screen_log.h"
 #include "twse_models.h"
+#include "ui_compat.h"
 
 typedef enum {
     SCREEN_DASHBOARD    = 0,
     SCREEN_PORTAL       = 1,
     SCREEN_LOG          = 2,
     SCREEN_INFO         = 3,
+    SCREEN_SETTINGS     = 4,
     SCREEN_COUNT
 } screen_id_t;
+
+lv_obj_t *screen_settings_create(void);
+void      screen_settings_load(void);
 
 esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex);
 void      ui_manager_switch_screen(screen_id_t id);

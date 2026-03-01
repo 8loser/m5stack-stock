@@ -85,8 +85,8 @@ static void do_fetch_quotes(void)
         return;
     }
 
-    /* 檢查是否僅限市場時段 */
-    if (s_config.market_only && !rtc_bm8563_is_market_open()) {
+    /* 固定策略：僅在市場時段抓取報價 */
+    if (!rtc_bm8563_is_market_open()) {
         ESP_LOGI(TAG, "非市場時段，跳過報價抓取");
         return;
     }

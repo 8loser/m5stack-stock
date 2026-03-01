@@ -43,3 +43,31 @@ TBD - created by archiving change add-log-screen. Update Purpose after archive.
 - **WHEN** 呼叫 `ui_manager_switch_screen(SCREEN_DASHBOARD)`
 - **THEN** `screen_info_refresh()` 不被呼叫
 
+### Requirement: SCREEN_SETTINGS enum 新增
+`ui_manager.h` SHALL 在 `screen_id_t` enum 中新增 `SCREEN_SETTINGS = 4`，位於 `SCREEN_INFO = 3` 之後、`SCREEN_COUNT` 之前。
+
+#### Scenario: enum 值正確
+- **WHEN** 程式碼引用 `SCREEN_SETTINGS`
+- **THEN** 其整數值為 4，`SCREEN_COUNT` 為 5
+
+### Requirement: screen_settings_load 在 switch_screen 時呼叫
+`ui_manager_switch_screen()` SHALL 在切換目標為 `SCREEN_SETTINGS` 時，於持有 `g_ui_mutex` 的情況下呼叫 `screen_settings_load()`，確保 interval 按鈕狀態顯示最新排程設定。
+
+#### Scenario: 切換至 Settings 頁面
+- **WHEN** 呼叫 `ui_manager_switch_screen(SCREEN_SETTINGS)`
+- **THEN** 在 `lv_scr_load_anim` 前，`screen_settings_load()` 被呼叫一次
+
+### Requirement: screen_settings_create 加入初始化
+`ui_manager_init()` SHALL 呼叫 `screen_settings_create()` 建立 Settings 頁面物件，並存入 `s_screens[SCREEN_SETTINGS]`。
+
+#### Scenario: 初始化後可切換
+- **WHEN** `ui_manager_init()` 完成
+- **THEN** `s_screens[SCREEN_SETTINGS]` 非 NULL，`ui_manager_switch_screen(SCREEN_SETTINGS)` 可正常執行
+
+### Requirement: SCREEN_SETTINGS 納入硬體按鍵輪詢導航
+`ui_manager.c` 的 `s_nav_screens[]` SHALL 包含 `SCREEN_SETTINGS`，使 `btn=0/2` 頁面輪詢可切換至 Settings 頁面。
+
+#### Scenario: 由硬體按鍵切換至 Settings
+- **WHEN** 使用者使用 `btn=0` 或 `btn=2` 進行頁面輪詢
+- **THEN** 輪詢序列包含 `SCREEN_SETTINGS`
+

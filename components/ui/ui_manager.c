@@ -84,6 +84,7 @@ static const screen_id_t s_nav_screens[] = {
     SCREEN_DASHBOARD,
     SCREEN_LOG,
     SCREEN_INFO,
+    SCREEN_SETTINGS,
 };
 static const size_t s_nav_screens_count = sizeof(s_nav_screens) / sizeof(s_nav_screens[0]);
 static int s_nav_idx = 0;
@@ -95,6 +96,8 @@ static lv_obj_t *s_screens[SCREEN_COUNT] = {NULL};
 extern lv_obj_t *screen_dashboard_create(void);
 extern lv_obj_t *screen_portal_create(void);
 extern lv_obj_t *screen_info_create(void);
+extern lv_obj_t *screen_settings_create(void);
+extern void screen_settings_load(void);
 
 static void ui_manager_log_v(log_tag_t tag, log_level_t level, const char *fmt, va_list ap)
 {
@@ -176,6 +179,7 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     s_screens[SCREEN_PORTAL]      = screen_portal_create();
     s_screens[SCREEN_LOG]         = screen_log_create();
     s_screens[SCREEN_INFO]        = screen_info_create();
+    s_screens[SCREEN_SETTINGS]    = screen_settings_create();
 
     /* 顯示 Dashboard */
     lv_scr_load(s_screens[SCREEN_DASHBOARD]);
@@ -223,6 +227,9 @@ void ui_manager_switch_screen(screen_id_t id)
         if (id == SCREEN_INFO) {
             extern void screen_info_refresh(void);
             screen_info_refresh();
+        }
+        if (id == SCREEN_SETTINGS) {
+            screen_settings_load();
         }
         lv_scr_load_anim(s_screens[id], LV_SCR_LOAD_ANIM_SLIDE_LEFT, 200, 0, false);
         xSemaphoreGiveRecursive(s_ui_mutex);
