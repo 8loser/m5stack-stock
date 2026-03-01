@@ -220,6 +220,10 @@ void ui_manager_switch_screen(screen_id_t id)
         if (id == SCREEN_LOG) {
             screen_log_refresh();
         }
+        if (id == SCREEN_INFO) {
+            extern void screen_info_refresh(void);
+            screen_info_refresh();
+        }
         lv_scr_load_anim(s_screens[id], LV_SCR_LOAD_ANIM_SLIDE_LEFT, 200, 0, false);
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
