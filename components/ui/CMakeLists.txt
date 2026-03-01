@@ -2,7 +2,7 @@ idf_component_register(
     SRCS
         "ui_manager.c"
         "screens/screen_dashboard.c"
-        "screens/screen_wifi.c"
+        "screens/screen_portal.c"
         "widgets/status_bar.c"
         "widgets/stock_card.c"
         "widgets/loading_spinner.c"

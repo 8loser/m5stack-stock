@@ -6,7 +6,7 @@
 
 typedef enum {
     SCREEN_DASHBOARD    = 0,
-    SCREEN_WIFI         = 1,
+    SCREEN_PORTAL       = 1,
 } screen_id_t;
 
 esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex);

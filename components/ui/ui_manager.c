@@ -71,7 +71,7 @@ static lv_obj_t *s_screens[2] = {NULL};
 
 /* 前向宣告各頁面初始化 */
 extern lv_obj_t *screen_dashboard_create(void);
-extern lv_obj_t *screen_wifi_create(void);
+extern lv_obj_t *screen_portal_create(void);
 
 static void lvgl_task(void *arg)
 {
@@ -139,7 +139,7 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
 
     /* 建立所有頁面 */
     s_screens[SCREEN_DASHBOARD]   = screen_dashboard_create();
-    s_screens[SCREEN_WIFI]        = screen_wifi_create();
+    s_screens[SCREEN_PORTAL]      = screen_portal_create();
 
     /* 顯示 Dashboard */
     lv_scr_load(s_screens[SCREEN_DASHBOARD]);
@@ -170,42 +170,38 @@ void ui_manager_switch_screen(screen_id_t id)
     if (id >= 2) return;
     screen_id_t prev = s_cur_screen;
 
-    /* 離開 WiFi 頁面時關閉 provisioning portal（含 SoftAP） */
-    if (prev == SCREEN_WIFI && id != SCREEN_WIFI) {
-        extern void screen_wifi_close_portal(void);
-        screen_wifi_close_portal();
+    /* 離開 Portal 頁面時關閉 provisioning portal（含 SoftAP） */
+    if (prev == SCREEN_PORTAL && id != SCREEN_PORTAL) {
+        extern void screen_portal_close_portal(void);
+        screen_portal_close_portal();
     }
 
     s_cur_screen = id;
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        extern void status_bar_set_visible(bool v);
         extern void status_bar_set_page(screen_id_t page);
-        status_bar_set_visible(true);
         status_bar_set_page(id);
         lv_scr_load_anim(s_screens[id], LV_SCR_LOAD_ANIM_SLIDE_LEFT, 200, 0, false);
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
 
-    /* 進入 WiFi 頁面時自動啟動 provisioning portal（含 SoftAP） */
-    if (id == SCREEN_WIFI && prev != SCREEN_WIFI) {
-        extern void screen_wifi_open_portal(void);
-        screen_wifi_open_portal();
+    /* 進入 Portal 頁面時自動啟動 provisioning portal（含 SoftAP） */
+    if (id == SCREEN_PORTAL && prev != SCREEN_PORTAL) {
+        extern void screen_portal_open_portal(void);
+        screen_portal_open_portal();
     }
 }
 
 static void handle_hw_button(uint8_t btn)
 {
     extern void screen_dashboard_on_btn(uint8_t b);
-    extern void screen_wifi_on_btn(uint8_t b);
 
     switch (s_cur_screen) {
         case SCREEN_DASHBOARD:
             if (btn == 1) screen_dashboard_on_btn(1);
-            if (btn == 2) ui_manager_switch_screen(SCREEN_WIFI);
+            if (btn == 2) ui_manager_switch_screen(SCREEN_PORTAL);
             break;
-        case SCREEN_WIFI:
+        case SCREEN_PORTAL:
             if (btn == 0) ui_manager_switch_screen(SCREEN_DASHBOARD);
-            else screen_wifi_on_btn(btn);
             break;
         default:
             break;

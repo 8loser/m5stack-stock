@@ -74,12 +74,11 @@ void app_main(void)
     ESP_ERROR_CHECK(wifi_manager_init());
     wifi_manager_set_callback(on_wifi_state);
 
-    /* 嘗試自動連線；若無設定則啟動手機配網入口 */
+    /* 嘗試自動連線；若無設定則導向 Portal 頁面，由使用者手動啟動配網入口 */
     ret = wifi_manager_connect_saved();
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "未連上既有 WiFi，啟動手機配網 Portal");
-        wifi_manager_start_provisioning_portal();
-        ui_manager_switch_screen(SCREEN_WIFI);
+        ESP_LOGW(TAG, "未連上既有 WiFi，請至 Portal 頁面手動啟動");
+        ui_manager_switch_screen(SCREEN_PORTAL);
     }
 
     /* Phase 4: TWSE Client */
@@ -98,17 +97,11 @@ void app_main(void)
 
     /* 主迴圈：消費 queue 資料 → 驅動 UI 更新 */
     stock_quote_t      quote;
-    ai_analysis_result_t ai_result;
 
     while (1) {
         /* 讀取所有待處理的報價更新 */
         while (xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
             ui_manager_update_quote(&quote);
-        }
-
-        /* 讀取 AI 分析結果（最多一個，已用 xQueueOverwrite 保持最新）*/
-        if (xQueueReceive(g_ai_result_queue, &ai_result, 0) == pdTRUE) {
-            ui_manager_update_ai_result(&ai_result);
         }
 
         /* 每 100ms 輪詢一次，同時監控堆疊健康度 */
