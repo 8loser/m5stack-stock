@@ -23,12 +23,30 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
     lv_disp_flush_ready(drv);
 }
 
+/* 前向宣告，定義在後方 */
+static void handle_hw_button(uint8_t btn);
+
 /* LVGL 觸控讀取回調 */
 static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
     static bool s_last_pressed = false;
+    static bool s_hw_btn_fired = false;
     touch_point_t pt;
     ft6336u_read(&pt);
+
+    /* 攔截底部虛擬按鍵（y >= TOUCH_BTN_Y_MIN），不傳給 LVGL */
+    if (pt.pressed && pt.y >= TOUCH_BTN_Y_MIN) {
+        if (!s_hw_btn_fired) {
+            s_hw_btn_fired = true;
+            uint8_t btn = (pt.x < TOUCH_BTN_A_X_MAX) ? 0 :
+                          (pt.x < TOUCH_BTN_B_X_MAX) ? 1 : 2;
+            handle_hw_button(btn);
+        }
+        data->state = LV_INDEV_STATE_REL;
+        return;
+    }
+    s_hw_btn_fired = false;
+
     if (pt.pressed) {
         data->state  = LV_INDEV_STATE_PRESSED;
         data->point.x = pt.x;
@@ -49,14 +67,12 @@ static lv_disp_t        *s_disp       = NULL;
 static screen_id_t       s_cur_screen = SCREEN_DASHBOARD;
 
 /* 各頁面的 lv_obj */
-static lv_obj_t *s_screens[5] = {NULL};
+static lv_obj_t *s_screens[3] = {NULL};
 
 /* 前向宣告各頁面初始化 */
 extern lv_obj_t *screen_dashboard_create(void);
-extern lv_obj_t *screen_ai_analysis_create(void);
 extern lv_obj_t *screen_schedule_create(void);
 extern lv_obj_t *screen_wifi_create(void);
-extern lv_obj_t *screen_settings_create(void);
 
 static void lvgl_task(void *arg)
 {
@@ -124,18 +140,18 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
 
     /* 建立所有頁面 */
     s_screens[SCREEN_DASHBOARD]   = screen_dashboard_create();
-    s_screens[SCREEN_AI_ANALYSIS] = screen_ai_analysis_create();
     s_screens[SCREEN_SCHEDULE]    = screen_schedule_create();
     s_screens[SCREEN_WIFI]        = screen_wifi_create();
-    s_screens[SCREEN_SETTINGS]    = screen_settings_create();
 
     /* 顯示 Dashboard */
     lv_scr_load(s_screens[SCREEN_DASHBOARD]);
 
     /* 在頂層建立共用 widgets（覆蓋所有頁面）*/
     extern void status_bar_create_on(lv_obj_t *parent);
+    extern void status_bar_set_page(screen_id_t page);
     extern void loading_spinner_create(lv_obj_t *parent);
     status_bar_create_on(lv_layer_top());
+    status_bar_set_page(SCREEN_DASHBOARD);
     loading_spinner_create(lv_layer_top());
 
     /* 啟動 LVGL 任務 */
@@ -153,11 +169,43 @@ void ui_lvgl_tick_cb(void *arg)
 
 void ui_manager_switch_screen(screen_id_t id)
 {
-    if (id >= 5) return;
+    if (id >= 3) return;
     s_cur_screen = id;
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        extern void status_bar_set_visible(bool v);
+        extern void status_bar_set_page(screen_id_t page);
+        status_bar_set_visible(true);
+        status_bar_set_page(id);
         lv_scr_load_anim(s_screens[id], LV_SCR_LOAD_ANIM_SLIDE_LEFT, 200, 0, false);
         xSemaphoreGiveRecursive(s_ui_mutex);
+    }
+}
+
+static void handle_hw_button(uint8_t btn)
+{
+    extern void screen_dashboard_on_btn(uint8_t b);
+    extern void screen_schedule_on_btn(uint8_t b);
+    extern void screen_wifi_on_btn(uint8_t b);
+    extern void screen_wifi_open_portal(void);
+
+    switch (s_cur_screen) {
+        case SCREEN_DASHBOARD:
+            if (btn == 1) screen_dashboard_on_btn(1);
+            if (btn == 2) {
+                ui_manager_switch_screen(SCREEN_WIFI);
+                screen_wifi_open_portal();
+            }
+            break;
+        case SCREEN_SCHEDULE:
+            if (btn == 0) ui_manager_switch_screen(SCREEN_DASHBOARD);
+            else screen_schedule_on_btn(btn);
+            break;
+        case SCREEN_WIFI:
+            if (btn == 0) ui_manager_switch_screen(SCREEN_DASHBOARD);
+            else screen_wifi_on_btn(btn);
+            break;
+        default:
+            break;
     }
 }
 
@@ -171,15 +219,6 @@ void ui_manager_update_quote(const stock_quote_t *quote)
     extern void screen_dashboard_update(const stock_quote_t *q);
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         screen_dashboard_update(quote);
-        xSemaphoreGiveRecursive(s_ui_mutex);
-    }
-}
-
-void ui_manager_update_ai_result(const ai_analysis_result_t *result)
-{
-    extern void screen_ai_analysis_update(const ai_analysis_result_t *r);
-    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        screen_ai_analysis_update(result);
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
 }

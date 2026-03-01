@@ -1,9 +1,11 @@
 #include "ui_manager.h"
 #include "wifi_manager.h"
+#include "rtc_bm8563.h"
 #include "app_config.h"
 #include "ui_compat.h"
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 #if LV_USE_QRCODE
 #include "extra/libs/qrcode/lv_qrcode.h"
@@ -13,11 +15,45 @@ static lv_obj_t *s_screen     = NULL;
 static lv_obj_t *s_status_lbl = NULL;
 static lv_obj_t *s_qr_area    = NULL;
 static lv_obj_t *s_btn_portal = NULL;
+static lv_obj_t *s_time_lbl   = NULL;
+static lv_timer_t *s_time_timer = NULL;
+
+static void update_topbar_time(void)
+{
+    if (!s_time_lbl) return;
+
+    rtc_time_t rt;
+    if (rtc_bm8563_get_time(&rt) == ESP_OK &&
+        rt.hours < 24 && rt.minutes < 60) {
+        char buf[12];
+        snprintf(buf, sizeof(buf), "%02d:%02d", rt.hours, rt.minutes);
+        lv_label_set_text(s_time_lbl, buf);
+        return;
+    }
+
+    time_t now = time(NULL);
+    if (now > 0) {
+        struct tm tm_info;
+        localtime_r(&now, &tm_info);
+        char buf[12];
+        snprintf(buf, sizeof(buf), "%02d:%02d", tm_info.tm_hour, tm_info.tm_min);
+        lv_label_set_text(s_time_lbl, buf);
+        return;
+    }
+
+    lv_label_set_text(s_time_lbl, "--:--");
+}
+
+static void time_update_cb(lv_timer_t *t)
+{
+    (void)t;
+    update_topbar_time();
+}
 
 static void update_portal_ui(bool active)
 {
     if (active) {
-        lv_label_set_text(s_status_lbl, "Portal active - scan QR to configure");
+        lv_label_set_text(s_status_lbl, "Portal active - scan QR to join AP");
         lv_obj_set_style_text_color(s_status_lbl, lv_color_hex(0x4CAF50), 0);
         lv_obj_clear_flag(s_qr_area, LV_OBJ_FLAG_HIDDEN);
         lv_obj_t *lbl = lv_obj_get_child(s_btn_portal, 0);
@@ -30,13 +66,6 @@ static void update_portal_ui(bool active)
         lv_obj_t *lbl = lv_obj_get_child(s_btn_portal, 0);
         if (lbl) lv_label_set_text(lbl, "Start Portal");
         lv_obj_set_style_bg_color(s_btn_portal, lv_color_hex(0x8E44AD), 0);
-    }
-}
-
-static void btn_back_cb(lv_event_t *e)
-{
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
-        ui_manager_switch_screen(SCREEN_DASHBOARD);
     }
 }
 
@@ -53,120 +82,146 @@ static void btn_toggle_portal_cb(lv_event_t *e)
     }
 }
 
+void screen_wifi_on_btn(uint8_t btn)
+{
+    if (btn == 1) {
+        /* BtnB：切換 portal 狀態 */
+        if (wifi_manager_is_provisioning_portal_active()) {
+            wifi_manager_stop_provisioning_portal();
+            update_portal_ui(false);
+        } else {
+            esp_err_t ret = wifi_manager_start_provisioning_portal();
+            update_portal_ui(ret == ESP_OK);
+        }
+    }
+}
+
+void screen_wifi_open_portal(void)
+{
+    if (!wifi_manager_is_provisioning_portal_active()) {
+        esp_err_t ret = wifi_manager_start_provisioning_portal();
+        update_portal_ui(ret == ESP_OK);
+    } else {
+        update_portal_ui(true);
+    }
+}
+
 lv_obj_t *screen_wifi_create(void)
 {
     s_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x1A1A2E), 0);
 
-    /* 頂部列 */
+    /* 頂部列（h=20：左側時間 / 中間標題）*/
     lv_obj_t *topbar = lv_obj_create(s_screen);
-    lv_obj_set_size(topbar, LCD_WIDTH, 40);
+    lv_obj_set_size(topbar, LCD_WIDTH, 20);
     lv_obj_set_pos(topbar, 0, 0);
     lv_obj_set_style_bg_color(topbar, lv_color_hex(0x0F3460), 0);
     lv_obj_clear_flag(topbar, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *btn_back = lv_btn_create(topbar);
-    lv_obj_set_size(btn_back, 55, 28);
-    lv_obj_set_pos(btn_back, 4, 6);
-    lv_obj_set_style_bg_color(btn_back, lv_color_hex(0x2C3E50), 0);
-    lv_obj_add_event_cb(btn_back, btn_back_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_b = lv_label_create(btn_back);
-    lv_label_set_text(lbl_b, "< Back");
-    lv_obj_center(lbl_b);
+    s_time_lbl = lv_label_create(topbar);
+    lv_obj_set_pos(s_time_lbl, 4, 2);
+    lv_label_set_text(s_time_lbl, "--:--");
+    lv_obj_set_style_text_color(s_time_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(s_time_lbl, &lv_font_montserrat_10, 0);
 
     lv_obj_t *title = lv_label_create(topbar);
-    lv_obj_align(title, LV_ALIGN_CENTER, 20, 0);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, 0);
     lv_label_set_text(title, "WiFi Setup");
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
 
-    /* 狀態列 */
+    if (!s_time_timer) {
+        s_time_timer = lv_timer_create(time_update_cb, 10000, NULL);
+    }
+    update_topbar_time();
+
+    /* 狀態訊息 */
     s_status_lbl = lv_label_create(s_screen);
-    lv_obj_set_pos(s_status_lbl, 4, 44);
+    lv_obj_set_pos(s_status_lbl, 4, 22);
     lv_obj_set_width(s_status_lbl, LCD_WIDTH - 8);
     lv_label_set_long_mode(s_status_lbl, LV_LABEL_LONG_DOT);
     lv_label_set_text(s_status_lbl, "Portal inactive");
     lv_obj_set_style_text_color(s_status_lbl, lv_color_hex(0xAAAAAA), 0);
     lv_obj_set_style_text_font(s_status_lbl, &lv_font_montserrat_10, 0);
 
-    /* QR 區域容器（portal 未啟用時隱藏） */
+    /* QR 區域容器（portal 未啟用時隱藏）*/
     s_qr_area = lv_obj_create(s_screen);
-    lv_obj_set_size(s_qr_area, LCD_WIDTH, 136);
-    lv_obj_set_pos(s_qr_area, 0, 62);
+    lv_obj_set_size(s_qr_area, LCD_WIDTH, 164);
+    lv_obj_set_pos(s_qr_area, 0, 38);
     lv_obj_set_style_bg_opa(s_qr_area, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_qr_area, 0, 0);
     lv_obj_set_style_pad_all(s_qr_area, 0, 0);
     lv_obj_clear_flag(s_qr_area, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_qr_area, LV_OBJ_FLAG_HIDDEN);
 
-    /* Step 1 標題 */
-    lv_obj_t *hdr1 = lv_label_create(s_qr_area);
-    lv_obj_set_pos(hdr1, 15, 0);
-    lv_label_set_text(hdr1, "1: Join AP");
-    lv_obj_set_style_text_color(hdr1, lv_color_hex(0x64B5F6), 0);
-    lv_obj_set_style_text_font(hdr1, &lv_font_montserrat_10, 0);
-
-    /* Step 2 標題 */
-    lv_obj_t *hdr2 = lv_label_create(s_qr_area);
-    lv_obj_set_pos(hdr2, 170, 0);
-    lv_label_set_text(hdr2, "2: Open URL");
-    lv_obj_set_style_text_color(hdr2, lv_color_hex(0x64B5F6), 0);
-    lv_obj_set_style_text_font(hdr2, &lv_font_montserrat_10, 0);
-
 #if LV_USE_QRCODE
-    /* WiFi 連線 QR：手機掃描後直接加入 AP */
+    /* WiFi QR：掃描後手機直接加入 AP（WIFI: URI）*/
     char wifi_qr_str[96];
     snprintf(wifi_qr_str, sizeof(wifi_qr_str), "WIFI:T:WPA;S:%s;P:%s;;",
              wifi_manager_get_provisioning_ap_ssid(),
              wifi_manager_get_provisioning_ap_password());
-    lv_obj_t *qr_wifi = lv_qrcode_create(s_qr_area, 90,
-                                          lv_color_hex(0x000000),
-                                          lv_color_hex(0xFFFFFF));
-    lv_qrcode_update(qr_wifi, wifi_qr_str, strlen(wifi_qr_str));
-    lv_obj_set_pos(qr_wifi, 15, 14);
-
-    /* 網頁 QR：掃描後開啟設定頁 */
-    const char *url = wifi_manager_get_provisioning_url();
-    lv_obj_t *qr_url = lv_qrcode_create(s_qr_area, 90,
-                                          lv_color_hex(0x000000),
-                                          lv_color_hex(0xFFFFFF));
-    lv_qrcode_update(qr_url, url, strlen(url));
-    lv_obj_set_pos(qr_url, 170, 14);
+    lv_obj_t *qr = lv_qrcode_create(s_qr_area, 156,
+                                     lv_color_hex(0x000000),
+                                     lv_color_hex(0xFFFFFF));
+    lv_qrcode_update(qr, wifi_qr_str, strlen(wifi_qr_str));
+    lv_obj_set_pos(qr, 4, 4);
 #else
     lv_obj_t *qr_fallback = lv_label_create(s_qr_area);
-    lv_obj_set_pos(qr_fallback, 15, 14);
-    lv_label_set_text(qr_fallback, "QR disabled\nenter URL manually");
+    lv_obj_set_pos(qr_fallback, 4, 4);
+    lv_label_set_text(qr_fallback, "QR disabled\nenter SSID manually");
     lv_obj_set_style_text_color(qr_fallback, lv_color_hex(0xFFCC66), 0);
     lv_obj_set_style_text_font(qr_fallback, &lv_font_montserrat_10, 0);
 #endif
 
-    /* AP 名稱 */
-    lv_obj_t *ap_name_lbl = lv_label_create(s_qr_area);
-    lv_obj_set_pos(ap_name_lbl, 15, 106);
-    lv_label_set_text(ap_name_lbl, wifi_manager_get_provisioning_ap_ssid());
-    lv_obj_set_style_text_color(ap_name_lbl, lv_color_hex(0xDDE8F2), 0);
-    lv_obj_set_style_text_font(ap_name_lbl, &lv_font_montserrat_10, 0);
+    /* 右側說明資訊 */
+    lv_obj_t *hdr_ap = lv_label_create(s_qr_area);
+    lv_obj_set_pos(hdr_ap, 166, 4);
+    lv_label_set_text(hdr_ap, "Join AP:");
+    lv_obj_set_style_text_color(hdr_ap, lv_color_hex(0x64B5F6), 0);
+    lv_obj_set_style_text_font(hdr_ap, &lv_font_montserrat_10, 0);
 
-    /* AP 密碼 */
-    lv_obj_t *pw_info_lbl = lv_label_create(s_qr_area);
-    lv_obj_set_pos(pw_info_lbl, 15, 120);
-    char pw_buf[64];
-    snprintf(pw_buf, sizeof(pw_buf), "Pwd: %s", wifi_manager_get_provisioning_ap_password());
-    lv_label_set_text(pw_info_lbl, pw_buf);
-    lv_obj_set_style_text_color(pw_info_lbl, lv_color_hex(0xDDE8F2), 0);
-    lv_obj_set_style_text_font(pw_info_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_t *ssid_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(ssid_lbl, 166, 18);
+    lv_label_set_text(ssid_lbl, wifi_manager_get_provisioning_ap_ssid());
+    lv_obj_set_style_text_color(ssid_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(ssid_lbl, &lv_font_montserrat_10, 0);
 
-    /* Portal URL */
-    lv_obj_t *url_info_lbl = lv_label_create(s_qr_area);
-    lv_obj_set_pos(url_info_lbl, 170, 106);
-    lv_label_set_text(url_info_lbl, wifi_manager_get_provisioning_url());
-    lv_obj_set_style_text_color(url_info_lbl, lv_color_hex(0xDDE8F2), 0);
-    lv_obj_set_style_text_font(url_info_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_t *hdr_pwd = lv_label_create(s_qr_area);
+    lv_obj_set_pos(hdr_pwd, 166, 38);
+    lv_label_set_text(hdr_pwd, "Pwd:");
+    lv_obj_set_style_text_color(hdr_pwd, lv_color_hex(0x64B5F6), 0);
+    lv_obj_set_style_text_font(hdr_pwd, &lv_font_montserrat_10, 0);
+
+    lv_obj_t *pwd_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(pwd_lbl, 166, 52);
+    lv_label_set_text(pwd_lbl, wifi_manager_get_provisioning_ap_password());
+    lv_obj_set_style_text_color(pwd_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(pwd_lbl, &lv_font_montserrat_10, 0);
+
+    lv_obj_t *hdr_url = lv_label_create(s_qr_area);
+    lv_obj_set_pos(hdr_url, 166, 78);
+    lv_label_set_text(hdr_url, "URL:");
+    lv_obj_set_style_text_color(hdr_url, lv_color_hex(0x64B5F6), 0);
+    lv_obj_set_style_text_font(hdr_url, &lv_font_montserrat_10, 0);
+
+    lv_obj_t *url_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(url_lbl, 166, 92);
+    lv_label_set_text(url_lbl, "192.168.4.1");
+    lv_obj_set_style_text_color(url_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(url_lbl, &lv_font_montserrat_10, 0);
+
+    lv_obj_t *hint_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(hint_lbl, 166, 112);
+    lv_obj_set_width(hint_lbl, 148);
+    lv_label_set_long_mode(hint_lbl, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(hint_lbl, "Auto-opens in browser");
+    lv_obj_set_style_text_color(hint_lbl, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(hint_lbl, &lv_font_montserrat_10, 0);
 
     /* Start / Stop Portal 按鈕 */
     s_btn_portal = lv_btn_create(s_screen);
-    lv_obj_set_size(s_btn_portal, 110, 28);
-    lv_obj_set_pos(s_btn_portal, (LCD_WIDTH - 110) / 2, 206);
+    lv_obj_set_size(s_btn_portal, 130, 30);
+    lv_obj_set_pos(s_btn_portal, (LCD_WIDTH - 130) / 2, 206);
     lv_obj_set_style_bg_color(s_btn_portal, lv_color_hex(0x8E44AD), 0);
     lv_obj_add_event_cb(s_btn_portal, btn_toggle_portal_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_portal = lv_label_create(s_btn_portal);
