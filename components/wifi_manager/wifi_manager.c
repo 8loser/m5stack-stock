@@ -37,6 +37,7 @@ static const char *TAG = "wifi_mgr";
 static EventGroupHandle_t s_wifi_event_group = NULL;
 static wifi_state_t       s_state            = WIFI_STATE_DISCONNECTED;
 static char               s_ip_str[20]       = "0.0.0.0";
+static char               s_connected_ssid[33] = "";
 static int                s_retry_count      = 0;
 static wifi_state_cb_t    s_callback         = NULL;
 static bool               s_initialized      = false;
@@ -908,6 +909,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         notify_state(WIFI_STATE_DISCONNECTED);
 
     } else if (base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        s_ip_str[0] = '\0';
+        s_connected_ssid[0] = '\0';
         if (s_retry_count < MAX_RETRY) {
             esp_wifi_connect();
             s_retry_count++;
@@ -920,12 +923,22 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
 
     } else if (base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        wifi_ap_record_t ap_info = {0};
+
         snprintf(s_ip_str, sizeof(s_ip_str), IPSTR,
                  IP2STR(&event->ip_info.ip));
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            strncpy(s_connected_ssid, (const char *)ap_info.ssid, sizeof(s_connected_ssid) - 1);
+            s_connected_ssid[sizeof(s_connected_ssid) - 1] = '\0';
+        } else {
+            s_connected_ssid[0] = '\0';
+        }
         s_retry_count = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         notify_state(WIFI_STATE_CONNECTED);
-        ESP_LOGI(TAG, "WiFi 已連線 IP=%s", s_ip_str);
+        ESP_LOGI(TAG, "WiFi 已連線 SSID=%s IP=%s",
+                 (s_connected_ssid[0] != '\0') ? s_connected_ssid : "unknown",
+                 s_ip_str);
     }
 }
 
@@ -1037,6 +1050,11 @@ bool wifi_manager_is_connected(void)
 const char *wifi_manager_get_ip(void)
 {
     return s_ip_str;
+}
+
+const char *wifi_manager_get_connected_ssid(void)
+{
+    return s_connected_ssid;
 }
 
 void wifi_manager_set_callback(wifi_state_cb_t cb)

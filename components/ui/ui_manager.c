@@ -5,10 +5,13 @@
 #include "axp192.h"
 #include "vibration.h"
 #include "ui_compat.h"
+#include "screen_log.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 static const char *TAG = "ui_mgr";
@@ -91,8 +94,18 @@ static lv_obj_t *s_screens[SCREEN_COUNT] = {NULL};
 /* 前向宣告各頁面初始化 */
 extern lv_obj_t *screen_dashboard_create(void);
 extern lv_obj_t *screen_portal_create(void);
-extern lv_obj_t *screen_log_create(void);
 extern lv_obj_t *screen_info_create(void);
+
+static void ui_manager_log_v(log_tag_t tag, log_level_t level, const char *fmt, va_list ap)
+{
+    if (!fmt) {
+        return;
+    }
+
+    char msg[56];
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    screen_log_push(tag, level, msg);
+}
 
 static void lvgl_task(void *arg)
 {
@@ -204,6 +217,9 @@ void ui_manager_switch_screen(screen_id_t id)
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         extern void status_bar_set_page(screen_id_t page);
         status_bar_set_page(id);
+        if (id == SCREEN_LOG) {
+            screen_log_refresh();
+        }
         lv_scr_load_anim(s_screens[id], LV_SCR_LOAD_ANIM_SLIDE_LEFT, 200, 0, false);
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
@@ -273,4 +289,36 @@ void ui_manager_show_loading(bool show)
         loading_spinner_set_visible(show);
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
+}
+
+void ui_manager_log_stock(log_level_t level, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    ui_manager_log_v(LOG_TAG_STOCK, level, fmt, ap);
+    va_end(ap);
+}
+
+void ui_manager_log_wifi(log_level_t level, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    ui_manager_log_v(LOG_TAG_WIFI, level, fmt, ap);
+    va_end(ap);
+}
+
+void ui_manager_log_ai(log_level_t level, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    ui_manager_log_v(LOG_TAG_AI, level, fmt, ap);
+    va_end(ap);
+}
+
+void ui_manager_log_sys(log_level_t level, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    ui_manager_log_v(LOG_TAG_SYS, level, fmt, ap);
+    va_end(ap);
 }

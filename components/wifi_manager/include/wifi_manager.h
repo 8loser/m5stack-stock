@@ -24,6 +24,7 @@ esp_err_t   wifi_manager_disconnect(void);
 wifi_state_t wifi_manager_get_state(void);
 bool         wifi_manager_is_connected(void);
 const char  *wifi_manager_get_ip(void);
+const char  *wifi_manager_get_connected_ssid(void);
 
 /* 手機配網入口（SoftAP + HTTP） */
 esp_err_t   wifi_manager_start_provisioning_portal(void);

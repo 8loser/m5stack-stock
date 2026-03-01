@@ -22,6 +22,14 @@ static const char *TAG = "main";
 static void on_wifi_state(wifi_state_t state, const char *ip)
 {
     ui_manager_update_wifi_state((int)state, ip);
+    if (state == WIFI_STATE_CONNECTED) {
+        const char *ssid = wifi_manager_get_connected_ssid();
+        ui_manager_log_wifi(LOG_LEVEL_INFO, "Connected: %s (%s)",
+                            (ssid && ssid[0] != '\0') ? ssid : "unknown",
+                            (ip != NULL) ? ip : "");
+    } else {
+        ui_manager_log_wifi(LOG_LEVEL_WARN, "Disconnected");
+    }
 }
 
 /* 全域共用資源 */
@@ -94,17 +102,29 @@ void app_main(void)
     ESP_ERROR_CHECK(scheduler_init(g_quote_queue, g_ai_result_queue));
 
     ESP_LOGI(TAG, "=== 系統啟動完成 ===");
+    ui_manager_log_sys(LOG_LEVEL_INFO, "System ready");
 
     /* 主迴圈：消費 queue 資料 → 驅動 UI 更新 */
     stock_quote_t      quote;
+    ai_analysis_result_t ai_result;
 
     while (1) {
+        int quote_updates = 0;
+
         /* 只處理 Power 鍵短按：切換螢幕開/關 */
         board_poll_power_key();
 
         /* 讀取所有待處理的報價更新 */
         while (xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
             ui_manager_update_quote(&quote);
+            quote_updates++;
+        }
+        if (quote_updates > 0) {
+            ui_manager_log_stock(LOG_LEVEL_INFO, "Updated %d stock(s)", quote_updates);
+        }
+
+        if (xQueueReceive(g_ai_result_queue, &ai_result, 0) == pdTRUE) {
+            ui_manager_log_ai(LOG_LEVEL_INFO, "AI: %.50s", ai_result.analysis);
         }
 
         /* 每 100ms 輪詢一次，同時監控堆疊健康度 */
