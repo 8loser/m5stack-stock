@@ -69,6 +69,13 @@ static void refresh_page_message(void)
     if (!s_msg_lbl) return;
 
     char buf[128];
+    const char *page_name = "Dashboard";
+    if (s_page == SCREEN_LOG) {
+        page_name = "Log";
+    } else if (s_page == SCREEN_INFO) {
+        page_name = "Info";
+    }
+
     if (s_page == SCREEN_PORTAL) {
         if (s_wifi_state == 2 /* CONNECTED */) {
             snprintf(buf, sizeof(buf), "Portal Setup - Connected (%s)",
@@ -80,12 +87,12 @@ static void refresh_page_message(void)
         }
     } else {
         if (s_wifi_state == 2 /* CONNECTED */) {
-            snprintf(buf, sizeof(buf), "Dashboard - TWSE monitor (%s)",
-                     (s_wifi_ip[0] != '\0') ? s_wifi_ip : "WiFi OK");
+            snprintf(buf, sizeof(buf), "%s - TWSE monitor (%s)",
+                     page_name, (s_wifi_ip[0] != '\0') ? s_wifi_ip : "WiFi OK");
         } else if (s_wifi_state == 1 /* CONNECTING */) {
-            snprintf(buf, sizeof(buf), "Dashboard - TWSE monitor (WiFi Connecting...)");
+            snprintf(buf, sizeof(buf), "%s - TWSE monitor (WiFi Connecting...)", page_name);
         } else {
-            snprintf(buf, sizeof(buf), "Dashboard - TWSE monitor (WiFi Offline)");
+            snprintf(buf, sizeof(buf), "%s - TWSE monitor (WiFi Offline)", page_name);
         }
     }
     lv_label_set_text(s_msg_lbl, buf);

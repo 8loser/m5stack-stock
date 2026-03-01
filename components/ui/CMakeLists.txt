@@ -3,6 +3,8 @@ idf_component_register(
         "ui_manager.c"
         "screens/screen_dashboard.c"
         "screens/screen_portal.c"
+        "screens/screen_log.c"
+        "screens/screen_info.c"
         "widgets/status_bar.c"
         "widgets/stock_card.c"
         "widgets/loading_spinner.c"

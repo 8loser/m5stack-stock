@@ -7,6 +7,9 @@
 typedef enum {
     SCREEN_DASHBOARD    = 0,
     SCREEN_PORTAL       = 1,
+    SCREEN_LOG          = 2,
+    SCREEN_INFO         = 3,
+    SCREEN_COUNT
 } screen_id_t;
 
 esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex);

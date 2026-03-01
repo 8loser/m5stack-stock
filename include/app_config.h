@@ -98,5 +98,5 @@
 
 /* --- M5Core2 FT6336U 底部虛擬按鍵感應區域 --- */
 #define TOUCH_BTN_Y_MIN         200   /* y >= 200 = 底部按鍵區域（Core2 實測可命中） */
-#define TOUCH_BTN_A_X_MAX       165   /* x < 165 = BtnA (左) */
-#define TOUCH_BTN_B_X_MAX       190   /* 165 <= x < 190 = BtnB (中); x >= 190 = BtnC (右) */
+#define TOUCH_BTN_A_X_MAX       (LCD_WIDTH / 3)         /* 左 1/3 */
+#define TOUCH_BTN_B_X_MAX       ((LCD_WIDTH * 2) / 3)   /* 中 1/3；其餘為右 1/3 */

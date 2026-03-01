@@ -1,7 +1,6 @@
 #include "ui_manager.h"
 #include "app_config.h"
 #include "twse_models.h"
-#include "scheduler.h"
 #include "ui_compat.h"
 #include <stdio.h>
 #include <string.h>
@@ -64,11 +63,6 @@ lv_obj_t *screen_dashboard_create(void)
     lv_obj_set_style_text_font(s_update_label, &lv_font_montserrat_10, 0);
 
     return s_screen;
-}
-
-void screen_dashboard_on_btn(uint8_t btn)
-{
-    if (btn == 1) scheduler_trigger_quote_now();
 }
 
 void screen_dashboard_update(const stock_quote_t *q)
