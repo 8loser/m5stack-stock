@@ -11,7 +11,6 @@ idf_component_register(
         twse_client
         ai_provider
         board
-        wifi_manager
         log
         freertos
         lwip

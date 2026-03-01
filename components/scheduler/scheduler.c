@@ -3,11 +3,11 @@
 #include "storage.h"
 #include "twse_client.h"
 #include "ai_provider.h"
-#include "wifi_manager.h"
 #include "rtc_bm8563.h"
 #include "app_config.h"
 #include "esp_log.h"
 #include "esp_sntp.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
@@ -29,6 +29,12 @@ static stock_list_t      s_stock_list;
 /* 最新報價（供 AI 分析使用）*/
 static stock_quote_t     s_latest_quotes[MAX_STOCK_COUNT];
 static int               s_latest_quote_count = 0;
+
+static bool is_wifi_connected(void)
+{
+    wifi_ap_record_t ap_info;
+    return (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
+}
 
 static void sntp_sync_cb(struct timeval *tv)
 {
@@ -69,8 +75,13 @@ static void init_sntp(void)
 
 static void do_fetch_quotes(void)
 {
-    if (!wifi_manager_is_connected()) {
+    if (!is_wifi_connected()) {
         ESP_LOGW(TAG, "WiFi 未連線，跳過報價抓取");
+        return;
+    }
+
+    if (s_stock_list.count == 0) {
+        ESP_LOGW(TAG, "股票清單為空，跳過報價抓取");
         return;
     }
 
@@ -96,7 +107,7 @@ static void do_fetch_quotes(void)
 
 static void do_ai_analysis(void)
 {
-    if (!wifi_manager_is_connected()) {
+    if (!is_wifi_connected()) {
         ESP_LOGW(TAG, "WiFi 未連線，跳過 AI 分析");
         return;
     }
@@ -136,7 +147,7 @@ static void ai_timer_cb(TimerHandle_t xTimer)
 static void scheduler_task(void *arg)
 {
     /* 等待 WiFi 連線後啟動 SNTP */
-    while (!wifi_manager_is_connected()) {
+    while (!is_wifi_connected()) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
     init_sntp();
@@ -237,6 +248,18 @@ void scheduler_trigger_quote_now(void)
 void scheduler_trigger_ai_now(void)
 {
     do_ai_analysis();
+}
+
+esp_err_t scheduler_reload_stock_list(void)
+{
+    esp_err_t ret = storage_stocks_load(&s_stock_list);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "重載股票清單失敗: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "股票清單已重載，count=%u（下個排程週期生效）", s_stock_list.count);
+    return ESP_OK;
 }
 
 void scheduler_stop(void)

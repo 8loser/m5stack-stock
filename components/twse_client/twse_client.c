@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <math.h>
 
@@ -171,6 +172,94 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
         } else if (results[i].is_market_closed) {
             ESP_LOGI(TAG, "%s 休市，昨收 %.2f",
                      results[i].symbol, results[i].yesterday_close);
+        }
+    }
+
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *out)
+{
+    if (!symbol || !out) return ESP_ERR_INVALID_ARG;
+
+    memset(out, 0, sizeof(*out));
+    strlcpy(out->symbol, symbol, sizeof(out->symbol));
+
+    char url[512];
+    snprintf(url, sizeof(url),
+             "%s?ex_ch=tse_%s.tw&json=1&delay=0", TWSE_BASE_URL, symbol);
+
+    char *buf = malloc(HTTP_BUF_SIZE);
+    if (!buf) return ESP_ERR_NO_MEM;
+
+    http_ctx_t ctx = {.buf = buf, .buf_size = HTTP_BUF_SIZE - 1, .data_len = 0};
+
+    esp_http_client_config_t cfg = {
+        .url            = url,
+        .event_handler  = http_event_handler,
+        .user_data      = &ctx,
+        .timeout_ms     = HTTP_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    esp_err_t ret = esp_http_client_perform(client);
+    esp_http_client_cleanup(client);
+
+    if (ret != ESP_OK || ctx.overflow) {
+        ESP_LOGE(TAG, "驗證代號 HTTP 失敗: %s", esp_err_to_name(ret));
+        free(buf);
+        return ESP_FAIL;
+    }
+
+    buf[ctx.data_len] = '\0';
+    cJSON *root = cJSON_Parse(buf);
+    free(buf);
+
+    if (!root) {
+        ESP_LOGE(TAG, "驗證代號 JSON 解析失敗");
+        return ESP_FAIL;
+    }
+
+    cJSON *msg_array = cJSON_GetObjectItem(root, "msgArray");
+    if (!cJSON_IsArray(msg_array) || cJSON_GetArraySize(msg_array) <= 0) {
+        cJSON_Delete(root);
+        return ESP_OK;
+    }
+
+    cJSON *item = cJSON_GetArrayItem(msg_array, 0);
+    if (!cJSON_IsObject(item)) {
+        cJSON_Delete(root);
+        return ESP_OK;
+    }
+
+    cJSON *sym = cJSON_GetObjectItem(item, "c");
+    cJSON *name = cJSON_GetObjectItem(item, "n");
+    cJSON *full_name = cJSON_GetObjectItem(item, "nf");
+    cJSON *ex = cJSON_GetObjectItem(item, "ex");
+
+    if (sym && cJSON_IsString(sym) &&
+        strcmp(sym->valuestring, symbol) == 0) {
+        out->exists = true;
+    }
+
+    if (name && cJSON_IsString(name) &&
+        strcmp(name->valuestring, "-") != 0) {
+        strlcpy(out->short_name, name->valuestring, sizeof(out->short_name));
+    }
+
+    if (full_name && cJSON_IsString(full_name) &&
+        strcmp(full_name->valuestring, "-") != 0) {
+        strlcpy(out->name, full_name->valuestring, sizeof(out->name));
+    } else if (out->short_name[0] != '\0') {
+        strlcpy(out->name, out->short_name, sizeof(out->name));
+    }
+
+    if (ex && cJSON_IsString(ex)) {
+        strlcpy(out->market, ex->valuestring, sizeof(out->market));
+        if (strcasecmp(out->market, "tse") == 0) {
+            strlcpy(out->market, "tse", sizeof(out->market));
         }
     }
 

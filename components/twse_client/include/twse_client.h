@@ -4,6 +4,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
+typedef struct {
+    char symbol[8];
+    char name[64];
+    char short_name[32];
+    char market[8];
+    bool exists;
+} stock_symbol_info_t;
+
 /**
  * @brief 初始化 TWSE Client
  * @param quote_queue 解析結果放入此 queue（stock_quote_t 元素）
@@ -18,6 +26,11 @@ esp_err_t twse_client_init(QueueHandle_t quote_queue);
  */
 esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
                              stock_quote_t *results);
+
+/**
+ * @brief 驗證單一股票代號是否存在且回傳基本資訊
+ */
+esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *out);
 
 /**
  * @brief 啟動背景抓取任務

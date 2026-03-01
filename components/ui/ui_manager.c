@@ -42,11 +42,16 @@ static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
     }
 
     /* 攔截底部虛擬按鍵（y >= TOUCH_BTN_Y_MIN），不傳給 LVGL */
+    if (pt.pressed && !s_last_pressed) {
+        ESP_LOGI(TAG, "touch down x=%d y=%d", pt.x, pt.y);
+    }
+
     if (pt.pressed && pt.y >= TOUCH_BTN_Y_MIN) {
         if (!s_hw_btn_fired) {
             s_hw_btn_fired = true;
             uint8_t btn = (pt.x < TOUCH_BTN_A_X_MAX) ? 0 :
                           (pt.x < TOUCH_BTN_B_X_MAX) ? 1 : 2;
+            ESP_LOGI(TAG, "底部虛擬按鍵: btn=%u x=%d y=%d", btn, pt.x, pt.y);
             handle_hw_button(btn);
         }
         data->state = LV_INDEV_STATE_REL;
@@ -201,6 +206,7 @@ void ui_manager_switch_screen(screen_id_t id)
 static void handle_hw_button(uint8_t btn)
 {
     extern void screen_dashboard_on_btn(uint8_t b);
+    ESP_LOGI(TAG, "handle_hw_button: cur=%d btn=%u", (int)s_cur_screen, btn);
 
     switch (s_cur_screen) {
         case SCREEN_DASHBOARD:

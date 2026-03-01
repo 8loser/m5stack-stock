@@ -31,6 +31,11 @@ void      scheduler_trigger_quote_now(void);
 void      scheduler_trigger_ai_now(void);
 
 /**
+ * @brief 重新載入儲存的股票清單（下個排程週期生效）
+ */
+esp_err_t scheduler_reload_stock_list(void);
+
+/**
  * @brief 停止所有排程（休市睡眠前呼叫）
  */
 void      scheduler_stop(void);
