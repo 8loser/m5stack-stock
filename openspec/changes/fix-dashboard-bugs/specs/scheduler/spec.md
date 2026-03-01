@@ -1,0 +1,30 @@
+## MODIFIED Requirements
+
+### Requirement: market_only 設定控制報價抓取時段
+排程器 SHALL 根據 `s_config.market_only` 決定是否限制在市場開市時段才抓取報價：
+- `market_only = true`：非市場時段（`rtc_bm8563_is_market_open()` 返回 false）時跳過報價抓取
+- `market_only = false`：全天候抓取，不受市場時段限制
+
+此外，當 SNTP 尚未完成同步（`s_sntp_synced == false`）時，無論 `market_only` 設定為何，SHALL 跳過時段限制並直接抓取，以避免 RTC 時間不可信造成的誤判。
+
+#### Scenario: market_only=true，非開市時間觸發排程
+- **WHEN** quote timer 到期且 `s_config.market_only == true` 且 `rtc_bm8563_is_market_open()` 為 false
+- **THEN** 本次報價抓取被跳過
+
+#### Scenario: market_only=false，非開市時間觸發排程
+- **WHEN** quote timer 到期且 `s_config.market_only == false`
+- **THEN** 報價抓取正常執行，不受市場時段限制
+
+#### Scenario: SNTP 尚未同步時觸發排程
+- **WHEN** quote timer 到期且 `s_sntp_synced == false`（SNTP 尚未完成第一次同步）
+- **THEN** 跳過市場時段判斷，報價抓取正常執行
+
+#### Scenario: SNTP 已同步，market_only=true，開市時間
+- **WHEN** `s_sntp_synced == true` 且 `s_config.market_only == true` 且 `rtc_bm8563_is_market_open()` 為 true
+- **THEN** 報價抓取正常執行
+
+## REMOVED Requirements
+
+### Requirement: 非開市固定跳過報價抓取
+**Reason**: 此行為忽略了 `market_only` 使用者設定，導致非交易時間永遠無法顯示資料（包含昨收價）。
+**Migration**: 改用上方「market_only 設定控制報價抓取時段」需求，預設 `market_only = false` 可全天候抓取。

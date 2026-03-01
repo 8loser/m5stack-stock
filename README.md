@@ -75,7 +75,8 @@ cd m5stack_stock
 所有頁面共用：
 
 - 時間（12 小時制）
-- 中央狀態訊息（包含頁面與 WiFi 狀態）
+- 中央 screen 標題（`Dashboard / Log / Info / Settings`）
+  - `Portal` 頁面維持特殊格式：`Portal Setup - ...`
 - WiFi 圖示（連線/連線中/離線）
 - 電量百分比
 
