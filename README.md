@@ -205,11 +205,17 @@ cd m5stack_stock
 
 > 若開機時沒有已儲存的 WiFi 設定，系統也會自動啟動此 Portal 方便快速配網。
 
+Portal 首頁目前使用上方分頁切換：
+
+- `WiFi`
+- `AI Provider`
+- `Stocks`
+
 #### Portal 股票清單管理（TWSE-only）
 
 Portal 首頁提供 Stocks 區塊，可直接管理觀察清單：
 
-- 顯示目前清單（`symbol + name`）
+- 顯示目前清單（`symbol + 中文名稱`）
 - 新增代號（僅接受 4 位數；新增前即時向 TWSE 驗證）
 - 刪除代號
 - 上限固定 10 檔
@@ -218,6 +224,15 @@ Portal 首頁提供 Stocks 區塊，可直接管理觀察清單：
 
 - 僅支援 TWSE（上市，`market=tse`），不支援 TPEx/OTC
 - 清單異動後於下一個排程週期生效（不立即抓價）
+
+常見錯誤碼：
+
+- `invalid_format`
+- `duplicate_symbol`
+- `limit_exceeded`
+- `not_found_or_not_tse`
+- `validate_failed`
+- `not_found`
 
 ---
 
