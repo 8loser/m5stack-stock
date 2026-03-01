@@ -1,6 +1,7 @@
 #include "axp192.h"
 #include "app_config.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include <string.h>
 
 static const char *TAG = "axp192";
@@ -17,6 +18,8 @@ static uint8_t    s_addr;
 
 /* REG 0x94 GPIO state bits */
 #define GPIO_STATE_GPIO2    (1U << 2)
+/* PEK 短按事件 */
+#define IRQ_PEK_SHORT_PRESS (1U << 1)
 
 esp_err_t axp192_write_reg(uint8_t reg, uint8_t val)
 {
@@ -40,11 +43,11 @@ esp_err_t axp192_init(i2c_port_t port, uint8_t addr)
     ret = axp192_write_reg(AXP192_REG_DCDC1_VOLT, 0x68);
     if (ret != ESP_OK) return ret;
 
-    /* DCDC3 = 2.8V (LCD VCC) */
+    /* DCDC3 = 2.8V（Core2 背光電源） */
     ret = axp192_write_reg(AXP192_REG_DCDC3_VOLT, 0x58);
     if (ret != ESP_OK) return ret;
 
-    /* LDO2 = 3.3V (LCD 背光), LDO3 = 1.8V（預設關閉震動馬達供電） */
+    /* LDO2 = 3.3V（Core2 LCD 邏輯電源）, LDO3 = 1.8V（震動馬達） */
     ret = axp192_write_reg(AXP192_REG_LDO2_LDO3_VOLT, 0xC0);
     if (ret != ESP_OK) return ret;
 
@@ -77,6 +80,20 @@ esp_err_t axp192_set_lcd_power(bool enable)
     if (ret != ESP_OK) return ret;
 
     if (enable) {
+        val |= PWR_EN_LDO2;
+    } else {
+        val &= ~PWR_EN_LDO2;
+    }
+    return axp192_write_reg(AXP192_REG_LDO_DCDC_EN, val);
+}
+
+esp_err_t axp192_set_lcd_backlight_power(bool enable)
+{
+    uint8_t val;
+    esp_err_t ret = axp192_read_reg(AXP192_REG_LDO_DCDC_EN, &val);
+    if (ret != ESP_OK) return ret;
+
+    if (enable) {
         val |= PWR_EN_DCDC3;
     } else {
         val &= ~PWR_EN_DCDC3;
@@ -86,15 +103,11 @@ esp_err_t axp192_set_lcd_power(bool enable)
 
 esp_err_t axp192_set_lcd_backlight(uint8_t brightness)
 {
-    /* LDO2 電壓對應亮度：1.8V(0x0) ~ 3.3V(0xF)
-     * 映射 brightness(0-255) -> LDO2 nibble(0-15) */
-    uint8_t nibble = (uint8_t)((uint32_t)brightness * 15 / 255);
-    uint8_t val;
-    esp_err_t ret = axp192_read_reg(AXP192_REG_LDO2_LDO3_VOLT, &val);
-    if (ret != ESP_OK) return ret;
-
-    val = (val & 0x0F) | (nibble << 4);
-    return axp192_write_reg(AXP192_REG_LDO2_LDO3_VOLT, val);
+    /* DCDC3 電壓對應背光亮度：
+     * 近似映射 brightness(0-255) -> 2.5V~3.3V */
+    uint16_t mv = 2500U + ((uint32_t)brightness * 800U) / 255U;
+    uint8_t reg = (uint8_t)((mv - 700U) / 25U);
+    return axp192_write_reg(AXP192_REG_DCDC3_VOLT, reg);
 }
 
 esp_err_t axp192_set_vibration(bool enable)
@@ -134,6 +147,44 @@ bool axp192_is_charging(void)
     uint8_t val;
     axp192_read_reg(AXP192_REG_POWER_STATUS, &val);
     return (val & 0x04) != 0;
+}
+
+esp_err_t axp192_enable_pek_short_press_irq(void)
+{
+    uint8_t val = 0;
+    esp_err_t ret = axp192_read_reg(AXP192_REG_IRQ_EN3, &val);
+    if (ret != ESP_OK) return ret;
+
+    val |= IRQ_PEK_SHORT_PRESS;
+    ret = axp192_write_reg(AXP192_REG_IRQ_EN3, val);
+    if (ret != ESP_OK) return ret;
+
+    /* 清掉既有 pending 狀態，避免上電後立刻誤判一次按鍵 */
+    return axp192_write_reg(AXP192_REG_IRQ_STS3, IRQ_PEK_SHORT_PRESS);
+}
+
+bool axp192_consume_pek_short_press_event(void)
+{
+    static int64_t s_last_event_us = 0;
+    uint8_t sts = 0;
+    if (axp192_read_reg(AXP192_REG_IRQ_STS3, &sts) != ESP_OK) {
+        return false;
+    }
+
+    bool pressed = (sts & IRQ_PEK_SHORT_PRESS) != 0;
+    if (!pressed) return false;
+
+    /* Write-1-to-clear */
+    axp192_write_reg(AXP192_REG_IRQ_STS3, IRQ_PEK_SHORT_PRESS);
+
+    /* 防抖：忽略 300ms 內重複事件 */
+    int64_t now = esp_timer_get_time();
+    if ((now - s_last_event_us) < 300000) {
+        return false;
+    }
+
+    s_last_event_us = now;
+    return true;
 }
 
 esp_err_t axp192_set_bus_power(bool enable)

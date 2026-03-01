@@ -34,6 +34,13 @@ static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
     touch_point_t pt;
     ft6336u_read(&pt);
 
+    if (!board_is_screen_on()) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        s_last_pressed = false;
+        s_hw_btn_fired = false;
+        return;
+    }
+
     /* 攔截底部虛擬按鍵（y >= TOUCH_BTN_Y_MIN），不傳給 LVGL */
     if (pt.pressed && pt.y >= TOUCH_BTN_Y_MIN) {
         if (!s_hw_btn_fired) {

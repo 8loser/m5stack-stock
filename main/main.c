@@ -99,6 +99,9 @@ void app_main(void)
     stock_quote_t      quote;
 
     while (1) {
+        /* 只處理 Power 鍵短按：切換螢幕開/關 */
+        board_poll_power_key();
+
         /* 讀取所有待處理的報價更新 */
         while (xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
             ui_manager_update_quote(&quote);

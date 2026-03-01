@@ -7,6 +7,7 @@
 #   ./docker-flash.sh              # build + flash + monitor
 #   ./docker-flash.sh --build-only # 只 build
 #   ./docker-flash.sh --flash-only # 只燒錄（需已 build）
+#   ./docker-flash.sh --app-flash  # 只燒錄 app 分區（最快，日常開發建議）
 #   ./docker-flash.sh --monitor    # 只開 monitor
 #   ./docker-flash.sh --erase      # 清除 flash 後重新燒錄
 #   ./docker-flash.sh --shell      # 進入 container shell（除錯用）
@@ -44,6 +45,7 @@ log "使用 container runtime: $RUNTIME"
 PORT=""
 BUILD_ONLY=false
 FLASH_ONLY=false
+APP_FLASH_ONLY=false
 MONITOR_ONLY=false
 ERASE=false
 SHELL_MODE=false
@@ -52,6 +54,7 @@ for arg in "$@"; do
     case "$arg" in
         --build-only)  BUILD_ONLY=true ;;
         --flash-only)  FLASH_ONLY=true ;;
+        --app-flash)   APP_FLASH_ONLY=true ;;
         --monitor)     MONITOR_ONLY=true ;;
         --erase)       ERASE=true ;;
         --shell)       SHELL_MODE=true ;;
@@ -60,6 +63,13 @@ for arg in "$@"; do
         *)             warn "未知參數: $arg" ;;
     esac
 done
+
+# 模式互斥檢查（build-only 與 shell 可獨立）
+mode_count=0
+[ "$FLASH_ONLY" = true ] && mode_count=$((mode_count + 1))
+[ "$APP_FLASH_ONLY" = true ] && mode_count=$((mode_count + 1))
+[ "$MONITOR_ONLY" = true ] && mode_count=$((mode_count + 1))
+[ "$mode_count" -gt 1 ] && err "請只選擇一種模式：--flash-only / --app-flash / --monitor"
 
 # ---------- 自動偵測 Port ----------
 if [ -z "$PORT" ] && [ "$BUILD_ONLY" = false ] && [ "$SHELL_MODE" = false ]; then
@@ -152,6 +162,12 @@ elif [ "$FLASH_ONLY" = true ]; then
         CMD="esptool.py --chip ${CHIP} --port ${PORT} --baud ${BAUD} erase_flash && "
     fi
     CMD+="idf.py -p ${PORT} --baud ${BAUD} flash"
+
+elif [ "$APP_FLASH_ONLY" = true ]; then
+    if [ "$ERASE" = true ]; then
+        warn "--app-flash 會忽略 --erase（app-only 模式不清空整顆 flash）"
+    fi
+    CMD="idf.py -p ${PORT} --baud ${BAUD} app-flash"
 
 else
     # build + flash + monitor（預設）

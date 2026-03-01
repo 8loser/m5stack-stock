@@ -51,6 +51,7 @@ void sleep_manager_enter(uint8_t wake_hour, uint8_t wake_min)
 
     /* 螢幕關閉 */
     axp192_set_lcd_backlight(0);
+    axp192_set_lcd_backlight_power(false);
     axp192_set_lcd_power(false);
 
     vTaskDelay(pdMS_TO_TICKS(200));

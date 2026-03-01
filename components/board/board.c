@@ -1,6 +1,7 @@
 #include "board.h"
 #include "app_config.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "driver/i2c.h"
 #include "driver/gpio.h"
 
@@ -8,6 +9,8 @@ static const char *TAG = "board";
 
 static esp_lcd_panel_handle_t    s_panel = NULL;
 static esp_lcd_panel_io_handle_t s_io    = NULL;
+static bool s_screen_on = true;
+static int64_t s_power_key_arm_us = 0;
 
 /* 共用 I2C 匯流排初始化 */
 static esp_err_t init_i2c(void)
@@ -56,6 +59,14 @@ esp_err_t board_init(void)
     if (axp192_set_lcd_backlight(255) != ESP_OK) {
         ESP_LOGW(TAG, "LCD 背光設定失敗");
     }
+    s_screen_on = true;
+
+    ret = axp192_enable_pek_short_press_irq();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Power 鍵短按中斷啟用失敗");
+    }
+    /* 避免開機/重置時殘留 PEK 事件造成進入主畫面後立刻熄屏 */
+    s_power_key_arm_us = esp_timer_get_time() + 2000000;
 
     /* 4. 觸控 */
     ret = ft6336u_init(I2C_PORT_NUM, TOUCH_ADDR);
@@ -103,4 +114,49 @@ esp_lcd_panel_handle_t board_get_panel(void)
 esp_lcd_panel_io_handle_t board_get_panel_io(void)
 {
     return s_io;
+}
+
+esp_err_t board_set_screen_on(bool on)
+{
+    esp_err_t ret;
+
+    if (on) {
+        ret = axp192_set_lcd_power(true);
+        if (ret != ESP_OK) return ret;
+
+        ret = axp192_set_lcd_backlight_power(true);
+        if (ret != ESP_OK) return ret;
+
+        ret = axp192_set_lcd_backlight(255);
+        if (ret != ESP_OK) return ret;
+    } else {
+        ret = axp192_set_lcd_backlight(0);
+        if (ret != ESP_OK) return ret;
+
+        ret = axp192_set_lcd_backlight_power(false);
+        if (ret != ESP_OK) return ret;
+    }
+
+    s_screen_on = on;
+    ESP_LOGI(TAG, "螢幕%s", on ? "開啟" : "關閉");
+    return ESP_OK;
+}
+
+bool board_is_screen_on(void)
+{
+    return s_screen_on;
+}
+
+void board_poll_power_key(void)
+{
+    if (!axp192_consume_pek_short_press_event()) return;
+
+    if (esp_timer_get_time() < s_power_key_arm_us) {
+        ESP_LOGI(TAG, "忽略開機初期 Power 事件");
+        return;
+    }
+
+    if (board_set_screen_on(!s_screen_on) != ESP_OK) {
+        ESP_LOGW(TAG, "切換螢幕狀態失敗");
+    }
 }
