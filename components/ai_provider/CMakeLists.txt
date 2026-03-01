@@ -1,7 +1,6 @@
 idf_component_register(
     SRCS
         "ai_provider.c"
-        "remote_prompt.c"
         "providers/gemini.c"
         "providers/claude.c"
         "providers/openai.c"

@@ -69,6 +69,9 @@ scheduler Timer（ai_ivl）
 | LCD flush callback | `lv_disp_flush_ready` 必須在 SPI DMA 傳輸完成後呼叫 |
 | Monitor 鎖 port | `--monitor` 持有 `/dev/ttyACM0`；flash 前需先 `kill $(lsof -t /dev/ttyACM0)` |
 | UI 字型 | 全英文介面，`UI_FONT_TEXT_DEFAULT = lv_font_montserrat_14`（`components/ui/include/ui_compat.h`）；勿嘗試 CJK 字型 |
+| LVGL event callback 重用 | 不可傳 dummy `lv_event_t{}`（code=0 = `LV_EVENT_ALL`，CLICKED check 失敗）；改抽 helper function 直接呼叫 |
+| status_bar 顯隱 | 建在 `lv_layer_top()`；用 `lv_obj_add/clear_flag(LV_OBJ_FLAG_HIDDEN)` 控制；`switch_screen` 時同步呼叫 |
+| FT6336U 底部虛擬按鍵 | raw_y 不 clip，y≥240 為 M5Core2 底部三鍵感應區；在 touch callback 攔截，不傳給 LVGL |
 
 ## NVS 命名空間
 

@@ -14,14 +14,10 @@ esp_err_t storage_ai_save_provider(uint8_t provider_type);
 esp_err_t storage_ai_load_provider(uint8_t *provider_type);
 esp_err_t storage_ai_save_key(const char *api_key);
 esp_err_t storage_ai_load_key(char *api_key, size_t size);
-
-/* 遠端 Prompt URL（供 AI 分析使用）*/
-esp_err_t storage_ai_save_prompt_url(const char *url);
-esp_err_t storage_ai_load_prompt_url(char *url, size_t size);
-
-/* 遠端 Token 設定 URL（開機自動抓取 provider + api_key）*/
-esp_err_t storage_ai_save_remote_cfg_url(const char *url);
-esp_err_t storage_ai_load_remote_cfg_url(char *url, size_t size);
+esp_err_t storage_ai_save_provider_key(uint8_t provider_type, const char *api_key);
+esp_err_t storage_ai_load_provider_key(uint8_t provider_type, char *api_key, size_t size);
+esp_err_t storage_ai_save_prompt_template(const char *prompt_template);
+esp_err_t storage_ai_load_prompt_template(char *prompt_template, size_t size);
 
 /* ====== 股票清單 ====== */
 typedef struct {

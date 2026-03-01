@@ -15,29 +15,11 @@
 
 #define MAX_CARDS   5
 static lv_obj_t *s_screen  = NULL;
-static lv_obj_t *s_status_bar = NULL;
 static lv_obj_t *s_cards[MAX_CARDS] = {NULL};
 static lv_obj_t *s_name_labels[MAX_CARDS]   = {NULL};
 static lv_obj_t *s_price_labels[MAX_CARDS]  = {NULL};
 static lv_obj_t *s_change_labels[MAX_CARDS] = {NULL};
 static lv_obj_t *s_update_label = NULL;
-
-/* 頂部導航按鈕 */
-static void btn_ai_cb(lv_event_t *e)
-{
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED)
-        ui_manager_switch_screen(SCREEN_AI_ANALYSIS);
-}
-static void btn_settings_cb(lv_event_t *e)
-{
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED)
-        ui_manager_switch_screen(SCREEN_SETTINGS);
-}
-static void btn_refresh_cb(lv_event_t *e)
-{
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED)
-        scheduler_trigger_quote_now();
-}
 
 lv_obj_t *screen_dashboard_create(void)
 {
@@ -45,54 +27,11 @@ lv_obj_t *screen_dashboard_create(void)
     lv_obj_set_style_bg_color(s_screen, COLOR_BG, 0);
     lv_obj_clear_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* ---- 狀態列（頂部 20px）---- */
-    s_status_bar = lv_obj_create(s_screen);
-    lv_obj_set_size(s_status_bar, LCD_WIDTH, 20);
-    lv_obj_set_pos(s_status_bar, 0, 0);
-    lv_obj_set_style_bg_color(s_status_bar, lv_color_hex(0x0F3460), 0);
-    lv_obj_clear_flag(s_status_bar, LV_OBJ_FLAG_SCROLLABLE);
-
-    /* 頂部按鈕列 */
-    lv_obj_t *btn_bar = lv_obj_create(s_screen);
-    lv_obj_set_size(btn_bar, LCD_WIDTH, 30);
-    lv_obj_set_pos(btn_bar, 0, 20);
-    lv_obj_set_style_bg_color(btn_bar, lv_color_hex(0x0F3460), 0);
-    lv_obj_clear_flag(btn_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_layout(btn_bar, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(btn_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(btn_bar, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    /* 刷新按鈕 */
-    lv_obj_t *btn_refresh = lv_btn_create(btn_bar);
-    lv_obj_set_size(btn_refresh, 55, 24);
-    lv_obj_add_event_cb(btn_refresh, btn_refresh_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_r = lv_label_create(btn_refresh);
-    lv_label_set_text(lbl_r, "Refresh");
-    lv_obj_center(lbl_r);
-
-    /* AI 分析按鈕 */
-    lv_obj_t *btn_ai = lv_btn_create(btn_bar);
-    lv_obj_set_size(btn_ai, 65, 24);
-    lv_obj_set_style_bg_color(btn_ai, lv_color_hex(0x533483), 0);
-    lv_obj_add_event_cb(btn_ai, btn_ai_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_ai = lv_label_create(btn_ai);
-    lv_label_set_text(lbl_ai, "AI");
-    lv_obj_center(lbl_ai);
-
-    /* 設定按鈕 */
-    lv_obj_t *btn_settings = lv_btn_create(btn_bar);
-    lv_obj_set_size(btn_settings, 55, 24);
-    lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x2C3E50), 0);
-    lv_obj_add_event_cb(btn_settings, btn_settings_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_s = lv_label_create(btn_settings);
-    lv_label_set_text(lbl_s, "Settings");
-    lv_obj_center(lbl_s);
-
-    /* ---- 股票卡片列表（50px x 5 = 250px，從 y=50 開始）---- */
+    /* ---- 股票卡片列表 ---- */
     for (int i = 0; i < MAX_CARDS; i++) {
         s_cards[i] = lv_obj_create(s_screen);
         lv_obj_set_size(s_cards[i], LCD_WIDTH - 8, 32);
-        lv_obj_set_pos(s_cards[i], 4, 52 + i * 36);
+        lv_obj_set_pos(s_cards[i], 4, 24 + i * 36);
         lv_obj_set_style_bg_color(s_cards[i], COLOR_CARD, 0);
         lv_obj_set_style_radius(s_cards[i], 4, 0);
         lv_obj_clear_flag(s_cards[i], LV_OBJ_FLAG_SCROLLABLE);
@@ -119,12 +58,17 @@ lv_obj_t *screen_dashboard_create(void)
 
     /* 最後更新時間 */
     s_update_label = lv_label_create(s_screen);
-    lv_obj_set_pos(s_update_label, 4, 232);
+    lv_obj_set_pos(s_update_label, 4, 206);
     lv_label_set_text(s_update_label, "Updated: --:--:--");
     lv_obj_set_style_text_color(s_update_label, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(s_update_label, &lv_font_montserrat_10, 0);
 
     return s_screen;
+}
+
+void screen_dashboard_on_btn(uint8_t btn)
+{
+    if (btn == 1) scheduler_trigger_quote_now();
 }
 
 void screen_dashboard_update(const stock_quote_t *q)

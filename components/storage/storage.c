@@ -7,6 +7,16 @@
 
 static const char *TAG = "storage";
 
+static const char *provider_key_name(uint8_t provider_type)
+{
+    switch (provider_type) {
+        case 0: return "key_gem";
+        case 1: return "key_cla";
+        case 2: return "key_oai";
+        default: return NULL;
+    }
+}
+
 esp_err_t storage_init(void)
 {
     ESP_LOGI(TAG, "NVS Storage 就緒");
@@ -105,54 +115,62 @@ esp_err_t storage_ai_load_key(char *api_key, size_t size)
     return ESP_OK;
 }
 
-esp_err_t storage_ai_save_prompt_url(const char *url)
+esp_err_t storage_ai_save_provider_key(uint8_t provider_type, const char *api_key)
 {
+    const char *key_name = provider_key_name(provider_type);
+    if (!key_name || !api_key) return ESP_ERR_INVALID_ARG;
+
     nvs_handle_t h;
     esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READWRITE, &h);
     if (ret != ESP_OK) return ret;
-    nvs_set_str(h, "prompt_url", url);
+    nvs_set_str(h, key_name, api_key);
     ret = nvs_commit(h);
     nvs_close(h);
-    ESP_LOGI(TAG, "遠端 Prompt URL 已儲存");
     return ret;
 }
 
-esp_err_t storage_ai_load_prompt_url(char *url, size_t size)
+esp_err_t storage_ai_load_provider_key(uint8_t provider_type, char *api_key, size_t size)
 {
+    const char *key_name = provider_key_name(provider_type);
+    if (!key_name || !api_key || size == 0) return ESP_ERR_INVALID_ARG;
+
     nvs_handle_t h;
     esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READONLY, &h);
     if (ret != ESP_OK) {
-        url[0] = '\0';
+        api_key[0] = '\0';
         return ESP_OK;
     }
-    ret = nvs_get_str(h, "prompt_url", url, &size);
-    if (ret != ESP_OK) url[0] = '\0';
+    ret = nvs_get_str(h, key_name, api_key, &size);
+    if (ret != ESP_OK) api_key[0] = '\0';
     nvs_close(h);
     return ESP_OK;
 }
 
-esp_err_t storage_ai_save_remote_cfg_url(const char *url)
+esp_err_t storage_ai_save_prompt_template(const char *prompt_template)
 {
+    if (!prompt_template) return ESP_ERR_INVALID_ARG;
+
     nvs_handle_t h;
     esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READWRITE, &h);
     if (ret != ESP_OK) return ret;
-    nvs_set_str(h, "remote_cfg_url", url);
+    nvs_set_str(h, "prompt_tpl", prompt_template);
     ret = nvs_commit(h);
     nvs_close(h);
-    ESP_LOGI(TAG, "遠端 Token 設定 URL 已儲存");
     return ret;
 }
 
-esp_err_t storage_ai_load_remote_cfg_url(char *url, size_t size)
+esp_err_t storage_ai_load_prompt_template(char *prompt_template, size_t size)
 {
+    if (!prompt_template || size == 0) return ESP_ERR_INVALID_ARG;
+
     nvs_handle_t h;
     esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READONLY, &h);
     if (ret != ESP_OK) {
-        url[0] = '\0';
+        prompt_template[0] = '\0';
         return ESP_OK;
     }
-    ret = nvs_get_str(h, "remote_cfg_url", url, &size);
-    if (ret != ESP_OK) url[0] = '\0';
+    ret = nvs_get_str(h, "prompt_tpl", prompt_template, &size);
+    if (ret != ESP_OK) prompt_template[0] = '\0';
     nvs_close(h);
     return ESP_OK;
 }

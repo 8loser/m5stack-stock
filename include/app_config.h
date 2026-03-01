@@ -45,7 +45,7 @@
 
 /* --- FreeRTOS Stack 大小（byte）--- */
 #define STACK_LVGL              8192
-#define STACK_WIFI              4096
+#define STACK_WIFI              6144
 #define STACK_TWSE              6144
 #define STACK_AI                8192
 #define STACK_SCHEDULER         2048
@@ -95,3 +95,8 @@
 /* --- 音效 --- */
 #define AUDIO_BEEP_FREQ_HZ      1000
 #define AUDIO_BEEP_MS           100
+
+/* --- M5Core2 FT6336U 底部虛擬按鍵感應區域 --- */
+#define TOUCH_BTN_Y_MIN         240   /* y >= 240 = 底部按鍵區域 */
+#define TOUCH_BTN_A_X_MAX       110   /* x < 110 = BtnA (左) */
+#define TOUCH_BTN_B_X_MAX       220   /* 110 <= x < 220 = BtnB (中); x >= 220 = BtnC (右) */

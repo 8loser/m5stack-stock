@@ -1,10 +1,7 @@
 #include "ai_provider.h"
 #include "app_config.h"
 #include "storage.h"
-#include "esp_http_client.h"
-#include "esp_crt_bundle.h"
 #include "esp_log.h"
-#include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -25,23 +22,7 @@ static const ai_provider_ops_t *s_providers[] = {
 
 static ai_provider_type_t s_current_type = AI_PROVIDER_GEMINI;
 static QueueHandle_t      s_result_queue = NULL;
-
-/* 遠端 Token 設定（session 級別，不持久化）*/
-static char s_session_api_key[128]     = {0};  /* 遠端抓取的 key，優先使用 */
-static bool s_has_remote_token         = false;
-
-/* 遠端 Token HTTP 事件處理（靜態函數，供 fetch_remote_token_config 使用）*/
-typedef struct { char *b; size_t sz; size_t len; } token_ctx_t;
-
-static esp_err_t _token_cfg_http_ev(esp_http_client_event_t *e)
-{
-    token_ctx_t *c = e->user_data;
-    if (e->event_id == HTTP_EVENT_ON_DATA && c->len + e->data_len < c->sz) {
-        memcpy(c->b + c->len, e->data, e->data_len);
-        c->len += e->data_len;
-    }
-    return ESP_OK;
-}
+static char s_local_prompt_template[1024] = {0};
 
 /* 預設 Prompt 模板 */
 static const char *DEFAULT_PROMPT_TEMPLATE =
@@ -49,7 +30,7 @@ static const char *DEFAULT_PROMPT_TEMPLATE =
     "股票：%s (%s)\n"
     "現價：%.2f 元，漲跌：%.2f%%\n"
     "今日區間：%.2f - %.2f 元，成交量：%ld 張\n"
-    "%s\n"   /* 遠端 system_prompt 附加 */
+    "%s\n"
     "\n請以 JSON 格式回應：\n"
     "{\"signal\": \"buy|sell|hold\", \"confidence\": 0-100, "
     "\"analysis\": \"說明（繁體中文，100字以內）\"}";
@@ -58,15 +39,10 @@ void ai_provider_build_prompt(const stock_context_t *ctx,
                                const char *prompt_template,
                                char *out, size_t out_size)
 {
-    const remote_prompt_config_t *rp = ai_provider_get_remote_prompt();
-
-    /* 優先使用遠端自訂模板；否則用預設 */
-    const char *tmpl = (rp->is_loaded && strlen(rp->analysis_template) > 0)
-                       ? rp->analysis_template
-                       : DEFAULT_PROMPT_TEMPLATE;
-
-    const char *extra = (rp->is_loaded && strlen(rp->system_prompt) > 0)
-                        ? rp->system_prompt : "";
+    (void)prompt_template;
+    const char *tmpl = DEFAULT_PROMPT_TEMPLATE;
+    const char *extra = (strlen(s_local_prompt_template) > 0)
+                        ? s_local_prompt_template : "";
 
     snprintf(out, out_size, tmpl,
              ctx->name, ctx->symbol,
@@ -89,75 +65,54 @@ static stock_context_t quote_to_context(const stock_quote_t *q)
     return ctx;
 }
 
-esp_err_t ai_provider_fetch_remote_token_config(const char *url)
+static void load_local_prompt_template(void)
 {
-    if (!url || strlen(url) == 0) return ESP_ERR_INVALID_ARG;
+    storage_ai_load_prompt_template(s_local_prompt_template, sizeof(s_local_prompt_template));
+}
 
-    ESP_LOGI(TAG, "抓取遠端 Token 設定: %s", url);
+static void load_provider_key(ai_provider_type_t type, char *out, size_t out_size)
+{
+    if (!out || out_size == 0) return;
+    out[0] = '\0';
 
-    char buf[1024] = {0};
-    token_ctx_t ctx = {.b = buf, .sz = sizeof(buf) - 1, .len = 0};
-
-    esp_http_client_config_t cfg = {
-        .url               = url,
-        .event_handler     = _token_cfg_http_ev,
-        .user_data         = &ctx,
-        .timeout_ms        = 15000,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-        .disable_auto_redirect = false, /* 允許自動跟隨 30x */
-        .max_redirection_count = 3,
-    };
-    esp_http_client_handle_t client = esp_http_client_init(&cfg);
-    esp_err_t ret = esp_http_client_perform(client);
-    int status = esp_http_client_get_status_code(client);
-    esp_http_client_cleanup(client);
-
-    if (ret != ESP_OK || status != 200) {
-        ESP_LOGE(TAG, "遠端 Token 設定抓取失敗 HTTP %d", status);
-        return ESP_FAIL;
+    storage_ai_load_provider_key((uint8_t)type, out, out_size);
+    if (out[0] == '\0' && type == AI_PROVIDER_GEMINI) {
+        /* 與舊版單一 key 相容（預設視為 Gemini）*/
+        storage_ai_load_key(out, out_size);
     }
+}
 
-    buf[ctx.len] = '\0';
-    ESP_LOGD(TAG, "遠端 Token Config: %s", buf);
+static void select_provider_and_key(char *out_key, size_t out_size)
+{
+    if (!out_key || out_size == 0) return;
+    out_key[0] = '\0';
 
-    cJSON *root = cJSON_Parse(buf);
-    if (!root) return ESP_FAIL;
+    load_provider_key(s_current_type, out_key, out_size);
+    if (out_key[0] != '\0') return;
 
-    /* 解析 provider */
-    cJSON *prov = cJSON_GetObjectItem(root, "provider");
-    if (prov && cJSON_IsString(prov)) {
-        const char *pname = prov->valuestring;
-        if (strcasecmp(pname, "claude") == 0)
-            s_current_type = AI_PROVIDER_CLAUDE;
-        else if (strcasecmp(pname, "openai") == 0)
-            s_current_type = AI_PROVIDER_OPENAI;
-        else
-            s_current_type = AI_PROVIDER_GEMINI;
-        ESP_LOGI(TAG, "遠端設定 Provider: %s", s_providers[s_current_type]->name);
+    for (int i = 0; i < 3; i++) {
+        char candidate[128] = {0};
+        load_provider_key((ai_provider_type_t)i, candidate, sizeof(candidate));
+        if (candidate[0] != '\0') {
+            s_current_type = (ai_provider_type_t)i;
+            storage_ai_save_provider((uint8_t)s_current_type);
+            strncpy(out_key, candidate, out_size - 1);
+            out_key[out_size - 1] = '\0';
+            ESP_LOGI(TAG, "自動切換 AI Provider: %s", s_providers[s_current_type]->name);
+            return;
+        }
     }
-
-    /* 解析 api_key */
-    cJSON *key = cJSON_GetObjectItem(root, "api_key");
-    if (key && cJSON_IsString(key) && strlen(key->valuestring) > 8) {
-        strncpy(s_session_api_key, key->valuestring, sizeof(s_session_api_key) - 1);
-        s_has_remote_token = true;
-        ESP_LOGI(TAG, "遠端 API Key 已載入（長度=%d）", (int)strlen(s_session_api_key));
-    }
-
-    cJSON_Delete(root);
-    return ESP_OK;
 }
 
 void ai_provider_get_active_api_key(char *out, size_t out_size)
 {
-    if (s_has_remote_token && strlen(s_session_api_key) > 0) {
-        /* 優先使用遠端抓取的 key */
-        strncpy(out, s_session_api_key, out_size - 1);
-        out[out_size - 1] = '\0';
-    } else {
-        /* 退回本地 NVS 儲存的 key */
-        storage_ai_load_key(out, out_size);
-    }
+    select_provider_and_key(out, out_size);
+}
+
+esp_err_t ai_provider_reload_local_config(void)
+{
+    load_local_prompt_template();
+    return ESP_OK;
 }
 
 esp_err_t ai_provider_init(QueueHandle_t result_queue)
@@ -167,32 +122,10 @@ esp_err_t ai_provider_init(QueueHandle_t result_queue)
     uint8_t saved_type = 0;
     storage_ai_load_provider(&saved_type);
     s_current_type = (ai_provider_type_t)saved_type;
+    load_local_prompt_template();
 
-    /* 步驟1：嘗試從遠端抓取 Token 設定（開機自動執行）*/
-    char remote_cfg_url[256] = {0};
-    storage_ai_load_remote_cfg_url(remote_cfg_url, sizeof(remote_cfg_url));
-    if (strlen(remote_cfg_url) > 0) {
-        ESP_LOGI(TAG, "開機抓取遠端 Token 設定: %s", remote_cfg_url);
-        esp_err_t ret = ai_provider_fetch_remote_token_config(remote_cfg_url);
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "遠端 Token 設定載入成功，Provider=%s",
-                     s_providers[s_current_type]->name);
-        } else {
-            ESP_LOGW(TAG, "遠端 Token 設定失敗，使用本地設定");
-        }
-    }
-
-    /* 步驟2：嘗試下載遠端 Prompt */
-    char prompt_url[256] = {0};
-    storage_ai_load_prompt_url(prompt_url, sizeof(prompt_url));
-    if (strlen(prompt_url) > 0) {
-        ESP_LOGI(TAG, "嘗試載入遠端 Prompt: %s", prompt_url);
-        ai_provider_fetch_remote_prompt(prompt_url);
-    }
-
-    ESP_LOGI(TAG, "AI Provider 初始化完成，使用 %s（遠端Token=%s）",
-             s_providers[s_current_type]->name,
-             s_has_remote_token ? "是" : "否");
+    ESP_LOGI(TAG, "AI Provider 初始化完成，使用 %s（本機設定模式）",
+             s_providers[s_current_type]->name);
     return ESP_OK;
 }
 
@@ -219,6 +152,7 @@ const char *ai_provider_get_name(void)
 typedef struct {
     stock_quote_t quote;
     char          api_key[128];
+    ai_provider_type_t provider_type;
 } analyze_task_args_t;
 
 static void analyze_task(void *arg)
@@ -231,15 +165,10 @@ static void analyze_task(void *arg)
     char prompt[1536];
     ai_provider_build_prompt(&ctx, NULL, prompt, sizeof(prompt));
 
-    /* 優先使用遠端 Token，次選傳入的 key */
     char active_key[128] = {0};
-    if (s_has_remote_token && strlen(s_session_api_key) > 0) {
-        strncpy(active_key, s_session_api_key, sizeof(active_key) - 1);
-    } else {
-        strncpy(active_key, args->api_key, sizeof(active_key) - 1);
-    }
+    strncpy(active_key, args->api_key, sizeof(active_key) - 1);
 
-    esp_err_t ret = s_providers[s_current_type]->analyze(
+    esp_err_t ret = s_providers[args->provider_type]->analyze(
                         &ctx, prompt, active_key, &result);
     result.error_code = ret;
 
@@ -259,6 +188,7 @@ esp_err_t ai_provider_analyze_async(const stock_quote_t *quote,
 
     args->quote = *quote;
     strncpy(args->api_key, api_key, 127);
+    args->provider_type = s_current_type;
 
     BaseType_t res = xTaskCreatePinnedToCore(analyze_task, "ai_analyze",
                                               STACK_AI, args,
@@ -276,9 +206,16 @@ esp_err_t ai_provider_analyze_sync(const stock_quote_t *quote,
     char prompt[1536];
     ai_provider_build_prompt(&ctx, NULL, prompt, sizeof(prompt));
 
+    char active_key[128] = {0};
+    if (api_key && strlen(api_key) > 0) {
+        strncpy(active_key, api_key, sizeof(active_key) - 1);
+    } else {
+        ai_provider_get_active_api_key(active_key, sizeof(active_key));
+    }
+
     memset(result, 0, sizeof(*result));
     esp_err_t ret = s_providers[s_current_type]->analyze(
-                        &ctx, prompt, api_key, result);
+                        &ctx, prompt, active_key, result);
     result->error_code = ret;
     return ret;
 }
