@@ -61,9 +61,6 @@ static void refresh_page_message(void)
         } else {
             snprintf(buf, sizeof(buf), "WiFi Setup - Offline");
         }
-    } else if (s_page == SCREEN_SCHEDULE) {
-        snprintf(buf, sizeof(buf),
-                 "Schedule - Configure quote interval, AI interval and deep sleep");
     } else {
         if (s_wifi_state == 2 /* CONNECTED */) {
             snprintf(buf, sizeof(buf), "Dashboard - TWSE monitor (%s)",

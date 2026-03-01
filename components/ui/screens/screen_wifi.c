@@ -3,6 +3,8 @@
 #include "rtc_bm8563.h"
 #include "app_config.h"
 #include "ui_compat.h"
+#include "esp_log.h"
+#include "esp_wifi.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -14,9 +16,19 @@
 static lv_obj_t *s_screen     = NULL;
 static lv_obj_t *s_status_lbl = NULL;
 static lv_obj_t *s_qr_area    = NULL;
-static lv_obj_t *s_btn_portal = NULL;
 static lv_obj_t *s_time_lbl   = NULL;
 static lv_timer_t *s_time_timer = NULL;
+static const char *TAG = "screen_wifi";
+
+static bool is_softap_enabled(void)
+{
+    wifi_mode_t mode = WIFI_MODE_NULL;
+    if (esp_wifi_get_mode(&mode) != ESP_OK) {
+        return false;
+    }
+
+    return (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA);
+}
 
 static void update_topbar_time(void)
 {
@@ -56,44 +68,16 @@ static void update_portal_ui(bool active)
         lv_label_set_text(s_status_lbl, "Portal active - scan QR to join AP");
         lv_obj_set_style_text_color(s_status_lbl, lv_color_hex(0x4CAF50), 0);
         lv_obj_clear_flag(s_qr_area, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_t *lbl = lv_obj_get_child(s_btn_portal, 0);
-        if (lbl) lv_label_set_text(lbl, "Stop Portal");
-        lv_obj_set_style_bg_color(s_btn_portal, lv_color_hex(0xE74C3C), 0);
     } else {
         lv_label_set_text(s_status_lbl, "Portal inactive");
         lv_obj_set_style_text_color(s_status_lbl, lv_color_hex(0xAAAAAA), 0);
         lv_obj_add_flag(s_qr_area, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_t *lbl = lv_obj_get_child(s_btn_portal, 0);
-        if (lbl) lv_label_set_text(lbl, "Start Portal");
-        lv_obj_set_style_bg_color(s_btn_portal, lv_color_hex(0x8E44AD), 0);
-    }
-}
-
-static void btn_toggle_portal_cb(lv_event_t *e)
-{
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-
-    if (wifi_manager_is_provisioning_portal_active()) {
-        wifi_manager_stop_provisioning_portal();
-        update_portal_ui(false);
-    } else {
-        esp_err_t ret = wifi_manager_start_provisioning_portal();
-        update_portal_ui(ret == ESP_OK);
     }
 }
 
 void screen_wifi_on_btn(uint8_t btn)
 {
-    if (btn == 1) {
-        /* BtnB：切換 portal 狀態 */
-        if (wifi_manager_is_provisioning_portal_active()) {
-            wifi_manager_stop_provisioning_portal();
-            update_portal_ui(false);
-        } else {
-            esp_err_t ret = wifi_manager_start_provisioning_portal();
-            update_portal_ui(ret == ESP_OK);
-        }
-    }
+    (void)btn;
 }
 
 void screen_wifi_open_portal(void)
@@ -104,6 +88,33 @@ void screen_wifi_open_portal(void)
     } else {
         update_portal_ui(true);
     }
+}
+
+void screen_wifi_close_portal(void)
+{
+    if (!wifi_manager_is_provisioning_portal_active() &&
+        !is_softap_enabled()) {
+        update_portal_ui(false);
+        return;
+    }
+
+    esp_err_t ret = wifi_manager_stop_provisioning_portal();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "停止 portal 失敗: %s", esp_err_to_name(ret));
+    }
+
+    /* 二次檢查 SoftAP/portal 是否已停止；若仍啟用，再嘗試一次停止 */
+    if (wifi_manager_is_provisioning_portal_active() ||
+        is_softap_enabled()) {
+        ESP_LOGW(TAG, "偵測到 portal/AP 仍啟用，進行第二次停止");
+        ret = wifi_manager_stop_provisioning_portal();
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "第二次停止 portal 失敗: %s", esp_err_to_name(ret));
+        }
+    }
+
+    update_portal_ui(wifi_manager_is_provisioning_portal_active() ||
+                     is_softap_enabled());
 }
 
 lv_obj_t *screen_wifi_create(void)
@@ -217,16 +228,6 @@ lv_obj_t *screen_wifi_create(void)
     lv_label_set_text(hint_lbl, "Auto-opens in browser");
     lv_obj_set_style_text_color(hint_lbl, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(hint_lbl, &lv_font_montserrat_10, 0);
-
-    /* Start / Stop Portal 按鈕 */
-    s_btn_portal = lv_btn_create(s_screen);
-    lv_obj_set_size(s_btn_portal, 130, 30);
-    lv_obj_set_pos(s_btn_portal, (LCD_WIDTH - 130) / 2, 206);
-    lv_obj_set_style_bg_color(s_btn_portal, lv_color_hex(0x8E44AD), 0);
-    lv_obj_add_event_cb(s_btn_portal, btn_toggle_portal_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_portal = lv_label_create(s_btn_portal);
-    lv_label_set_text(lbl_portal, "Start Portal");
-    lv_obj_center(lbl_portal);
 
     /* 根據目前 Portal 狀態初始化 UI */
     update_portal_ui(wifi_manager_is_provisioning_portal_active());

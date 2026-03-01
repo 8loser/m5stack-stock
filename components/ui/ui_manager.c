@@ -67,11 +67,10 @@ static lv_disp_t        *s_disp       = NULL;
 static screen_id_t       s_cur_screen = SCREEN_DASHBOARD;
 
 /* 各頁面的 lv_obj */
-static lv_obj_t *s_screens[3] = {NULL};
+static lv_obj_t *s_screens[2] = {NULL};
 
 /* 前向宣告各頁面初始化 */
 extern lv_obj_t *screen_dashboard_create(void);
-extern lv_obj_t *screen_schedule_create(void);
 extern lv_obj_t *screen_wifi_create(void);
 
 static void lvgl_task(void *arg)
@@ -140,7 +139,6 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
 
     /* 建立所有頁面 */
     s_screens[SCREEN_DASHBOARD]   = screen_dashboard_create();
-    s_screens[SCREEN_SCHEDULE]    = screen_schedule_create();
     s_screens[SCREEN_WIFI]        = screen_wifi_create();
 
     /* 顯示 Dashboard */
@@ -169,7 +167,15 @@ void ui_lvgl_tick_cb(void *arg)
 
 void ui_manager_switch_screen(screen_id_t id)
 {
-    if (id >= 3) return;
+    if (id >= 2) return;
+    screen_id_t prev = s_cur_screen;
+
+    /* 離開 WiFi 頁面時關閉 provisioning portal（含 SoftAP） */
+    if (prev == SCREEN_WIFI && id != SCREEN_WIFI) {
+        extern void screen_wifi_close_portal(void);
+        screen_wifi_close_portal();
+    }
+
     s_cur_screen = id;
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         extern void status_bar_set_visible(bool v);
@@ -179,26 +185,23 @@ void ui_manager_switch_screen(screen_id_t id)
         lv_scr_load_anim(s_screens[id], LV_SCR_LOAD_ANIM_SLIDE_LEFT, 200, 0, false);
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
+
+    /* 進入 WiFi 頁面時自動啟動 provisioning portal（含 SoftAP） */
+    if (id == SCREEN_WIFI && prev != SCREEN_WIFI) {
+        extern void screen_wifi_open_portal(void);
+        screen_wifi_open_portal();
+    }
 }
 
 static void handle_hw_button(uint8_t btn)
 {
     extern void screen_dashboard_on_btn(uint8_t b);
-    extern void screen_schedule_on_btn(uint8_t b);
     extern void screen_wifi_on_btn(uint8_t b);
-    extern void screen_wifi_open_portal(void);
 
     switch (s_cur_screen) {
         case SCREEN_DASHBOARD:
             if (btn == 1) screen_dashboard_on_btn(1);
-            if (btn == 2) {
-                ui_manager_switch_screen(SCREEN_WIFI);
-                screen_wifi_open_portal();
-            }
-            break;
-        case SCREEN_SCHEDULE:
-            if (btn == 0) ui_manager_switch_screen(SCREEN_DASHBOARD);
-            else screen_schedule_on_btn(btn);
+            if (btn == 2) ui_manager_switch_screen(SCREEN_WIFI);
             break;
         case SCREEN_WIFI:
             if (btn == 0) ui_manager_switch_screen(SCREEN_DASHBOARD);
