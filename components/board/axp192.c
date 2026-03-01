@@ -174,15 +174,14 @@ bool axp192_consume_pek_short_press_event(void)
     bool pressed = (sts & IRQ_PEK_SHORT_PRESS) != 0;
     if (!pressed) return false;
 
-    /* Write-1-to-clear */
-    axp192_write_reg(AXP192_REG_IRQ_STS3, IRQ_PEK_SHORT_PRESS);
-
-    /* 防抖：忽略 300ms 內重複事件 */
+    /* 防抖：忽略 300ms 內重複事件；先判斷再清暫存器，避免提前吃掉事件 */
     int64_t now = esp_timer_get_time();
     if ((now - s_last_event_us) < 300000) {
         return false;
     }
 
+    /* Write-1-to-clear */
+    axp192_write_reg(AXP192_REG_IRQ_STS3, IRQ_PEK_SHORT_PRESS);
     s_last_event_us = now;
     return true;
 }

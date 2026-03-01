@@ -64,12 +64,24 @@ for arg in "$@"; do
     esac
 done
 
-# 模式互斥檢查（build-only 與 shell 可獨立）
+# 模式互斥檢查
 mode_count=0
-[ "$FLASH_ONLY" = true ] && mode_count=$((mode_count + 1))
+[ "$BUILD_ONLY" = true ]    && mode_count=$((mode_count + 1))
+[ "$FLASH_ONLY" = true ]    && mode_count=$((mode_count + 1))
 [ "$APP_FLASH_ONLY" = true ] && mode_count=$((mode_count + 1))
-[ "$MONITOR_ONLY" = true ] && mode_count=$((mode_count + 1))
-[ "$mode_count" -gt 1 ] && err "請只選擇一種模式：--flash-only / --app-flash / --monitor"
+[ "$MONITOR_ONLY" = true ]  && mode_count=$((mode_count + 1))
+[ "$SHELL_MODE" = true ]    && mode_count=$((mode_count + 1))
+[ "$mode_count" -gt 1 ] && err "請只選擇一種模式：--build-only / --flash-only / --app-flash / --monitor / --shell"
+
+# --erase 相容性檢查
+if [ "$ERASE" = true ]; then
+    if [ "$BUILD_ONLY" = true ] || [ "$MONITOR_ONLY" = true ] || [ "$SHELL_MODE" = true ]; then
+        err "--erase 不相容於 --build-only / --monitor / --shell"
+    fi
+    if [ "$APP_FLASH_ONLY" = true ]; then
+        warn "--app-flash 會忽略 --erase（app-only 模式不清空整顆 flash）"
+    fi
+fi
 
 # ---------- 自動偵測 Port ----------
 if [ -z "$PORT" ] && [ "$BUILD_ONLY" = false ] && [ "$SHELL_MODE" = false ]; then
@@ -164,9 +176,6 @@ elif [ "$FLASH_ONLY" = true ]; then
     CMD+="idf.py -p ${PORT} --baud ${BAUD} flash"
 
 elif [ "$APP_FLASH_ONLY" = true ]; then
-    if [ "$ERASE" = true ]; then
-        warn "--app-flash 會忽略 --erase（app-only 模式不清空整顆 flash）"
-    fi
     CMD="idf.py -p ${PORT} --baud ${BAUD} app-flash"
 
 else
