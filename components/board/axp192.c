@@ -130,7 +130,7 @@ float axp192_get_battery_voltage(void)
     if (axp192_read_reg(AXP192_REG_BATT_VOLT_H, &h) != ESP_OK) return 0.0f;
     if (axp192_read_reg(AXP192_REG_BATT_VOLT_L, &l) != ESP_OK) return 0.0f;
 
-    uint16_t raw = ((uint16_t)(h & 0x7F) << 5) | (l & 0x1F);
+    uint16_t raw = ((uint16_t)h << 4) | (l & 0x0F);
     return (float)raw * 1.1f / 1000.0f;  /* mV -> V */
 }
 
