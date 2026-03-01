@@ -38,24 +38,19 @@ static int s_nav_idx = 0;  // 目前在清單中的位置
 
 替代方案：動態 array + register API。選擇靜態清單因為頁面集合在編譯期已知，簡單可靠。
 
-### D2：s_prev_screen 追蹤 Portal 返回目標
+### D2：Portal 返回目標固定為 Dashboard
 
-```c
-static screen_id_t s_prev_screen = SCREEN_DASHBOARD;
-```
-
-進入 Portal 時記錄 `s_cur_screen`；btn1 在 Portal 時回到 `s_prev_screen`。
-替代方案：固定回 `s_nav_screens[s_nav_idx]`（等效，但語義更清晰用 s_prev_screen）。
+不追蹤 `s_prev_screen`。在 `SCREEN_PORTAL` 中按任一按鍵（btn0/1/2）都固定回 `SCREEN_DASHBOARD`。
+此設計簡化心智模型，也符合目前產品需求。
 
 ### D3：移除 per-screen switch-case，改用全域邏輯
 
 ```
 handle_hw_button(btn):
   if s_cur_screen == SCREEN_PORTAL:
-    if btn == 1: switch_screen(s_prev_screen)
-    // btn 0/2 在 Portal 中忽略
+    if btn <= 2: switch_screen(SCREEN_DASHBOARD)
   else:
-    if btn == 1: s_prev_screen = s_cur_screen; switch_screen(SCREEN_PORTAL)
+    if btn == 1: switch_screen(SCREEN_PORTAL)
     if btn == 0: s_nav_idx = (s_nav_idx - 1 + NAV_SCREENS_COUNT) % NAV_SCREENS_COUNT
                  switch_screen(s_nav_screens[s_nav_idx])
     if btn == 2: s_nav_idx = (s_nav_idx + 1) % NAV_SCREENS_COUNT
@@ -72,12 +67,12 @@ handle_hw_button(btn):
 |------|---------|
 | 新頁面忘記加入 s_nav_screens[] | 在 CLAUDE.md Gotchas 補充說明；清單位於單一位置，易找到 |
 | s_nav_idx 與實際頁面不同步（外部呼叫 switch_screen）| 輪詢時用 `s_nav_screens[s_nav_idx]` 而非 `s_cur_screen`，僅 btn 0/2 才更新 idx，語義正確 |
-| Portal 返回目標陳舊（連續多次進出 Portal）| 每次進入 Portal 都更新 s_prev_screen，無累積問題 |
+| Portal 無法返回進入前頁面 | 這是需求決策：Portal 作為快捷入口，出口固定回 Dashboard |
 
 ## Migration Plan
 
 1. 更新 `screen_id_t`（ui_manager.h）加入未來頁面 enum（若尚未加入）
-2. 在 `ui_manager.c` 加入 `s_nav_screens[]`、`s_nav_idx`、`s_prev_screen`
+2. 在 `ui_manager.c` 加入 `s_nav_screens[]`、`s_nav_idx`
 3. 重寫 `handle_hw_button()` 為全域邏輯
 4. 移除 `screen_dashboard_on_btn()` 中的按鍵入口（或整個函數）
 5. 驗證：手動在裝置上測試三鍵在各頁面的行為

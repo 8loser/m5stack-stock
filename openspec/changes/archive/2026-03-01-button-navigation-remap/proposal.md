@@ -4,9 +4,9 @@
 
 ## What Changes
 
-- `btn 1`（中）：從任意頁面直接切換到 Portal；若已在 Portal，則回到上一頁
-- `btn 0`（左）：在「可輪詢頁面」清單中向左切換；若在 Portal，忽略或回到上一頁
-- `btn 2`（右）：在「可輪詢頁面」清單中向右切換；若在 Portal，忽略或回到上一頁
+- `btn 1`（中）：從任意非 Portal 頁面切換到 Portal；在 Portal 時回到 Dashboard
+- `btn 0`（左）：在「可輪詢頁面」清單中向左切換；在 Portal 時回到 Dashboard
+- `btn 2`（右）：在「可輪詢頁面」清單中向右切換；在 Portal 時回到 Dashboard
 - Portal 頁面不加入可輪詢清單，維持「快捷入口」語義
 - `handle_hw_button` 重構：移除 per-screen switch-case，改用統一的全域導航邏輯
 - `screen_dashboard_on_btn(1)`（刷新報價）的功能改由 Dashboard 頁面自行處理（觸控 UI 按鈕），不再依賴實體按鍵
