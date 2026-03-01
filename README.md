@@ -14,16 +14,9 @@
 
 ## 快速開始
 
-### 1. 安裝 ESP-IDF
+需求：**docker** 或 **podman**（自動偵測），不需安裝 ESP-IDF。
 
-```bash
-git clone --recursive https://github.com/espressif/esp-idf.git ~/esp/esp-idf
-cd ~/esp/esp-idf
-./install.sh esp32
-source export.sh
-```
-
-### 2. 燒錄
+### 燒錄
 
 ```bash
 cd m5stack_stock
@@ -180,7 +173,7 @@ cd m5stack_stock
 │ SSID:  [WiFi_Home              ]        │
 │ 密碼:  [●●●●●●●●              ]        │
 │                                         │
-│              [連線]                      │
+│        [連線]    [手機配網]              │
 │ 已連線 IP:192.168.1.10                  │
 └─────────────────────────────────────────┘
 ```
@@ -191,6 +184,19 @@ cd m5stack_stock
 | 點擊 AP 名稱 | 自動填入 SSID 欄位 |
 | 點擊輸入框 | 彈出螢幕鍵盤輸入 |
 | **連線** | 連線並儲存設定（下次開機自動重連）|
+| **手機配網** | 啟動 SoftAP + 網頁設定，顯示 QRCode 供手機掃描 |
+
+#### 手機配網（SoftAP + Web Portal）
+
+點擊 **「手機配網」** 後，Core2 會啟動臨時 AP，並在螢幕顯示 QRCode（網址）。
+
+1. 手機連線到 AP：`Core2-Setup`
+2. 密碼：`core2wifi`
+3. 掃描螢幕上的 QRCode（或手動開啟 `http://192.168.4.1`）
+4. 在網頁輸入家中 WiFi `SSID/密碼` 並送出
+5. 裝置成功連線後會自動儲存設定，後續開機自動重連
+
+> 若開機時沒有已儲存的 WiFi 設定，系統也會自動啟動此 Portal 方便快速配網。
 
 ---
 
@@ -293,7 +299,7 @@ https://gist.githubusercontent.com/你的帳號/gist_id/raw/token.json
 | 自動排程 | 報價 30s-10min，AI 分析 5min-2hr 可調 |
 | 市場時段過濾 | 非開盤時間不抓取（省電省流量）|
 | DeepSleep | 休市時段自動深睡，08:55 喚醒 |
-| WiFi 管理 | 掃描 AP、連線、斷線自動重試 |
+| WiFi 管理 | 掃描 AP、手動連線、手機 Portal（SoftAP + QRCode）配網、斷線自動重試 |
 | 觸控 Haptic | 每次點擊都有震動回饋 |
 | 音效警報 | 買入/賣出訊號、AI 完成提示音 |
 | RTC 計時 | BM8563 精確計時，斷電保持 |
@@ -303,17 +309,14 @@ https://gist.githubusercontent.com/你的帳號/gist_id/raw/token.json
 ## 開發指令
 
 ```bash
-# 設定頁面（調整 sdkconfig）
-idf.py menuconfig
-
-# 查看各元件 Flash 佔用
-idf.py size-components
-
 # 只看 log（不重新燒錄）
 ./flash.sh --monitor
 
 # 清除 NVS（重設所有設定）
 ./flash.sh --erase
+
+# 進入 container shell（執行 idf.py menuconfig / size-components 等）
+./flash.sh --shell
 ```
 
 ---

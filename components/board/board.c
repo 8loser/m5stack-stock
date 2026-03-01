@@ -49,6 +49,13 @@ esp_err_t board_init(void)
         ESP_LOGE(TAG, "LCD 初始化失敗");
         return ret;
     }
+    /* 保守起見，初始化後再次確保 LCD 供電/背光已開啟 */
+    if (axp192_set_lcd_power(true) != ESP_OK) {
+        ESP_LOGW(TAG, "LCD 供電開啟失敗");
+    }
+    if (axp192_set_lcd_backlight(255) != ESP_OK) {
+        ESP_LOGW(TAG, "LCD 背光設定失敗");
+    }
 
     /* 4. 觸控 */
     ret = ft6336u_init(I2C_PORT_NUM, TOUCH_ADDR);

@@ -4,6 +4,7 @@
 #include "twse_client.h"
 #include "ai_provider.h"
 #include "wifi_manager.h"
+#include "rtc_bm8563.h"
 #include "app_config.h"
 #include "esp_log.h"
 #include "esp_sntp.h"
@@ -104,10 +105,11 @@ static void do_ai_analysis(void)
         return;
     }
 
+    /* 優先使用遠端 Token，次選本地 NVS Key */
     char api_key[128] = {0};
-    storage_ai_load_key(api_key, sizeof(api_key));
+    ai_provider_get_active_api_key(api_key, sizeof(api_key));
     if (strlen(api_key) == 0) {
-        ESP_LOGW(TAG, "未設定 API Key，跳過 AI 分析");
+        ESP_LOGW(TAG, "未設定 API Key（本地或遠端），跳過 AI 分析");
         return;
     }
 

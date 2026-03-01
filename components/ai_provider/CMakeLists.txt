@@ -8,7 +8,8 @@ idf_component_register(
     INCLUDE_DIRS "include"
     REQUIRES
         esp_http_client
-        cJSON
+        mbedtls
+        json
         storage
         twse_client
         log

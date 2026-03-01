@@ -4,7 +4,7 @@
 #include "ft6336u.h"
 #include "axp192.h"
 #include "vibration.h"
-#include "lvgl.h"
+#include "ui_compat.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -26,15 +26,21 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
 /* LVGL 觸控讀取回調 */
 static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
+    static bool s_last_pressed = false;
     touch_point_t pt;
     ft6336u_read(&pt);
     if (pt.pressed) {
         data->state  = LV_INDEV_STATE_PRESSED;
         data->point.x = pt.x;
         data->point.y = pt.y;
-        vibration_haptic();  /* 觸控 haptic 回饋 */
+        /* 只在按下瞬間震動，避免觸控持續按下時連續震動 */
+        if (!s_last_pressed) {
+            vibration_haptic();
+        }
+        s_last_pressed = true;
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
+        s_last_pressed = false;
     }
 }
 
@@ -55,9 +61,9 @@ extern lv_obj_t *screen_settings_create(void);
 static void lvgl_task(void *arg)
 {
     while (1) {
-        if (xSemaphoreTake(s_ui_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             lv_task_handler();
-            xSemaphoreGive(s_ui_mutex);
+            xSemaphoreGiveRecursive(s_ui_mutex);
         }
         vTaskDelay(pdMS_TO_TICKS(LVGL_TICK_PERIOD_MS));
     }
@@ -126,6 +132,12 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     /* 顯示 Dashboard */
     lv_scr_load(s_screens[SCREEN_DASHBOARD]);
 
+    /* 在頂層建立共用 widgets（覆蓋所有頁面）*/
+    extern void status_bar_create_on(lv_obj_t *parent);
+    extern void loading_spinner_create(lv_obj_t *parent);
+    status_bar_create_on(lv_layer_top());
+    loading_spinner_create(lv_layer_top());
+
     /* 啟動 LVGL 任務 */
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", STACK_LVGL, NULL,
                              TASK_PRIO_LVGL, NULL, 1);
@@ -143,9 +155,9 @@ void ui_manager_switch_screen(screen_id_t id)
 {
     if (id >= 5) return;
     s_cur_screen = id;
-    if (xSemaphoreTake(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         lv_scr_load_anim(s_screens[id], LV_SCR_LOAD_ANIM_SLIDE_LEFT, 200, 0, false);
-        xSemaphoreGive(s_ui_mutex);
+        xSemaphoreGiveRecursive(s_ui_mutex);
     }
 }
 
@@ -156,37 +168,36 @@ screen_id_t ui_manager_get_current_screen(void)
 
 void ui_manager_update_quote(const stock_quote_t *quote)
 {
-    /* 通知 dashboard 更新 */
     extern void screen_dashboard_update(const stock_quote_t *q);
-    if (xSemaphoreTake(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         screen_dashboard_update(quote);
-        xSemaphoreGive(s_ui_mutex);
+        xSemaphoreGiveRecursive(s_ui_mutex);
     }
 }
 
 void ui_manager_update_ai_result(const ai_analysis_result_t *result)
 {
     extern void screen_ai_analysis_update(const ai_analysis_result_t *r);
-    if (xSemaphoreTake(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         screen_ai_analysis_update(result);
-        xSemaphoreGive(s_ui_mutex);
+        xSemaphoreGiveRecursive(s_ui_mutex);
     }
 }
 
 void ui_manager_update_wifi_state(int state, const char *ip)
 {
     extern void status_bar_update_wifi(int state, const char *ip);
-    if (xSemaphoreTake(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         status_bar_update_wifi(state, ip);
-        xSemaphoreGive(s_ui_mutex);
+        xSemaphoreGiveRecursive(s_ui_mutex);
     }
 }
 
 void ui_manager_show_loading(bool show)
 {
     extern void loading_spinner_set_visible(bool v);
-    if (xSemaphoreTake(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         loading_spinner_set_visible(show);
-        xSemaphoreGive(s_ui_mutex);
+        xSemaphoreGiveRecursive(s_ui_mutex);
     }
 }

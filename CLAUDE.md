@@ -6,15 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | 指令 | 說明 |
 |------|------|
-| `./docker-flash.sh` | Container 內 build + flash + monitor（host 不需裝 IDF）|
-| `./docker-flash.sh --build-only` | 只 build |
-| `./docker-flash.sh --flash-only` | 只燒錄 |
-| `./docker-flash.sh --shell` | 進 container shell 除錯 |
-| `./docker-flash.sh --erase` | 清除 NVS 後重新燒錄 |
-| `./flash.sh` | 本機 IDF 環境（需先 `source ~/esp/esp-idf/export.sh`）|
-| `idf.py size-components` | 查看各元件 Flash 佔用 |
+| `./flash.sh` | Container 內 build + flash + monitor |
+| `./flash.sh --build-only` | 只 build |
+| `./flash.sh --flash-only` | 只燒錄 |
+| `./flash.sh --shell` | 進 container shell 除錯 |
+| `./flash.sh --erase` | 清除 NVS 後重新燒錄 |
+| `./flash.sh --monitor` | 只開 monitor |
 
-Container runtime 自動偵測 docker/podman，USB device 直通（`/dev/ttyUSB0`）。
+Container runtime 自動偵測 docker/podman，USB device 直通（`/dev/ttyACM0`），image: `docker.io/espressif/idf:v5.1.4`。
 
 ## Architecture
 
@@ -68,6 +67,8 @@ scheduler Timer（ai_ivl）
 | GitHub Gist redirect | HTTP client 設 `follow_redirects=true, max_redirection_count=3` |
 | BM8563 alarm 暫存器 | `0x80` bit = 不比較；設 alarm 時日期/星期欄位需設 `0x80` |
 | LCD flush callback | `lv_disp_flush_ready` 必須在 SPI DMA 傳輸完成後呼叫 |
+| Monitor 鎖 port | `--monitor` 持有 `/dev/ttyACM0`；flash 前需先 `kill $(lsof -t /dev/ttyACM0)` |
+| UI 字型 | 全英文介面，`UI_FONT_TEXT_DEFAULT = lv_font_montserrat_14`（`components/ui/include/ui_compat.h`）；勿嘗試 CJK 字型 |
 
 ## NVS 命名空間
 

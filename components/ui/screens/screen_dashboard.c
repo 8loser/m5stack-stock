@@ -2,7 +2,7 @@
 #include "app_config.h"
 #include "twse_models.h"
 #include "scheduler.h"
-#include "lvgl.h"
+#include "ui_compat.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -43,6 +43,7 @@ lv_obj_t *screen_dashboard_create(void)
 {
     s_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(s_screen, COLOR_BG, 0);
+    lv_obj_clear_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
 
     /* ---- 狀態列（頂部 20px）---- */
     s_status_bar = lv_obj_create(s_screen);
@@ -56,6 +57,7 @@ lv_obj_t *screen_dashboard_create(void)
     lv_obj_set_size(btn_bar, LCD_WIDTH, 30);
     lv_obj_set_pos(btn_bar, 0, 20);
     lv_obj_set_style_bg_color(btn_bar, lv_color_hex(0x0F3460), 0);
+    lv_obj_clear_flag(btn_bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_layout(btn_bar, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(btn_bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btn_bar, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -65,7 +67,7 @@ lv_obj_t *screen_dashboard_create(void)
     lv_obj_set_size(btn_refresh, 55, 24);
     lv_obj_add_event_cb(btn_refresh, btn_refresh_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_r = lv_label_create(btn_refresh);
-    lv_label_set_text(lbl_r, "刷新");
+    lv_label_set_text(lbl_r, "Refresh");
     lv_obj_center(lbl_r);
 
     /* AI 分析按鈕 */
@@ -74,7 +76,7 @@ lv_obj_t *screen_dashboard_create(void)
     lv_obj_set_style_bg_color(btn_ai, lv_color_hex(0x533483), 0);
     lv_obj_add_event_cb(btn_ai, btn_ai_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_ai = lv_label_create(btn_ai);
-    lv_label_set_text(lbl_ai, "AI分析");
+    lv_label_set_text(lbl_ai, "AI");
     lv_obj_center(lbl_ai);
 
     /* 設定按鈕 */
@@ -83,7 +85,7 @@ lv_obj_t *screen_dashboard_create(void)
     lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x2C3E50), 0);
     lv_obj_add_event_cb(btn_settings, btn_settings_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_s = lv_label_create(btn_settings);
-    lv_label_set_text(lbl_s, "設定");
+    lv_label_set_text(lbl_s, "Settings");
     lv_obj_center(lbl_s);
 
     /* ---- 股票卡片列表（50px x 5 = 250px，從 y=50 開始）---- */
@@ -118,7 +120,7 @@ lv_obj_t *screen_dashboard_create(void)
     /* 最後更新時間 */
     s_update_label = lv_label_create(s_screen);
     lv_obj_set_pos(s_update_label, 4, 232);
-    lv_label_set_text(s_update_label, "最後更新: --:--:--");
+    lv_label_set_text(s_update_label, "Updated: --:--:--");
     lv_obj_set_style_text_color(s_update_label, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(s_update_label, &lv_font_montserrat_10, 0);
 
@@ -145,14 +147,14 @@ void screen_dashboard_update(const stock_quote_t *q)
     if (idx < 0 || idx >= MAX_CARDS) return;
 
     /* 更新名稱 */
-    char name_str[16];
+    char name_str[48];
     snprintf(name_str, sizeof(name_str), "%s\n%s", q->symbol, q->name);
     lv_label_set_text(s_name_labels[idx], name_str);
 
     /* 更新價格 */
     char price_str[16];
     if (q->is_market_closed) {
-        snprintf(price_str, sizeof(price_str), "%.2f\n休市", q->yesterday_close);
+        snprintf(price_str, sizeof(price_str), "%.2f\nclosed", q->yesterday_close);
         lv_obj_set_style_text_color(s_price_labels[idx], lv_color_hex(0x888888), 0);
     } else {
         snprintf(price_str, sizeof(price_str), "%.2f", q->current_price);
@@ -177,6 +179,6 @@ void screen_dashboard_update(const stock_quote_t *q)
 
     /* 更新時間 */
     char time_str[40];
-    snprintf(time_str, sizeof(time_str), "最後更新: %s", q->trade_time);
+    snprintf(time_str, sizeof(time_str), "Updated: %s", q->trade_time);
     lv_label_set_text(s_update_label, time_str);
 }

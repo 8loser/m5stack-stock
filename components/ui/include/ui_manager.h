@@ -1,5 +1,6 @@
 #pragma once
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "twse_models.h"
 #include "ai_provider.h"

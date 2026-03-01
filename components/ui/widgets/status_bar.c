@@ -2,7 +2,7 @@
 #include "axp192.h"
 #include "rtc_bm8563.h"
 #include "app_config.h"
-#include "lvgl.h"
+#include "ui_compat.h"
 #include <stdio.h>
 
 /* 狀態列共用（所有頁面皆可見）*/
@@ -51,14 +51,14 @@ void status_bar_create_on(lv_obj_t *parent)
     /* WiFi 狀態 */
     s_wifi_lbl = lv_label_create(bar);
     lv_obj_align(s_wifi_lbl, LV_ALIGN_CENTER, 0, 0);
-    lv_label_set_text(s_wifi_lbl, LV_SYMBOL_WIFI " --");
+    lv_label_set_text(s_wifi_lbl, "WiFi --");
     lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(s_wifi_lbl, &lv_font_montserrat_10, 0);
 
     /* 電量 */
     s_batt_lbl = lv_label_create(bar);
     lv_obj_align(s_batt_lbl, LV_ALIGN_RIGHT_MID, -4, 0);
-    lv_label_set_text(s_batt_lbl, LV_SYMBOL_BATTERY_FULL);
+    lv_label_set_text(s_batt_lbl, "BAT --%");
     lv_obj_set_style_text_color(s_batt_lbl, lv_color_hex(0x44BB44), 0);
     lv_obj_set_style_text_font(s_batt_lbl, &lv_font_montserrat_10, 0);
 
@@ -74,13 +74,13 @@ void status_bar_update_wifi(int state, const char *ip)
     if (!s_wifi_lbl) return;
     char buf[32];
     if (state == 2 /* CONNECTED */) {
-        snprintf(buf, sizeof(buf), LV_SYMBOL_WIFI " %s", ip ? ip : "OK");
+        snprintf(buf, sizeof(buf), "WiFi %s", ip ? ip : "OK");
         lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0x44BB44), 0);
     } else if (state == 1 /* CONNECTING */) {
-        snprintf(buf, sizeof(buf), LV_SYMBOL_WIFI " 連線中");
+        snprintf(buf, sizeof(buf), "WiFi Connecting");
         lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0xFFAA00), 0);
     } else {
-        snprintf(buf, sizeof(buf), LV_SYMBOL_WIFI " 未連線");
+        snprintf(buf, sizeof(buf), "WiFi Offline");
         lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0xFF4444), 0);
     }
     lv_label_set_text(s_wifi_lbl, buf);

@@ -1,8 +1,11 @@
 #include "ili9342c.h"
 #include "app_config.h"
 #include "esp_log.h"
+#include "esp_lcd_panel_vendor.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "ili9342c";
 
@@ -35,6 +38,24 @@ static const uint8_t s_init_cmds[][20] = {
 
 static esp_lcd_panel_handle_t s_panel = NULL;
 static esp_lcd_panel_io_handle_t s_io = NULL;
+
+static esp_err_t ili9342c_send_init_sequence(void)
+{
+    for (int i = 0; s_init_cmds[i][1] != 0xFF; ++i) {
+        uint8_t cmd = s_init_cmds[i][0];
+        uint8_t len = s_init_cmds[i][1];
+        const void *data = (len > 0) ? &s_init_cmds[i][2] : NULL;
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, cmd, data, len));
+
+        /* Common panel delays: Sleep Out / Display On */
+        if (cmd == 0x11) {
+            vTaskDelay(pdMS_TO_TICKS(120));
+        } else if (cmd == 0x29) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+    }
+    return ESP_OK;
+}
 
 esp_err_t ili9342c_init(esp_lcd_panel_handle_t *panel_out,
                          esp_lcd_panel_io_handle_t *io_out)
@@ -69,17 +90,19 @@ esp_err_t ili9342c_init(esp_lcd_panel_handle_t *panel_out,
     ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_cfg, &s_io);
     if (ret != ESP_OK) return ret;
 
-    /* Panel 驅動（使用 ILI9341 相容驅動）*/
+    /* Panel 驅動：IDF 5.1 內建 SPI RGB565 panel factory */
     esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = LCD_RST_GPIO,
         .color_space    = ESP_LCD_COLOR_SPACE_BGR,
         .bits_per_pixel = 16,
     };
-    ret = esp_lcd_new_panel_ili9341(s_io, &panel_cfg, &s_panel);
+    ret = esp_lcd_new_panel_st7789(s_io, &panel_cfg, &s_panel);
     if (ret != ESP_OK) return ret;
 
     esp_lcd_panel_reset(s_panel);
     esp_lcd_panel_init(s_panel);
+    ret = ili9342c_send_init_sequence();
+    if (ret != ESP_OK) return ret;
     esp_lcd_panel_mirror(s_panel, false, false);
     esp_lcd_panel_swap_xy(s_panel, false);
     esp_lcd_panel_disp_on_off(s_panel, true);

@@ -6,6 +6,7 @@ idf_component_register(
     REQUIRES
         esp_timer
         esp_wifi
+        esp_hw_support
         storage
         twse_client
         ai_provider

@@ -1,7 +1,10 @@
 #include "ai_provider.h"
 #include "app_config.h"
 #include "storage.h"
+#include "esp_http_client.h"
+#include "esp_crt_bundle.h"
 #include "esp_log.h"
+#include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -101,7 +104,7 @@ esp_err_t ai_provider_fetch_remote_token_config(const char *url)
         .user_data         = &ctx,
         .timeout_ms        = 15000,
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .follow_redirects  = true,   /* GitHub Gist raw URL 會 302 redirect */
+        .disable_auto_redirect = false, /* 允許自動跟隨 30x */
         .max_redirection_count = 3,
     };
     esp_http_client_handle_t client = esp_http_client_init(&cfg);

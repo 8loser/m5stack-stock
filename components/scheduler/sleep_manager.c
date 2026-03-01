@@ -1,6 +1,7 @@
 #include "sleep_manager.h"
 #include "app_config.h"
 #include "rtc_bm8563.h"
+#include "axp192.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"

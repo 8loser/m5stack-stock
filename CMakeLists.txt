@@ -10,5 +10,8 @@ set(EXTRA_COMPONENT_DIRS
     components/ui
 )
 
+# Shared project headers (e.g. app_config.h) used by multiple components.
+include_directories(${CMAKE_SOURCE_DIR}/include)
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(m5stack_stock)

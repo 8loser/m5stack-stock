@@ -25,6 +25,14 @@ wifi_state_t wifi_manager_get_state(void);
 bool         wifi_manager_is_connected(void);
 const char  *wifi_manager_get_ip(void);
 
+/* 手機配網入口（SoftAP + HTTP） */
+esp_err_t   wifi_manager_start_provisioning_portal(void);
+esp_err_t   wifi_manager_stop_provisioning_portal(void);
+bool        wifi_manager_is_provisioning_portal_active(void);
+const char *wifi_manager_get_provisioning_ap_ssid(void);
+const char *wifi_manager_get_provisioning_ap_password(void);
+const char *wifi_manager_get_provisioning_url(void);
+
 /* AP 掃描 */
 esp_err_t   wifi_manager_scan(wifi_ap_info_t *results, uint16_t *count,
                                uint16_t max_count);

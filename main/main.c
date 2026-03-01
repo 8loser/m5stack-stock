@@ -18,6 +18,12 @@
 
 static const char *TAG = "main";
 
+/* WiFi 狀態回調：橋接 wifi_manager → ui_manager */
+static void on_wifi_state(wifi_state_t state, const char *ip)
+{
+    ui_manager_update_wifi_state((int)state, ip);
+}
+
 /* 全域共用資源 */
 QueueHandle_t   g_quote_queue      = NULL;
 QueueHandle_t   g_ai_result_queue  = NULL;
@@ -27,7 +33,8 @@ static void init_global_resources(void)
 {
     g_quote_queue     = xQueueCreate(MAX_STOCK_COUNT, sizeof(stock_quote_t));
     g_ai_result_queue = xQueueCreate(1, sizeof(ai_analysis_result_t));
-    g_ui_mutex        = xSemaphoreCreateMutex();
+    /* 遞迴 mutex：LVGL task 持有 mutex 時，事件回調仍可安全呼叫 ui_manager_* */
+    g_ui_mutex        = xSemaphoreCreateRecursiveMutex();
 
     if (!g_quote_queue || !g_ai_result_queue || !g_ui_mutex) {
         ESP_LOGE(TAG, "FreeRTOS 資源建立失敗");
@@ -65,9 +72,15 @@ void app_main(void)
 
     ESP_LOGI(TAG, "初始化 WiFi...");
     ESP_ERROR_CHECK(wifi_manager_init());
+    wifi_manager_set_callback(on_wifi_state);
 
-    /* 嘗試自動連線 */
-    wifi_manager_connect_saved();
+    /* 嘗試自動連線；若無設定則啟動手機配網入口 */
+    ret = wifi_manager_connect_saved();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "未連上既有 WiFi，啟動手機配網 Portal");
+        wifi_manager_start_provisioning_portal();
+        ui_manager_switch_screen(SCREEN_WIFI);
+    }
 
     /* Phase 4: TWSE Client */
     ESP_LOGI(TAG, "初始化 TWSE Client...");
@@ -83,16 +96,27 @@ void app_main(void)
 
     ESP_LOGI(TAG, "=== 系統啟動完成 ===");
 
-    /* 主迴圈：監控系統健康度 */
-    while (1) {
-        size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
-        size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-        ESP_LOGD(TAG, "Heap: %u bytes, PSRAM: %u bytes", free_heap, free_psram);
+    /* 主迴圈：消費 queue 資料 → 驅動 UI 更新 */
+    stock_quote_t      quote;
+    ai_analysis_result_t ai_result;
 
+    while (1) {
+        /* 讀取所有待處理的報價更新 */
+        while (xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
+            ui_manager_update_quote(&quote);
+        }
+
+        /* 讀取 AI 分析結果（最多一個，已用 xQueueOverwrite 保持最新）*/
+        if (xQueueReceive(g_ai_result_queue, &ai_result, 0) == pdTRUE) {
+            ui_manager_update_ai_result(&ai_result);
+        }
+
+        /* 每 100ms 輪詢一次，同時監控堆疊健康度 */
+        size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
         if (free_heap < 8192) {
             ESP_LOGW(TAG, "heap 不足警告: %u bytes", free_heap);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

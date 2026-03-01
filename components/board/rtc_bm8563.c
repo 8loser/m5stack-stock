@@ -6,11 +6,10 @@ static const char *TAG = "bm8563";
 static i2c_port_t s_port;
 static uint8_t    s_addr;
 
-/* BM8563 暫存器 */
+/* BM8563 暫存器（BM_REG_ALARM_MIN 定義在 rtc_bm8563.h）*/
 #define BM_REG_CTRL1    0x00
 #define BM_REG_CTRL2    0x01
 #define BM_REG_SECONDS  0x02
-#define BM_REG_ALARM_MIN 0x09
 
 static uint8_t bcd2dec(uint8_t bcd) { return (bcd >> 4) * 10 + (bcd & 0x0F); }
 static uint8_t dec2bcd(uint8_t dec) { return ((dec / 10) << 4) | (dec % 10); }

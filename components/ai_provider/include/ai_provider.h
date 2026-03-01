@@ -1,6 +1,8 @@
 #pragma once
+#include "app_config.h"
 #include "twse_models.h"
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include <stdint.h>
 

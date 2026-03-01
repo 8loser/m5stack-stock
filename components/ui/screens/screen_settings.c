@@ -3,7 +3,7 @@
 #include "storage.h"
 #include "scheduler.h"
 #include "app_config.h"
-#include "lvgl.h"
+#include "ui_compat.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -38,12 +38,12 @@ static void btn_save_all_cb(lv_event_t *e)
     const char *token_url = lv_textarea_get_text(s_remote_token_url_ta);
     storage_ai_save_remote_cfg_url(token_url);
     if (strlen(token_url) > 0) {
-        lv_label_set_text(s_status_lbl, "立即抓取 Token 設定...");
+        lv_label_set_text(s_status_lbl, "Fetching token...");
         esp_err_t ret = ai_provider_fetch_remote_token_config(token_url);
         if (ret == ESP_OK) {
-            lv_label_set_text(s_status_lbl, "Token 設定載入成功！");
+            lv_label_set_text(s_status_lbl, "Token loaded!");
         } else {
-            lv_label_set_text(s_status_lbl, "Token URL 失敗（用本地設定）");
+            lv_label_set_text(s_status_lbl, "Token URL failed (using local)");
         }
     }
 
@@ -53,7 +53,7 @@ static void btn_save_all_cb(lv_event_t *e)
 
     /* 若 URL 非空則立即嘗試下載 */
     if (strlen(prompt_url) > 0) {
-        lv_label_set_text(s_status_lbl, "下載遠端 Prompt...");
+        lv_label_set_text(s_status_lbl, "Downloading prompt...");
         esp_err_t ret = ai_provider_fetch_remote_prompt(prompt_url);
         if (ret == ESP_OK) {
             const remote_prompt_config_t *rp = ai_provider_get_remote_prompt();
@@ -77,9 +77,9 @@ static void btn_save_all_cb(lv_event_t *e)
                 }
                 storage_stocks_save(&list);
             }
-            lv_label_set_text(s_status_lbl, "Prompt 載入成功！");
+            lv_label_set_text(s_status_lbl, "Prompt loaded!");
         } else {
-            lv_label_set_text(s_status_lbl, "Prompt 下載失敗（用預設）");
+            lv_label_set_text(s_status_lbl, "Prompt failed (using default)");
         }
     }
 
@@ -101,7 +101,7 @@ static void btn_save_all_cb(lv_event_t *e)
         storage_stocks_save(&list);
     }
 
-    lv_label_set_text(s_status_lbl, "所有設定已儲存！");
+    lv_label_set_text(s_status_lbl, "All settings saved!");
 }
 
 static void btn_wifi_cb(lv_event_t *e)
@@ -151,12 +151,12 @@ lv_obj_t *screen_settings_create(void)
     lv_obj_set_style_bg_color(btn_back, lv_color_hex(0x2C3E50), 0);
     lv_obj_add_event_cb(btn_back, btn_back_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_b = lv_label_create(btn_back);
-    lv_label_set_text(lbl_b, "< 返回");
+    lv_label_set_text(lbl_b, "< Back");
     lv_obj_center(lbl_b);
 
     lv_obj_t *title = lv_label_create(topbar);
     lv_obj_align(title, LV_ALIGN_CENTER, 20, 0);
-    lv_label_set_text(title, "系統設定");
+    lv_label_set_text(title, "Settings");
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
 
@@ -186,7 +186,7 @@ lv_obj_t *screen_settings_create(void)
     lv_obj_set_size(s_apikey_ta, LCD_WIDTH - 8, 34);
     lv_textarea_set_one_line(s_apikey_ta, true);
     lv_textarea_set_password_mode(s_apikey_ta, true);
-    lv_textarea_set_placeholder_text(s_apikey_ta, "貼上 API Key");
+    lv_textarea_set_placeholder_text(s_apikey_ta, "Paste API Key");
     lv_obj_add_event_cb(s_apikey_ta, ta_focused_cb, LV_EVENT_FOCUSED, NULL);
 
     /* 載入已儲存的 Key */
@@ -196,11 +196,11 @@ lv_obj_t *screen_settings_create(void)
 
     /* ---- 遠端 Token 設定 URL（開機自動抓取）---- */
     lv_obj_t *token_url_lbl = lv_label_create(cont);
-    lv_label_set_text(token_url_lbl, "遠端 Token 設定 URL:");
+    lv_label_set_text(token_url_lbl, "Remote Token URL:");
     lv_obj_set_style_text_color(token_url_lbl, lv_color_hex(0xCCCCCC), 0);
 
     lv_obj_t *token_url_hint = lv_label_create(cont);
-    lv_label_set_text(token_url_hint, "(開機自動抓取 provider + api_key，擇一使用)");
+    lv_label_set_text(token_url_hint, "(auto-fetch on boot, overrides local key)");
     lv_obj_set_style_text_color(token_url_hint, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(token_url_hint, &lv_font_montserrat_10, 0);
 
@@ -218,11 +218,11 @@ lv_obj_t *screen_settings_create(void)
 
     /* ---- 遠端 Prompt URL ---- */
     lv_obj_t *url_lbl = lv_label_create(cont);
-    lv_label_set_text(url_lbl, "遠端 Prompt URL:");
+    lv_label_set_text(url_lbl, "Remote Prompt URL:");
     lv_obj_set_style_text_color(url_lbl, lv_color_hex(0xCCCCCC), 0);
 
     lv_obj_t *url_hint = lv_label_create(cont);
-    lv_label_set_text(url_hint, "(JSON 格式，指定分析股票與訊號來源)");
+    lv_label_set_text(url_hint, "(JSON: stocks & analysis source)");
     lv_obj_set_style_text_color(url_hint, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(url_hint, &lv_font_montserrat_10, 0);
 
@@ -238,7 +238,7 @@ lv_obj_t *screen_settings_create(void)
 
     /* ---- 股票清單 ---- */
     lv_obj_t *stocks_lbl = lv_label_create(cont);
-    lv_label_set_text(stocks_lbl, "監控股票（逗號分隔）:");
+    lv_label_set_text(stocks_lbl, "Stocks (comma separated):");
     lv_obj_set_style_text_color(stocks_lbl, lv_color_hex(0xCCCCCC), 0);
 
     s_stocks_ta = lv_textarea_create(cont);
@@ -260,7 +260,6 @@ lv_obj_t *screen_settings_create(void)
     lv_obj_t *btn_row = lv_obj_create(cont);
     lv_obj_set_size(btn_row, LCD_WIDTH - 8, 36);
     lv_obj_set_style_bg_color(btn_row, lv_color_hex(0x1A1A2E), 0);
-    lv_obj_set_style_pad_color(btn_row, lv_color_hex(0x1A1A2E), 0);
     lv_obj_set_layout(btn_row, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(btn_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btn_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -270,7 +269,7 @@ lv_obj_t *screen_settings_create(void)
     lv_obj_set_style_bg_color(btn_wifi, lv_color_hex(0x2980B9), 0);
     lv_obj_add_event_cb(btn_wifi, btn_wifi_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_wifi = lv_label_create(btn_wifi);
-    lv_label_set_text(lbl_wifi, "WiFi設定");
+    lv_label_set_text(lbl_wifi, "WiFi");
     lv_obj_center(lbl_wifi);
 
     lv_obj_t *btn_sched = lv_btn_create(btn_row);
@@ -278,7 +277,7 @@ lv_obj_t *screen_settings_create(void)
     lv_obj_set_style_bg_color(btn_sched, lv_color_hex(0x8E44AD), 0);
     lv_obj_add_event_cb(btn_sched, btn_schedule_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_sched = lv_label_create(btn_sched);
-    lv_label_set_text(lbl_sched, "排程設定");
+    lv_label_set_text(lbl_sched, "Schedule");
     lv_obj_center(lbl_sched);
 
     lv_obj_t *btn_save = lv_btn_create(btn_row);
@@ -286,7 +285,7 @@ lv_obj_t *screen_settings_create(void)
     lv_obj_set_style_bg_color(btn_save, lv_color_hex(0x27AE60), 0);
     lv_obj_add_event_cb(btn_save, btn_save_all_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_save = lv_label_create(btn_save);
-    lv_label_set_text(lbl_save, "儲存全部");
+    lv_label_set_text(lbl_save, "Save All");
     lv_obj_center(lbl_save);
 
     /* 狀態訊息 */
