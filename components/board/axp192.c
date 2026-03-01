@@ -65,8 +65,8 @@ esp_err_t axp192_init(i2c_port_t port, uint8_t addr)
     ret = axp192_set_vibration(false);
     if (ret != ESP_OK) return ret;
 
-    /* 充電設定：4.2V, 780mA */
-    ret = axp192_write_reg(AXP192_REG_CHARGE_CTRL1, 0xC0);
+    /* 充電設定：4.2V, 780mA (bit7=enable, bit[6:5]=10→4.2V, bit[3:0]=1000→780mA) */
+    ret = axp192_write_reg(AXP192_REG_CHARGE_CTRL1, 0xC8);
     if (ret != ESP_OK) return ret;
 
     ESP_LOGI(TAG, "AXP192 初始化完成");
