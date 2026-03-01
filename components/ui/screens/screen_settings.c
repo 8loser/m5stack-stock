@@ -108,6 +108,10 @@ void screen_settings_load(void)
 
     s_selected_interval_idx = best_idx;
     update_interval_toggle_styles();
+    if (s_feedback_lbl != NULL) {
+        lv_label_set_text(s_feedback_lbl, "");
+        lv_obj_set_style_text_color(s_feedback_lbl, lv_color_hex(0xB0BEC5), 0);
+    }
     ESP_LOGI(TAG, "loaded: quote=%us selected_idx=%u",
              cfg.quote_interval_s, (unsigned)best_idx);
 }
@@ -143,7 +147,7 @@ lv_obj_t *screen_settings_create(void)
     }
 
     s_feedback_lbl = lv_label_create(screen);
-    lv_label_set_text(s_feedback_lbl, "Tap 1/5/10 min to save");
+    lv_label_set_text(s_feedback_lbl, "");
     lv_obj_set_width(s_feedback_lbl, 280);
     lv_obj_set_style_text_align(s_feedback_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(s_feedback_lbl, settings_font(), 0);
