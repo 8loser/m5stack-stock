@@ -32,14 +32,3 @@ TBD - created by archiving change add-log-screen. Update Purpose after archive.
 - **WHEN** 主迴圈 `xQueueReceive(g_quote_queue)` 立即回傳 `pdFALSE`
 - **THEN** 不寫入任何 STOCK log
 
-### Requirement: AI Result Queue 消費並寫入 log
-主迴圈 SHALL 非阻塞地輪詢 `g_ai_result_queue`，接收到 AI 分析結果時寫入 AI log。
-
-#### Scenario: 收到 AI 分析結果
-- **WHEN** `xQueueReceive(g_ai_result_queue, &ai_result, 0)` 回傳 `pdTRUE`
-- **THEN** 呼叫 `ui_manager_log_ai(LOG_LEVEL_INFO, "AI: %.50s", ai_result.analysis)`（前 50 字元）
-
-#### Scenario: 無 AI 結果
-- **WHEN** `g_ai_result_queue` 為空
-- **THEN** 主迴圈正常繼續，不阻塞
-

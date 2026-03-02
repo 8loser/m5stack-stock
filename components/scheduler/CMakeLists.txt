@@ -9,7 +9,6 @@ idf_component_register(
         esp_hw_support
         storage
         twse_client
-        ai_provider
         board
         log
         freertos

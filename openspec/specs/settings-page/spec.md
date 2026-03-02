@@ -17,9 +17,8 @@ Settings 頁面 SHALL 提供 3 個 interval 按鈕：`1 min` / `5 min` / `10 min
 ### Requirement: 點擊按鈕即時儲存
 使用者點擊任一 interval 按鈕時，Settings 頁面 SHALL 立即：
 1. 更新 `cfg.quote_interval_s`
-2. 保留其餘欄位（如 `ai_interval_min`）
-3. 呼叫 `scheduler_apply_config(&cfg)` 使設定即時生效
-4. 呼叫 `storage_schedule_save(&cfg)` 持久化到 NVS
+2. 呼叫 `scheduler_apply_config(&cfg)` 使設定即時生效
+3. 呼叫 `storage_schedule_save(&cfg)` 持久化到 NVS
 
 #### Scenario: 點擊 5 min
 - **WHEN** 使用者點擊 `5 min`
@@ -37,4 +36,3 @@ Settings 頁面 SHALL 在每次儲存後顯示結果文字訊息：
 #### Scenario: 儲存失敗
 - **WHEN** 任一儲存流程回傳錯誤
 - **THEN** 畫面顯示 `Save failed`
-

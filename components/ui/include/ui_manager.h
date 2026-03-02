@@ -28,7 +28,6 @@ void ui_manager_update_wifi_state(int state, const char *ip);
 void ui_manager_show_loading(bool show);
 void ui_manager_log_stock(log_level_t level, const char *fmt, ...);
 void ui_manager_log_wifi(log_level_t level, const char *fmt, ...);
-void ui_manager_log_ai(log_level_t level, const char *fmt, ...);
 void ui_manager_log_sys(log_level_t level, const char *fmt, ...);
 
 /* LVGL tick（由 esp_timer 呼叫）*/

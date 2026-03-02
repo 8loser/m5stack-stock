@@ -221,12 +221,11 @@ esp_err_t storage_schedule_save(const schedule_config_t *cfg)
     if (ret != ESP_OK) return ret;
 
     nvs_set_u16(h, "quote_ivl", cfg->quote_interval_s);
-    nvs_set_u16(h, "ai_ivl",    cfg->ai_interval_min);
     nvs_set_u8(h,  "mkt_only",  cfg->market_only ? 1 : 0);
     ret = nvs_commit(h);
     nvs_close(h);
-    ESP_LOGI(TAG, "排程設定已儲存：報價=%ds AI=%dmin",
-             cfg->quote_interval_s, cfg->ai_interval_min);
+    ESP_LOGI(TAG, "排程設定已儲存：報價=%ds market_only=%d",
+             cfg->quote_interval_s, cfg->market_only ? 1 : 0);
     return ret;
 }
 
@@ -237,14 +236,12 @@ esp_err_t storage_schedule_load(schedule_config_t *cfg)
     if (ret != ESP_OK) {
         /* 預設值 */
         cfg->quote_interval_s = DEFAULT_QUOTE_INTERVAL_S;
-        cfg->ai_interval_min  = DEFAULT_AI_INTERVAL_MIN;
         cfg->market_only      = DEFAULT_MARKET_ONLY;
         return ESP_OK;
     }
 
     uint8_t mkt = 1;
     nvs_get_u16(h, "quote_ivl", &cfg->quote_interval_s);
-    nvs_get_u16(h, "ai_ivl",    &cfg->ai_interval_min);
     nvs_get_u8(h,  "mkt_only",  &mkt);
     cfg->market_only = (mkt != 0);
     nvs_close(h);

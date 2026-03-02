@@ -1,5 +1,4 @@
 #include "app_config.h"
-#include "ai_provider.h"
 #include "esp_chip_info.h"
 #include "esp_system.h"
 #include "storage.h"
@@ -14,11 +13,9 @@
 static lv_obj_t *s_section_lbl_0 = NULL;
 static lv_obj_t *s_section_lbl_1 = NULL;
 static lv_obj_t *s_section_lbl_2 = NULL;
-static lv_obj_t *s_section_lbl_3 = NULL;
 static lv_obj_t *s_content_lbl_0 = NULL;
 static lv_obj_t *s_content_lbl_1 = NULL;
 static lv_obj_t *s_content_lbl_2 = NULL;
-static lv_obj_t *s_content_lbl_3 = NULL;
 
 static const lv_font_t *info_font(void)
 {
@@ -87,8 +84,7 @@ static const char *chip_model_to_text(esp_chip_model_t model)
 
 void screen_info_refresh(void)
 {
-    if (s_content_lbl_0 == NULL || s_content_lbl_1 == NULL ||
-        s_content_lbl_2 == NULL || s_content_lbl_3 == NULL) {
+    if (s_content_lbl_0 == NULL || s_content_lbl_1 == NULL || s_content_lbl_2 == NULL) {
         return;
     }
 
@@ -131,47 +127,38 @@ void screen_info_refresh(void)
     }
 
     {
-        char api_key[128] = {0};
-        char key_masked[24];
-        char ai_text[160];
-        const char *provider_name = "Not configured";
-        size_t key_len;
-
-        ai_provider_get_active_api_key(api_key, sizeof(api_key));
-        key_len = strlen(api_key);
-        if (key_len >= 4) {
-            provider_name = ai_provider_get_name();
-            snprintf(key_masked, sizeof(key_masked), "****%s", api_key + key_len - 4);
-        } else if (key_len > 0) {
-            provider_name = ai_provider_get_name();
-            snprintf(key_masked, sizeof(key_masked), "****");
-        } else {
-            snprintf(key_masked, sizeof(key_masked), "Not configured");
-        }
-
-        if (provider_name == NULL || provider_name[0] == '\0') {
-            provider_name = "Unknown";
-        }
-
-        snprintf(ai_text, sizeof(ai_text),
-                 "Provider: %s\nKey: %s",
-                 provider_name,
-                 key_masked);
-        lv_label_set_text(s_content_lbl_2, ai_text);
-    }
-
-    {
         schedule_config_t schedule = {0};
-        char stocks_text[128];
+        stock_list_t stocks = {0};
+        char symbols_text[200] = {0};
+        char stocks_text[320];
+        size_t pos = 0;
 
         storage_schedule_load(&schedule);
+        storage_stocks_load(&stocks);
+
+        if (stocks.count == 0) {
+            strlcpy(symbols_text, "None", sizeof(symbols_text));
+        } else {
+            for (uint8_t i = 0; i < stocks.count && pos + 1 < sizeof(symbols_text); i++) {
+                int n = snprintf(symbols_text + pos, sizeof(symbols_text) - pos, "%s%s",
+                                 (i == 0) ? "" : " ", stocks.symbols[i]);
+                if (n < 0) {
+                    break;
+                }
+                pos += (size_t)n;
+                if (pos >= sizeof(symbols_text)) {
+                    symbols_text[sizeof(symbols_text) - 1] = '\0';
+                    break;
+                }
+            }
+        }
 
         snprintf(stocks_text, sizeof(stocks_text),
-                 "Quote Update: %us  AI Interval: %umin  Market Hours Only: %c",
+                 "Quote: %us  Market-only: %c\nSymbols: %s",
                  (unsigned)schedule.quote_interval_s,
-                 (unsigned)schedule.ai_interval_min,
-                 schedule.market_only ? 'Y' : 'N');
-        lv_label_set_text(s_content_lbl_3, stocks_text);
+                 schedule.market_only ? 'Y' : 'N',
+                 symbols_text);
+        lv_label_set_text(s_content_lbl_2, stocks_text);
     }
 }
 
@@ -218,7 +205,7 @@ lv_obj_t *screen_info_create(void)
     lv_obj_set_style_text_font(s_content_lbl_1, info_font(), 0);
 
     s_section_lbl_2 = lv_label_create(container);
-    lv_label_set_text(s_section_lbl_2, "AI");
+    lv_label_set_text(s_section_lbl_2, "STOCKS");
     lv_obj_set_width(s_section_lbl_2, LCD_WIDTH - 16);
     lv_obj_set_style_text_color(s_section_lbl_2, COLOR_SECTION, 0);
     lv_obj_set_style_text_font(s_section_lbl_2, info_font(), 0);
@@ -228,18 +215,6 @@ lv_obj_t *screen_info_create(void)
     lv_label_set_long_mode(s_content_lbl_2, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_color(s_content_lbl_2, lv_color_white(), 0);
     lv_obj_set_style_text_font(s_content_lbl_2, info_font(), 0);
-
-    s_section_lbl_3 = lv_label_create(container);
-    lv_label_set_text(s_section_lbl_3, "STOCKS");
-    lv_obj_set_width(s_section_lbl_3, LCD_WIDTH - 16);
-    lv_obj_set_style_text_color(s_section_lbl_3, COLOR_SECTION, 0);
-    lv_obj_set_style_text_font(s_section_lbl_3, info_font(), 0);
-
-    s_content_lbl_3 = lv_label_create(container);
-    lv_obj_set_width(s_content_lbl_3, LCD_WIDTH - 16);
-    lv_label_set_long_mode(s_content_lbl_3, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_color(s_content_lbl_3, lv_color_white(), 0);
-    lv_obj_set_style_text_font(s_content_lbl_3, info_font(), 0);
 
     screen_info_refresh();
 

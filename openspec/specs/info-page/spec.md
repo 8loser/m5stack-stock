@@ -31,38 +31,24 @@ Info 頁面 SHALL 顯示 Network section，包含：
 - **WHEN** `storage_wifi_load()` 回傳錯誤或 SSID 為空
 - **THEN** SSID 顯示 "Not saved"
 
-### Requirement: AI section 顯示
-Info 頁面 SHALL 顯示 AI section，包含：
-- `Provider: <Gemini|Claude|OpenAI>`（`ai_provider_get_name()` 回傳值）
-- `Key: ****<last4>`（`ai_provider_get_active_api_key()` 讀取後遮蔽，僅顯示末 4 碼）；
-  key 長度 < 4 且非空顯示 "****"；完全空白顯示 "Not configured"
-
-#### Scenario: API key 已設定
-- **WHEN** NVS 中有長度 ≥ 4 的 API key
-- **THEN** 顯示 `Key: ****XXXX`（XXXX 為末 4 碼）
-
-#### Scenario: API key 未設定
-- **WHEN** NVS 中無 API key（空字串）
-- **THEN** 顯示 `Key: Not configured`
-
 ### Requirement: Stocks section 顯示
 Info 頁面 SHALL 顯示 Stocks section，包含：
-- 排程參數：`Quote: <Xs>  AI: <Xmin>  Market-only: <Y/N>`
+- 排程參數：`Quote: <Xs>  Market-only: <Y/N>`（移除 AI interval）
 - 股票清單：每支代號以空格分隔顯示於同一或多行；若清單為空顯示 "None"
 
 #### Scenario: 有股票清單
 - **WHEN** `storage_stocks_load()` 回傳 count > 0
-- **THEN** 顯示所有 symbol，空格分隔，加上排程參數
+- **THEN** 顯示所有 symbol，空格分隔，加上排程參數（不含 AI interval）
 
 #### Scenario: 清單為空
 - **WHEN** `storage_stocks_load()` 回傳 count = 0
 - **THEN** 股票清單顯示 "None"
 
 ### Requirement: 可滾動佈局
-Info 頁面 SHALL 使用可垂直捲動的容器（y=30, height=190px）容納四個 section，當內容超出可視範圍時使用者可上下滑動瀏覽。
+Info 頁面 SHALL 使用可垂直捲動的容器（y=30, height=190px）容納三個 section（Device、Network、Stocks），當內容超出可視範圍時使用者可上下滑動瀏覽。
 
 #### Scenario: 內容超出可視範圍
-- **WHEN** 四個 section 總高度超過 190px
+- **WHEN** 三個 section 總高度超過 190px
 - **THEN** 使用者可向下滑動查看 Stocks section 完整內容
 
 ### Requirement: 進入頁面時一次性刷新
@@ -70,5 +56,4 @@ Info 頁面 SHALL 使用可垂直捲動的容器（y=30, height=190px）容納�
 
 #### Scenario: 切換至 Info 頁面
 - **WHEN** `ui_manager_switch_screen(SCREEN_INFO)` 被呼叫
-- **THEN** `screen_info_refresh()` 在 mutex 持有期間執行，更新 8 個 label 文字
-
+- **THEN** `screen_info_refresh()` 在 mutex 持有期間執行，更新 6 個 label 文字（Device、Network、Stocks 各 2 個）

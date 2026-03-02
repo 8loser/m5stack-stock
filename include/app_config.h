@@ -40,14 +40,12 @@
 #define TASK_PRIO_LVGL          5
 #define TASK_PRIO_WIFI          5
 #define TASK_PRIO_TWSE          4
-#define TASK_PRIO_AI            3
 #define TASK_PRIO_SCHEDULER     2
 
 /* --- FreeRTOS Stack 大小（byte）--- */
 #define STACK_LVGL              8192
 #define STACK_WIFI              6144
 #define STACK_TWSE              6144
-#define STACK_AI                8192
 #define STACK_SCHEDULER         8192
 
 /* --- NVS Namespace --- */
@@ -64,7 +62,6 @@
 
 /* --- 排程預設值 --- */
 #define DEFAULT_QUOTE_INTERVAL_S    60      /* 報價更新間隔（秒）*/
-#define DEFAULT_AI_INTERVAL_MIN     30      /* AI 分析間隔（分鐘，使用者可調）*/
 #define DEFAULT_MARKET_ONLY         false   /* 全天候更新 */
 
 /* --- WiFi 手機配網 Portal --- */
@@ -83,10 +80,6 @@
 /* --- TWSE API --- */
 #define TWSE_BASE_URL           "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
 #define HTTP_TIMEOUT_MS         15000
-
-/* --- AI 分析 --- */
-#define AI_HTTP_TIMEOUT_MS      30000
-#define AI_ANALYSIS_MAX_LEN     512
 
 /* --- 震動馬達 --- */
 #define VIBRATION_HAPTIC_MS     30    /* 觸控 haptic 震動時間 */

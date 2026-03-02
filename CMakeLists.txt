@@ -5,10 +5,10 @@ set(EXTRA_COMPONENT_DIRS
     components/storage
     components/wifi_manager
     components/twse_client
-    components/ai_provider
     components/scheduler
     components/ui
 )
+set(EXCLUDE_COMPONENTS ai_provider)
 
 # Shared project headers (e.g. app_config.h) used by multiple components.
 include_directories(${CMAKE_SOURCE_DIR}/include)

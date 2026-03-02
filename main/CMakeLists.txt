@@ -6,7 +6,6 @@ idf_component_register(
         storage
         wifi_manager
         twse_client
-        ai_provider
         scheduler
         ui
         nvs_flash

@@ -15,7 +15,6 @@ idf_component_register(
         board
         storage
         twse_client
-        ai_provider
         scheduler
         wifi_manager
         freertos

@@ -12,7 +12,6 @@
 #include "storage.h"
 #include "wifi_manager.h"
 #include "twse_client.h"
-#include "ai_provider.h"
 #include "scheduler.h"
 #include "ui_manager.h"
 
@@ -34,17 +33,15 @@ static void on_wifi_state(wifi_state_t state, const char *ip)
 
 /* 全域共用資源 */
 QueueHandle_t   g_quote_queue      = NULL;
-QueueHandle_t   g_ai_result_queue  = NULL;
 SemaphoreHandle_t g_ui_mutex       = NULL;
 
 static void init_global_resources(void)
 {
     g_quote_queue     = xQueueCreate(MAX_STOCK_COUNT, sizeof(stock_quote_t));
-    g_ai_result_queue = xQueueCreate(1, sizeof(ai_analysis_result_t));
     /* 遞迴 mutex：LVGL task 持有 mutex 時，事件回調仍可安全呼叫 ui_manager_* */
     g_ui_mutex        = xSemaphoreCreateRecursiveMutex();
 
-    if (!g_quote_queue || !g_ai_result_queue || !g_ui_mutex) {
+    if (!g_quote_queue || !g_ui_mutex) {
         ESP_LOGE(TAG, "FreeRTOS 資源建立失敗");
         esp_restart();
     }
@@ -93,20 +90,15 @@ void app_main(void)
     ESP_LOGI(TAG, "初始化 TWSE Client...");
     ESP_ERROR_CHECK(twse_client_init(g_quote_queue));
 
-    /* Phase 5: AI Provider */
-    ESP_LOGI(TAG, "初始化 AI Provider...");
-    ESP_ERROR_CHECK(ai_provider_init(g_ai_result_queue));
-
-    /* Phase 6: 排程器 */
+    /* Phase 5: 排程器 */
     ESP_LOGI(TAG, "初始化 Scheduler...");
-    ESP_ERROR_CHECK(scheduler_init(g_quote_queue, g_ai_result_queue));
+    ESP_ERROR_CHECK(scheduler_init(g_quote_queue));
 
     ESP_LOGI(TAG, "=== 系統啟動完成 ===");
     ui_manager_log_sys(LOG_LEVEL_INFO, "System ready");
 
     /* 主迴圈：消費 queue 資料 → 驅動 UI 更新 */
     stock_quote_t      quote;
-    ai_analysis_result_t ai_result;
 
     while (1) {
         int quote_updates = 0;
@@ -121,10 +113,6 @@ void app_main(void)
         }
         if (quote_updates > 0) {
             ui_manager_log_stock(LOG_LEVEL_INFO, "Updated %d stock(s)", quote_updates);
-        }
-
-        if (xQueueReceive(g_ai_result_queue, &ai_result, 0) == pdTRUE) {
-            ui_manager_log_ai(LOG_LEVEL_INFO, "AI: %.50s", ai_result.analysis);
         }
 
         /* 每 100ms 輪詢一次，同時監控堆疊健康度 */

@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS "wifi_manager.c"
     INCLUDE_DIRS "include"
-    REQUIRES esp_wifi esp_event esp_netif esp_http_server storage ai_provider scheduler twse_client json log freertos
+    REQUIRES esp_wifi esp_event esp_netif esp_http_server storage scheduler twse_client json log freertos
 )

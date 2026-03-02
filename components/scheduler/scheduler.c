@@ -2,7 +2,6 @@
 #include "sleep_manager.h"
 #include "storage.h"
 #include "twse_client.h"
-#include "ai_provider.h"
 #include "rtc_bm8563.h"
 #include "app_config.h"
 #include "esp_log.h"
@@ -18,21 +17,15 @@ static const char *TAG = "scheduler";
 
 /* Task notification bits */
 #define NOTIFY_QUOTE_BIT  (1 << 0)
-#define NOTIFY_AI_BIT     (1 << 1)
 
 static schedule_config_t s_config;
 static QueueHandle_t     s_quote_queue     = NULL;
-static QueueHandle_t     s_ai_result_queue = NULL;
 static TimerHandle_t     s_quote_timer     = NULL;
-static TimerHandle_t     s_ai_timer        = NULL;
 static TaskHandle_t      s_scheduler_task  = NULL;
 static bool              s_sntp_synced     = false;
 
 /* 儲存的股票清單（供排程使用）*/
 static stock_list_t      s_stock_list;
-/* 最新報價（供 AI 分析使用）*/
-static stock_quote_t     s_latest_quotes[MAX_STOCK_COUNT];
-static int               s_latest_quote_count = 0;
 
 static bool is_wifi_connected(void)
 {
@@ -95,45 +88,15 @@ static void do_fetch_quotes(void)
         return;
     }
 
-    memset(s_latest_quotes, 0, sizeof(s_latest_quotes));
-    s_latest_quote_count = s_stock_list.count;
+    stock_quote_t quotes[MAX_STOCK_COUNT] = {0};
 
     esp_err_t ret = twse_client_fetch(
                         (const char(*)[8])s_stock_list.symbols,
                         s_stock_list.count,
-                        s_latest_quotes);
+                        quotes);
     if (ret == ESP_OK && s_quote_queue) {
         for (int i = 0; i < s_stock_list.count; i++) {
-            xQueueSend(s_quote_queue, &s_latest_quotes[i], 0);
-        }
-    }
-}
-
-static void do_ai_analysis(void)
-{
-    if (!is_wifi_connected()) {
-        ESP_LOGW(TAG, "WiFi 未連線，跳過 AI 分析");
-        return;
-    }
-    if (s_latest_quote_count == 0) {
-        ESP_LOGW(TAG, "無報價資料，跳過 AI 分析");
-        return;
-    }
-
-    /* 優先使用遠端 Token，次選本地 NVS Key */
-    char api_key[128] = {0};
-    ai_provider_get_active_api_key(api_key, sizeof(api_key));
-    if (strlen(api_key) == 0) {
-        ESP_LOGW(TAG, "未設定 API Key（本地或遠端），跳過 AI 分析");
-        return;
-    }
-
-    /* 分析第一支股票（或最後更新的有效報價）*/
-    for (int i = 0; i < s_latest_quote_count; i++) {
-        if (s_latest_quotes[i].is_valid) {
-            ESP_LOGI(TAG, "觸發 AI 分析: %s", s_latest_quotes[i].symbol);
-            ai_provider_analyze_async(&s_latest_quotes[i], api_key);
-            break;
+            xQueueSend(s_quote_queue, &quotes[i], 0);
         }
     }
 }
@@ -142,13 +105,6 @@ static void quote_timer_cb(TimerHandle_t xTimer)
 {
     if (s_scheduler_task) {
         xTaskNotify(s_scheduler_task, NOTIFY_QUOTE_BIT, eSetBits);
-    }
-}
-
-static void ai_timer_cb(TimerHandle_t xTimer)
-{
-    if (s_scheduler_task) {
-        xTaskNotify(s_scheduler_task, NOTIFY_AI_BIT, eSetBits);
     }
 }
 
@@ -172,9 +128,6 @@ static void scheduler_task(void *arg)
         if (bits & NOTIFY_QUOTE_BIT) {
             do_fetch_quotes();
         }
-        if (bits & NOTIFY_AI_BIT) {
-            do_ai_analysis();
-        }
 
         if (sleep_manager_is_enabled() && sleep_manager_should_sleep()) {
             ESP_LOGI(TAG, "進入休市睡眠模式");
@@ -185,11 +138,9 @@ static void scheduler_task(void *arg)
     }
 }
 
-esp_err_t scheduler_init(QueueHandle_t quote_queue,
-                          QueueHandle_t ai_result_queue)
+esp_err_t scheduler_init(QueueHandle_t quote_queue)
 {
     s_quote_queue     = quote_queue;
-    s_ai_result_queue = ai_result_queue;
 
     /* 載入設定 */
     storage_schedule_load(&s_config);
@@ -205,20 +156,12 @@ esp_err_t scheduler_init(QueueHandle_t quote_queue,
                                   NULL,
                                   quote_timer_cb);
 
-    /* AI 分析 Timer（分鐘轉換為毫秒）*/
-    s_ai_timer = xTimerCreate("ai_tmr",
-                               pdMS_TO_TICKS((uint32_t)s_config.ai_interval_min * 60 * 1000),
-                               pdTRUE,
-                               NULL,
-                               ai_timer_cb);
-
-    if (!s_quote_timer || !s_ai_timer) {
+    if (!s_quote_timer) {
         ESP_LOGE(TAG, "Timer 建立失敗");
         return ESP_FAIL;
     }
 
     xTimerStart(s_quote_timer, 0);
-    xTimerStart(s_ai_timer, 0);
 
     /* 排程監控任務 */
     BaseType_t res = xTaskCreatePinnedToCore(scheduler_task, "scheduler",
@@ -226,8 +169,8 @@ esp_err_t scheduler_init(QueueHandle_t quote_queue,
                                               TASK_PRIO_SCHEDULER,
                                               &s_scheduler_task, 1);
 
-    ESP_LOGI(TAG, "Scheduler 啟動：報價間隔=%ds AI分析間隔=%dmin",
-             s_config.quote_interval_s, s_config.ai_interval_min);
+    ESP_LOGI(TAG, "Scheduler 啟動：報價間隔=%ds",
+             s_config.quote_interval_s);
     return (res == pdPASS) ? ESP_OK : ESP_FAIL;
 }
 
@@ -241,13 +184,8 @@ esp_err_t scheduler_apply_config(const schedule_config_t *cfg)
         xTimerChangePeriod(s_quote_timer,
                            pdMS_TO_TICKS(cfg->quote_interval_s * 1000), 0);
     }
-    if (s_ai_timer) {
-        xTimerChangePeriod(s_ai_timer,
-                           pdMS_TO_TICKS((uint32_t)cfg->ai_interval_min * 60 * 1000), 0);
-    }
-
-    ESP_LOGI(TAG, "排程設定已更新：報價=%ds AI=%dmin",
-             cfg->quote_interval_s, cfg->ai_interval_min);
+    ESP_LOGI(TAG, "排程設定已更新：報價=%ds market_only=%d",
+             cfg->quote_interval_s, cfg->market_only ? 1 : 0);
     return ESP_OK;
 }
 
@@ -260,13 +198,6 @@ void scheduler_trigger_quote_now(void)
 {
     if (s_scheduler_task) {
         xTaskNotify(s_scheduler_task, NOTIFY_QUOTE_BIT, eSetBits);
-    }
-}
-
-void scheduler_trigger_ai_now(void)
-{
-    if (s_scheduler_task) {
-        xTaskNotify(s_scheduler_task, NOTIFY_AI_BIT, eSetBits);
     }
 }
 
@@ -285,7 +216,6 @@ esp_err_t scheduler_reload_stock_list(void)
 void scheduler_stop(void)
 {
     if (s_quote_timer) xTimerStop(s_quote_timer, 0);
-    if (s_ai_timer)    xTimerStop(s_ai_timer, 0);
     twse_client_stop_task();
     ESP_LOGI(TAG, "所有排程已停止");
 }

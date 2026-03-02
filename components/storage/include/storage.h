@@ -31,7 +31,6 @@ esp_err_t storage_stocks_load(stock_list_t *list);
 /* ====== 排程設定 ====== */
 typedef struct {
     uint16_t quote_interval_s;   /* 報價更新間隔（秒）*/
-    uint16_t ai_interval_min;    /* AI 分析間隔（分鐘，使用者可在機器上調整）*/
     bool     market_only;        /* 僅市場時段更新 */
 } schedule_config_t;
 

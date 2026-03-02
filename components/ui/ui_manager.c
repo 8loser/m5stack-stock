@@ -322,14 +322,6 @@ void ui_manager_log_wifi(log_level_t level, const char *fmt, ...)
     va_end(ap);
 }
 
-void ui_manager_log_ai(log_level_t level, const char *fmt, ...)
-{
-    va_list ap;
-    va_start(ap, fmt);
-    ui_manager_log_v(LOG_TAG_AI, level, fmt, ap);
-    va_end(ap);
-}
-
 void ui_manager_log_sys(log_level_t level, const char *fmt, ...)
 {
     va_list ap;

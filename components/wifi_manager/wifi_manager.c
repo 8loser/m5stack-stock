@@ -1,6 +1,5 @@
 #include "wifi_manager.h"
 #include "storage.h"
-#include "ai_provider.h"
 #include "scheduler.h"
 #include "twse_client.h"
 #include "app_config.h"
@@ -33,6 +32,12 @@ static const char *TAG = "wifi_mgr";
 #define ERR_NOT_FOUND_OR_NOT_TSE "not_found_or_not_tse"
 #define ERR_VALIDATE_FAILED     "validate_failed"
 #define ERR_NOT_FOUND           "not_found"
+
+enum {
+    AI_PROVIDER_GEMINI = 0,
+    AI_PROVIDER_CLAUDE = 1,
+    AI_PROVIDER_OPENAI = 2,
+};
 
 static EventGroupHandle_t s_wifi_event_group = NULL;
 static wifi_state_t       s_state            = WIFI_STATE_DISCONNECTED;
@@ -436,16 +441,6 @@ static esp_err_t portal_ai_post_handler(httpd_req_t *req)
     storage_ai_save_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key);
     storage_ai_save_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key);
     storage_ai_save_prompt_template(prompt_template);
-
-    ai_provider_reload_local_config();
-
-    if (gemini_key[0] != '\0') {
-        ai_provider_set_type(AI_PROVIDER_GEMINI);
-    } else if (claude_key[0] != '\0') {
-        ai_provider_set_type(AI_PROVIDER_CLAUDE);
-    } else if (openai_key[0] != '\0') {
-        ai_provider_set_type(AI_PROVIDER_OPENAI);
-    }
 
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     return httpd_resp_sendstr(req,
