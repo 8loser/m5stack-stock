@@ -16,6 +16,8 @@
 #include <string.h>
 
 static const char *TAG = "ui_mgr";
+static uint32_t    s_last_touch_ms = 0;
+static uint32_t    s_last_auto_return_ms = 0;
 
 /* LVGL 顯示 flush 回調 */
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
@@ -54,6 +56,9 @@ static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
     /* 攔截底部虛擬按鍵（y >= TOUCH_BTN_Y_MIN），不傳給 LVGL */
     if (pt.pressed && !s_last_pressed) {
         ESP_LOGI(TAG, "touch down x=%d y=%d", pt.x, pt.y);
+    }
+    if (pt.pressed) {
+        s_last_touch_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
     }
 
     /* 兼容兩種 FT6336U 座標回報：
@@ -97,6 +102,7 @@ static uint32_t          s_scheduler_heartbeat_ms = 0;
 
 #define MAIN_HEARTBEAT_TIMEOUT_MS      1500U
 #define SCHED_HEARTBEAT_TIMEOUT_MS     3000U
+#define AUTO_RETURN_GUARD_MS           500U
 static const screen_id_t s_nav_screens[] = {
     SCREEN_DASHBOARD,
     SCREEN_LOG,
@@ -117,6 +123,8 @@ static lv_obj_t *s_screens[SCREEN_COUNT] = {NULL};
 
 /* 前向宣告各頁面初始化 */
 extern lv_obj_t *screen_dashboard_create(void);
+extern void screen_dashboard_on_enter(void);
+extern void screen_dashboard_on_leave(void);
 extern lv_obj_t *screen_portal_create(void);
 extern lv_obj_t *screen_info_create(void);
 extern lv_obj_t *screen_settings_create(void);
@@ -139,6 +147,16 @@ static void lvgl_task(void *arg)
     while (1) {
         if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             lv_task_handler();
+            uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+            if (board_is_screen_on() &&
+                s_cur_screen != SCREEN_DASHBOARD &&
+                s_cur_screen != SCREEN_PORTAL &&
+                (now_ms - s_last_touch_ms) >= UI_NON_HOME_IDLE_RETURN_MS &&
+                (now_ms - s_last_auto_return_ms) >= AUTO_RETURN_GUARD_MS) {
+                s_last_auto_return_ms = now_ms;
+                ESP_LOGI(TAG, "idle timeout, return to dashboard");
+                ui_manager_switch_screen(SCREEN_DASHBOARD);
+            }
             xSemaphoreGiveRecursive(s_ui_mutex);
         }
         vTaskDelay(pdMS_TO_TICKS(LVGL_TICK_PERIOD_MS));
@@ -152,6 +170,8 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     s_cur_screen = SCREEN_DASHBOARD;
     s_nav_idx = 0;
     s_mid_btn_idx = 0;
+    s_last_touch_ms = now_ms;
+    s_last_auto_return_ms = now_ms;
     taskENTER_CRITICAL(&s_heartbeat_lock);
     s_main_heartbeat_ms = now_ms;
     s_scheduler_heartbeat_ms = now_ms;
@@ -243,6 +263,7 @@ void ui_manager_switch_screen(screen_id_t id)
     if (id >= SCREEN_COUNT) return;
     if (s_screens[id] == NULL) return;
     screen_id_t prev = s_cur_screen;
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
     ESP_LOGI(TAG, "[%u ms] switch_screen %d -> %d",
              (unsigned)esp_log_timestamp(), (int)prev, (int)id);
 
@@ -251,13 +272,18 @@ void ui_manager_switch_screen(screen_id_t id)
         extern void screen_portal_close_portal(void);
         screen_portal_close_portal();
     }
+    if (prev == SCREEN_DASHBOARD && id != SCREEN_DASHBOARD) {
+        screen_dashboard_on_leave();
+    }
     s_cur_screen = id;
+    if (id != SCREEN_DASHBOARD && id != SCREEN_PORTAL) {
+        s_last_touch_ms = now_ms;
+    }
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         extern void status_bar_set_page(screen_id_t page);
         status_bar_set_page(id);
         if (id == SCREEN_DASHBOARD) {
-            extern void screen_dashboard_refresh(void);
-            screen_dashboard_refresh();
+            screen_dashboard_on_enter();
         }
         if (id == SCREEN_LOG) {
             screen_log_refresh();

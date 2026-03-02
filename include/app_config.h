@@ -33,6 +33,7 @@
 /* --- LVGL --- */
 #define LVGL_TICK_PERIOD_MS     5
 #define LVGL_BUF_LINES          30
+#define UI_NON_HOME_IDLE_RETURN_MS 10000  /* 非 dashboard/portal 觸控閒置返回（毫秒） */
 
 /* --- FreeRTOS 任務優先級 --- */
 #define TASK_PRIO_LVGL          5
@@ -59,7 +60,7 @@
 /* --- 排程預設值 --- */
 #define DEFAULT_QUOTE_INTERVAL_S    60      /* 報價更新間隔（秒）*/
 #define DEFAULT_MARKET_ONLY         false   /* 全天候更新 */
-#define DASHBOARD_PAGE_FLIP_S       5       /* Dashboard 自動翻頁間隔（秒）*/
+#define DASHBOARD_SLOT_ROTATION_MS  2000    /* Dashboard 固定格位輪巡節拍（毫秒）*/
 
 /* --- WiFi 手機配網 Portal --- */
 #define WIFI_PORTAL_AP_SSID         "Core2-Setup"

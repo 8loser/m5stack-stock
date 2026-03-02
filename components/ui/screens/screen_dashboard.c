@@ -27,16 +27,19 @@ static lv_obj_t *s_change_labels[DASHBOARD_VISIBLE_ROWS] = {NULL};
 static lv_obj_t *s_empty_label = NULL;
 static lv_obj_t *s_update_label = NULL;
 static lv_obj_t *s_next_label = NULL;
-static lv_timer_t *s_page_flip_timer = NULL;
+static lv_timer_t *s_rotation_timer = NULL;
 
 /* 快取最新報價，供非 active 狀態下累積，切回 dashboard 時重新套用 */
 static char          s_symbols_order[MAX_STOCK_COUNT][8] = {0};
 static int           s_card_count = 0;
-static int           s_cur_page = 0;
 static stock_quote_t s_cached_quotes[MAX_STOCK_COUNT];
 static bool          s_cached_valid[MAX_STOCK_COUNT] = {false};
+static int           s_slot_stock_idx[DASHBOARD_VISIBLE_ROWS] = {0};
+static int           s_next_slot_idx = 0;
+static int           s_next_stock_idx = 0;
 
 static void apply_card_widgets(int idx, const stock_quote_t *q);
+static void render_dashboard_slots(void);
 
 static void ensure_card_widgets(int idx)
 {
@@ -70,50 +73,73 @@ static void ensure_card_widgets(int idx)
     }
 }
 
-static void render_current_page(void)
+static void reset_slot_rotation_state(void)
 {
-    int total_pages = (s_card_count + DASHBOARD_VISIBLE_ROWS - 1) / DASHBOARD_VISIBLE_ROWS;
-    if (total_pages <= 0) {
-        total_pages = 1;
-    }
-    if (s_cur_page >= total_pages) {
-        s_cur_page = 0;
+    for (int slot = 0; slot < DASHBOARD_VISIBLE_ROWS; slot++) {
+        if (slot < s_card_count) {
+            s_slot_stock_idx[slot] = slot;
+        } else {
+            s_slot_stock_idx[slot] = -1;
+        }
     }
 
-    int base = s_cur_page * DASHBOARD_VISIBLE_ROWS;
-    for (int row = 0; row < DASHBOARD_VISIBLE_ROWS; row++) {
-        int data_idx = base + row;
-        if (data_idx < s_card_count) {
-            ensure_card_widgets(row);
-            lv_obj_clear_flag(s_cards[row], LV_OBJ_FLAG_HIDDEN);
-            if (s_cached_valid[data_idx]) {
-                apply_card_widgets(row, &s_cached_quotes[data_idx]);
-            } else {
-                lv_label_set_text(s_name_labels[row], "---");
-                lv_label_set_text(s_price_labels[row], "---.--");
-                lv_label_set_text(s_change_labels[row], "+/-");
-                lv_obj_set_style_bg_color(s_cards[row], COLOR_CARD, 0);
-            }
-        } else {
-            lv_obj_add_flag(s_cards[row], LV_OBJ_FLAG_HIDDEN);
-        }
+    s_next_slot_idx = 0;
+    if (s_card_count > DASHBOARD_VISIBLE_ROWS) {
+        s_next_stock_idx = DASHBOARD_VISIBLE_ROWS % s_card_count;
+    } else {
+        s_next_stock_idx = 0;
     }
 }
 
-static void page_flip_timer_cb(lv_timer_t *timer)
+static void render_slot_with_stock(int slot, int stock_idx)
+{
+    if (slot < 0 || slot >= DASHBOARD_VISIBLE_ROWS) {
+        return;
+    }
+
+    if (stock_idx < 0 || stock_idx >= s_card_count) {
+        lv_obj_add_flag(s_cards[slot], LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    ensure_card_widgets(slot);
+    lv_obj_clear_flag(s_cards[slot], LV_OBJ_FLAG_HIDDEN);
+    if (s_cached_valid[stock_idx]) {
+        apply_card_widgets(slot, &s_cached_quotes[stock_idx]);
+    } else {
+        lv_label_set_text(s_name_labels[slot], "---");
+        lv_label_set_text(s_price_labels[slot], "---.--");
+        lv_label_set_text(s_change_labels[slot], "+/-");
+        lv_obj_set_style_text_color(s_change_labels[slot], lv_color_white(), 0);
+        lv_obj_set_style_border_color(s_cards[slot], COLOR_CARD, 0);
+        lv_obj_set_style_bg_color(s_cards[slot], COLOR_CARD, 0);
+    }
+}
+
+static void render_dashboard_slots(void)
+{
+    for (int slot = 0; slot < DASHBOARD_VISIBLE_ROWS; slot++) {
+        render_slot_with_stock(slot, s_slot_stock_idx[slot]);
+    }
+}
+
+static void rotation_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
     if (!s_card_list || s_card_count <= DASHBOARD_VISIBLE_ROWS) {
         return;
     }
-
-    int total_pages = (s_card_count + DASHBOARD_VISIBLE_ROWS - 1) / DASHBOARD_VISIBLE_ROWS;
-    if (total_pages <= 1) {
+    if (lv_scr_act() != s_screen) {
         return;
     }
 
-    s_cur_page = (s_cur_page + 1) % total_pages;
-    render_current_page();
+    int slot = s_next_slot_idx;
+    int stock_idx = s_next_stock_idx;
+    s_slot_stock_idx[slot] = stock_idx;
+    render_slot_with_stock(slot, stock_idx);
+
+    s_next_slot_idx = (s_next_slot_idx + 1) % DASHBOARD_VISIBLE_ROWS;
+    s_next_stock_idx = (s_next_stock_idx + 1) % s_card_count;
 }
 
 lv_obj_t *screen_dashboard_create(void)
@@ -166,7 +192,8 @@ lv_obj_t *screen_dashboard_create(void)
     lv_obj_set_style_text_color(s_next_label, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(s_next_label, &lv_font_montserrat_10, 0);
 
-    s_page_flip_timer = lv_timer_create(page_flip_timer_cb, DASHBOARD_PAGE_FLIP_S * 1000, NULL);
+    reset_slot_rotation_state();
+    s_rotation_timer = lv_timer_create(rotation_timer_cb, DASHBOARD_SLOT_ROTATION_MS, NULL);
 
     return s_screen;
 }
@@ -220,7 +247,7 @@ void screen_dashboard_set_card_count(uint8_t n)
 {
     int visible_count = (n <= MAX_STOCK_COUNT) ? (int)n : MAX_STOCK_COUNT;
     s_card_count = visible_count;
-    s_cur_page = 0;
+    reset_slot_rotation_state();
 
     for (int i = visible_count; i < MAX_STOCK_COUNT; i++) {
         s_symbols_order[i][0] = '\0';
@@ -234,14 +261,14 @@ void screen_dashboard_set_card_count(uint8_t n)
         }
     } else {
         lv_obj_add_flag(s_empty_label, LV_OBJ_FLAG_HIDDEN);
-        render_current_page();
+        render_dashboard_slots();
     }
 
     if (s_card_list) {
         lv_obj_scroll_to_y(s_card_list, 0, LV_ANIM_OFF);
     }
-    if (s_page_flip_timer) {
-        lv_timer_reset(s_page_flip_timer);
+    if (s_rotation_timer) {
+        lv_timer_reset(s_rotation_timer);
     }
 }
 
@@ -285,11 +312,33 @@ void screen_dashboard_update(const stock_quote_t *q)
      * 避免對非 active screen 的 invalidate 造成畫面閃爍 */
     if (lv_scr_act() != s_screen) return;
 
-    render_current_page();
+    if (s_card_count <= DASHBOARD_VISIBLE_ROWS) {
+        render_dashboard_slots();
+        return;
+    }
+
+    for (int slot = 0; slot < DASHBOARD_VISIBLE_ROWS; slot++) {
+        if (s_slot_stock_idx[slot] == idx) {
+            render_slot_with_stock(slot, idx);
+        }
+    }
 }
 
 /* 切回 dashboard 時呼叫，把快取資料一次套用到所有卡片 */
 void screen_dashboard_refresh(void)
 {
-    render_current_page();
+    render_dashboard_slots();
+}
+
+void screen_dashboard_on_enter(void)
+{
+    reset_slot_rotation_state();
+    render_dashboard_slots();
+    if (s_rotation_timer) {
+        lv_timer_reset(s_rotation_timer);
+    }
+}
+
+void screen_dashboard_on_leave(void)
+{
 }
