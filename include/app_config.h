@@ -8,13 +8,11 @@
 #define LCD_WIDTH           320
 #define LCD_HEIGHT          240
 #define LCD_HOST            SPI2_HOST
-#define LCD_DMA_CHAN        1
 #define LCD_MOSI_GPIO       23
 #define LCD_CLK_GPIO        18
 #define LCD_CS_GPIO         5
 #define LCD_DC_GPIO         15
 #define LCD_RST_GPIO        -1    /* AXP192 控制 */
-#define LCD_BL_GPIO         -1    /* AXP192 LDO3 */
 
 #define TOUCH_SDA_GPIO      21
 #define TOUCH_SCL_GPIO      22
@@ -56,9 +54,7 @@
 
 /* --- 股票 --- */
 #define MAX_STOCK_COUNT         10
-#define STOCK_SYMBOL_LEN        8
 #define DEFAULT_STOCKS          {"2330", "2317", "2409", "6770", "1802", "2367"}
-#define DEFAULT_STOCK_COUNT     2
 
 /* --- 排程預設值 --- */
 #define DEFAULT_QUOTE_INTERVAL_S    60      /* 報價更新間隔（秒）*/
@@ -88,10 +84,6 @@
 /* --- 震動馬達 --- */
 #define VIBRATION_HAPTIC_MS     30    /* 觸控 haptic 震動時間 */
 #define VIBRATION_ALERT_MS      200   /* 警報震動時間 */
-
-/* --- 音效 --- */
-#define AUDIO_BEEP_FREQ_HZ      1000
-#define AUDIO_BEEP_MS           100
 
 /* --- M5Core2 FT6336U 底部虛擬按鍵感應區域 --- */
 #define TOUCH_BTN_Y_MIN         LCD_HEIGHT  /* y >= 240 才視為底部按鍵區域，避免攔截正常觸控 */
