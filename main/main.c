@@ -111,8 +111,8 @@ void app_main(void)
         /* 只處理 Power 鍵短按：切換螢幕開/關 */
         board_poll_power_key();
 
-        /* 讀取所有待處理的報價更新 */
-        while (xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
+        /* 每個 tick 最多處理一筆報價，避免一次鎖 mutex 多次與 LVGL 競爭 */
+        if (xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
             ui_manager_update_quote(&quote);
             quote_updates++;
         }
