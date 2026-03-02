@@ -19,5 +19,5 @@
 ## 4. Validation
 
 - [x] 4.1 Build check with `./flash.sh --build-only`.
-- [ ] 4.2 Manual verify: <=5 stocks fixed display; >5 stocks one-slot-per-tick rotation; return-to-dashboard resets to first stock.
-- [ ] 4.3 Manual verify color-direction mapping remains correct after each slot replacement.
+- [x] 4.2 Manual verify: <=5 stocks fixed display; >5 stocks one-slot-per-tick rotation; return-to-dashboard resets to first stock.
+- [x] 4.3 Manual verify color-direction mapping remains correct after each slot replacement.

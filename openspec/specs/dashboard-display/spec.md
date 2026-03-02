@@ -2,7 +2,6 @@
 
 ## Purpose
 TBD - created by syncing change fix-dashboard-display. Update Purpose after archive.
-
 ## Requirements
 ### Requirement: Stock symbol fully visible
 Dashboard 的每張股票 card SHALL 完整顯示股票代碼文字，不得有任何像素被裁切。
@@ -61,7 +60,7 @@ Dashboard 底部 SHALL 在同一行顯示最後更新時間（左側）與下次
 - **THEN** 兩者文字 SHALL 不互相重疊，且皆在 `LCD_WIDTH` 範圍內
 
 ### Requirement: Dynamic stock card count
-Dashboard SHALL 只顯示已設定的股票數量所對應的 card row，不顯示空白佔位 row。
+Dashboard SHALL 只顯示已設定的股票數量所對應資料，並在超過可視列數時使用固定格位輪巡，不得整頁翻頁。
 
 #### Scenario: Exact match for configured count
 - **WHEN** 使用者設定了 n 支股票（1 ≤ n ≤ 5）
@@ -71,22 +70,38 @@ Dashboard SHALL 只顯示已設定的股票數量所對應的 card row，不顯�
 - **WHEN** 未設定任何股票（count = 0）
 - **THEN** Dashboard SHALL 不顯示任何 card row（全部 hidden），並 SHALL 顯示提示訊息引導使用者前往設定監測股票
 
-#### Scenario: Empty state prompt content
-- **WHEN** count = 0 且 Dashboard 為 active screen
-- **THEN** 畫面中央 SHALL 顯示靜態提示文字（例如 "No stocks configured.\nGo to Settings to add."）
-
 #### Scenario: Prompt hidden when stocks exist
 - **WHEN** count ≥ 1
 - **THEN** 提示文字 SHALL 不顯示（hidden）
 
-#### Scenario: Count exceeds visible area — auto page flip
+#### Scenario: Count exceeds visible area uses fixed-slot rotation
 - **WHEN** 設定的股票數量超過 5（最多 10）
-- **THEN** Dashboard SHALL 維持固定 5 列顯示，並每隔 `DASHBOARD_PAGE_FLIP_S` 秒切換到下一批 5 檔內容，循環回第一批
+- **THEN** Dashboard SHALL 維持固定 5 列位置，並在固定 UI 節拍下每次只替換 1 列內容為下一檔股票，循環回第一檔
 
-#### Scenario: Single page — no visible flip
-- **WHEN** 設定的股票數量不超過 5
-- **THEN** Dashboard SHALL 不切換頁面內容（維持單頁）
+#### Scenario: No page-level flip animation
+- **WHEN** 設定的股票數量超過 5
+- **THEN** Dashboard SHALL NOT 以整頁切換方式更新顯示內容
 
 #### Scenario: Row count applied at boot without waiting for quote
 - **WHEN** 裝置完成 `storage_init()` 後
 - **THEN** Dashboard card 可見數量 SHALL 立即反映設定值，不需等待報價資料到達
+
+### Requirement: Slot color reflects currently displayed quote
+每個固定格位在刷新內容時，SHALL 使用該格當前顯示股票的漲跌資料更新顏色，避免顏色與內容不一致。
+
+#### Scenario: Rising quote applies rising accent on refreshed slot
+- **WHEN** 某格位刷新到 `change_percent > 0.01` 的股票
+- **THEN** 該格位漲跌文字與左側邊框 SHALL 顯示上漲色
+
+#### Scenario: Falling quote applies falling accent on refreshed slot
+- **WHEN** 某格位刷新到 `change_percent < -0.01` 的股票
+- **THEN** 該格位漲跌文字與左側邊框 SHALL 顯示下跌色
+
+#### Scenario: Flat quote applies neutral accent on refreshed slot
+- **WHEN** 某格位刷新到 `-0.01 <= change_percent <= 0.01` 的股票
+- **THEN** 該格位漲跌文字與左側邊框 SHALL 顯示平盤色
+
+#### Scenario: Rotation refresh keeps color-content consistency
+- **WHEN** UI 節拍觸發固定格位輪巡替換內容
+- **THEN** 新內容顯示完成後，同一格位的顏色 SHALL 對應新內容的漲跌狀態
+
