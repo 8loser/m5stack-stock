@@ -20,6 +20,12 @@ static lv_obj_t *s_price_labels[MAX_CARDS]  = {NULL};
 static lv_obj_t *s_change_labels[MAX_CARDS] = {NULL};
 static lv_obj_t *s_update_label = NULL;
 
+/* 快取最新報價，供非 active 狀態下累積，切回 dashboard 時重新套用 */
+static char          s_symbols_order[MAX_CARDS][8] = {0};
+static int           s_card_count = 0;
+static stock_quote_t s_cached_quotes[MAX_CARDS];
+static bool          s_cached_valid[MAX_CARDS] = {false};
+
 lv_obj_t *screen_dashboard_create(void)
 {
     s_screen = lv_obj_create(NULL);
@@ -65,31 +71,13 @@ lv_obj_t *screen_dashboard_create(void)
     return s_screen;
 }
 
-void screen_dashboard_update(const stock_quote_t *q)
+/* 將一筆報價套用到對應的卡片 LVGL widget（只在 active 時呼叫）*/
+static void apply_card_widgets(int idx, const stock_quote_t *q)
 {
-    /* 找對應的卡片 index（依目前顯示順序）*/
-    static char symbols_order[MAX_CARDS][8] = {0};
-    static int  card_count = 0;
-
-    int idx = -1;
-    for (int i = 0; i < card_count; i++) {
-        if (strcmp(symbols_order[i], q->symbol) == 0) {
-            idx = i;
-            break;
-        }
-    }
-    if (idx == -1 && card_count < MAX_CARDS) {
-        idx = card_count;
-        strncpy(symbols_order[card_count++], q->symbol, 7);
-    }
-    if (idx < 0 || idx >= MAX_CARDS) return;
-
-    /* 更新名稱 */
     char name_str[48];
     snprintf(name_str, sizeof(name_str), "%s\n%s", q->symbol, q->name);
     lv_label_set_text(s_name_labels[idx], name_str);
 
-    /* 更新價格 */
     char price_str[16];
     if (q->is_market_closed) {
         snprintf(price_str, sizeof(price_str), "%.2f\nclosed", q->yesterday_close);
@@ -100,7 +88,6 @@ void screen_dashboard_update(const stock_quote_t *q)
     }
     lv_label_set_text(s_price_labels[idx], price_str);
 
-    /* 更新漲跌幅 + 顏色 */
     char change_str[16];
     snprintf(change_str, sizeof(change_str), "%+.2f%%", q->change_percent);
     lv_label_set_text(s_change_labels[idx], change_str);
@@ -115,8 +102,44 @@ void screen_dashboard_update(const stock_quote_t *q)
                                (q->change_percent < -0.01f) ? lv_color_hex(0x002D00) :
                                COLOR_CARD, 0);
 
-    /* 更新時間 */
     char time_str[40];
     snprintf(time_str, sizeof(time_str), "Updated: %s", q->trade_time);
     lv_label_set_text(s_update_label, time_str);
+}
+
+void screen_dashboard_update(const stock_quote_t *q)
+{
+    /* 找對應的卡片 index */
+    int idx = -1;
+    for (int i = 0; i < s_card_count; i++) {
+        if (strcmp(s_symbols_order[i], q->symbol) == 0) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx == -1 && s_card_count < MAX_CARDS) {
+        idx = s_card_count;
+        strncpy(s_symbols_order[s_card_count++], q->symbol, 7);
+    }
+    if (idx < 0 || idx >= MAX_CARDS) return;
+
+    /* 永遠快取最新資料 */
+    s_cached_quotes[idx] = *q;
+    s_cached_valid[idx]  = true;
+
+    /* 只有在 dashboard 是 active screen 時才更新 LVGL widget，
+     * 避免對非 active screen 的 invalidate 造成畫面閃爍 */
+    if (lv_scr_act() != s_screen) return;
+
+    apply_card_widgets(idx, q);
+}
+
+/* 切回 dashboard 時呼叫，把快取資料一次套用到所有卡片 */
+void screen_dashboard_refresh(void)
+{
+    for (int i = 0; i < s_card_count; i++) {
+        if (s_cached_valid[i]) {
+            apply_card_widgets(i, &s_cached_quotes[i]);
+        }
+    }
 }

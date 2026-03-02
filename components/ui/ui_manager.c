@@ -221,6 +221,10 @@ void ui_manager_switch_screen(screen_id_t id)
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         extern void status_bar_set_page(screen_id_t page);
         status_bar_set_page(id);
+        if (id == SCREEN_DASHBOARD) {
+            extern void screen_dashboard_refresh(void);
+            screen_dashboard_refresh();
+        }
         if (id == SCREEN_LOG) {
             screen_log_refresh();
         }

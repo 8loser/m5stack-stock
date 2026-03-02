@@ -16,6 +16,10 @@
 
 static const char *TAG = "scheduler";
 
+/* Task notification bits */
+#define NOTIFY_QUOTE_BIT  (1 << 0)
+#define NOTIFY_AI_BIT     (1 << 1)
+
 static schedule_config_t s_config;
 static QueueHandle_t     s_quote_queue     = NULL;
 static QueueHandle_t     s_ai_result_queue = NULL;
@@ -136,12 +140,16 @@ static void do_ai_analysis(void)
 
 static void quote_timer_cb(TimerHandle_t xTimer)
 {
-    do_fetch_quotes();
+    if (s_scheduler_task) {
+        xTaskNotify(s_scheduler_task, NOTIFY_QUOTE_BIT, eSetBits);
+    }
 }
 
 static void ai_timer_cb(TimerHandle_t xTimer)
 {
-    do_ai_analysis();
+    if (s_scheduler_task) {
+        xTaskNotify(s_scheduler_task, NOTIFY_AI_BIT, eSetBits);
+    }
 }
 
 static void scheduler_task(void *arg)
@@ -155,17 +163,25 @@ static void scheduler_task(void *arg)
     /* 立即抓一次報價 */
     do_fetch_quotes();
 
-    /* 主迴圈：監控睡眠條件 */
+    /* 主迴圈：等待 timer 通知 + 監控睡眠條件 */
     while (1) {
+        uint32_t bits = 0;
+        /* 最多等 60 秒；timer 到期會提前喚醒 */
+        xTaskNotifyWait(0, UINT32_MAX, &bits, pdMS_TO_TICKS(60000));
+
+        if (bits & NOTIFY_QUOTE_BIT) {
+            do_fetch_quotes();
+        }
+        if (bits & NOTIFY_AI_BIT) {
+            do_ai_analysis();
+        }
+
         if (sleep_manager_is_enabled() && sleep_manager_should_sleep()) {
             ESP_LOGI(TAG, "進入休市睡眠模式");
             scheduler_stop();
-            /* 設定 08:55 喚醒 */
             sleep_manager_enter(MARKET_OPEN_HOUR, MARKET_OPEN_MIN > 5
                                 ? MARKET_OPEN_MIN - 5 : 0);
-            /* 不會繼續執行到這裡 */
         }
-        vTaskDelay(pdMS_TO_TICKS(60000));  /* 每分鐘檢查一次 */
     }
 }
 
@@ -242,12 +258,16 @@ void scheduler_get_config(schedule_config_t *cfg)
 
 void scheduler_trigger_quote_now(void)
 {
-    do_fetch_quotes();
+    if (s_scheduler_task) {
+        xTaskNotify(s_scheduler_task, NOTIFY_QUOTE_BIT, eSetBits);
+    }
 }
 
 void scheduler_trigger_ai_now(void)
 {
-    do_ai_analysis();
+    if (s_scheduler_task) {
+        xTaskNotify(s_scheduler_task, NOTIFY_AI_BIT, eSetBits);
+    }
 }
 
 esp_err_t scheduler_reload_stock_list(void)

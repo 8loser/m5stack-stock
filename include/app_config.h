@@ -48,7 +48,7 @@
 #define STACK_WIFI              6144
 #define STACK_TWSE              6144
 #define STACK_AI                8192
-#define STACK_SCHEDULER         2048
+#define STACK_SCHEDULER         8192
 
 /* --- NVS Namespace --- */
 #define NVS_NS_WIFI             "wifi_cfg"
