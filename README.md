@@ -28,7 +28,7 @@ cd m5stack_stock
 ./flash.sh
 
 # 指定序列埠
-./flash.sh /dev/ttyUSB0
+./flash.sh /dev/ttyACM0
 
 # 僅編譯
 ./flash.sh --build-only
@@ -38,16 +38,16 @@ cd m5stack_stock
 
 ```bash
 # 只燒錄既有 build
-./flash.sh --flash-only /dev/ttyUSB0
+./flash.sh --flash-only /dev/ttyACM0
 
 # 只燒錄 app 分區（開發迭代較快）
-./flash.sh --app-flash /dev/ttyUSB0
+./flash.sh --app-flash /dev/ttyACM0
 
 # 只看序列埠輸出
-./flash.sh --monitor /dev/ttyUSB0
+./flash.sh --monitor /dev/ttyACM0
 
 # 清除 flash 後重燒
-./flash.sh --erase /dev/ttyUSB0
+./flash.sh --erase /dev/ttyACM0
 
 # 進入 ESP-IDF 容器 shell
 ./flash.sh --shell

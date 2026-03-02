@@ -4,13 +4,13 @@
 # 使用 espressif/idf 官方 Docker image，host 保持乾淨
 #
 # 用法:
-#   ./docker-flash.sh              # build + flash + monitor
-#   ./docker-flash.sh --build-only # 只 build
-#   ./docker-flash.sh --flash-only # 只燒錄（需已 build）
-#   ./docker-flash.sh --app-flash  # 只燒錄 app 分區（最快，日常開發建議）
-#   ./docker-flash.sh --monitor    # 只開 monitor
-#   ./docker-flash.sh --erase      # 清除 flash 後重新燒錄
-#   ./docker-flash.sh --shell      # 進入 container shell（除錯用）
+#   ./flash.sh [PORT]              # build + flash + monitor
+#   ./flash.sh --build-only        # 只 build
+#   ./flash.sh --flash-only [PORT] # 只燒錄（需已 build）
+#   ./flash.sh --app-flash [PORT]  # 只燒錄 app 分區（最快，日常開發建議）
+#   ./flash.sh --monitor [PORT]    # 只開 monitor
+#   ./flash.sh --erase [PORT]      # 清除整顆 flash 後再燒錄
+#   ./flash.sh --shell             # 進入 container shell（除錯用）
 #
 # 需求：docker 或 podman（自動偵測）
 # ============================================================

@@ -14,9 +14,10 @@
 
 - `./flash.sh`：建置 + 燒錄 + 序列埠監看
 - `./flash.sh --build-only`：只編譯韌體
-- `./flash.sh --flash-only /dev/ttyUSB0`：燒錄既有建置結果
-- `./flash.sh --monitor /dev/ttyUSB0`：只開啟序列埠監看
-- `./flash.sh --erase /dev/ttyUSB0`：清除 Flash 後重燒
+- `./flash.sh --flash-only [/dev/ttyACM0]`：只燒錄既有建置結果（可省略序列埠，自動偵測）
+- `./flash.sh --app-flash [/dev/ttyACM0]`：只燒錄 app 分區（開發迭代較快）
+- `./flash.sh --monitor [/dev/ttyACM0]`：只開啟序列埠監看（可省略序列埠，自動偵測）
+- `./flash.sh --erase [/dev/ttyACM0]`：清除整顆 Flash 後再燒錄（可省略序列埠，自動偵測）
 - `./flash.sh --shell`：進入 ESP-IDF 容器除錯
 
 ## 程式風格與命名慣例

@@ -8,10 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |------|------|
 | `./flash.sh` | Container 內 build + flash + monitor |
 | `./flash.sh --build-only` | 只 build |
-| `./flash.sh --flash-only` | 只燒錄 |
+| `./flash.sh --flash-only [/dev/ttyACM0]` | 只燒錄（需已有 build；可省略序列埠自動偵測） |
+| `./flash.sh --app-flash [/dev/ttyACM0]` | 只燒錄 app 分區（開發迭代較快） |
 | `./flash.sh --shell` | 進 container shell 除錯 |
-| `./flash.sh --erase` | 清除 NVS 後重新燒錄 |
-| `./flash.sh --monitor` | 只開 monitor |
+| `./flash.sh --erase [/dev/ttyACM0]` | 清除整顆 flash 後重新燒錄（可省略序列埠自動偵測） |
+| `./flash.sh --monitor [/dev/ttyACM0]` | 只開 monitor（可省略序列埠自動偵測） |
 
 Container runtime 自動偵測 docker/podman，USB device 直通（`/dev/ttyACM0`），image: `docker.io/espressif/idf:v5.1.4`。
 
@@ -77,4 +78,3 @@ scheduler Timer（ai_ivl）
 | `ai_cfg` | `api_key` | str | API Key |
 | `stocks` | `symbols` / `count` | blob/u8 | 監控股票清單 |
 | `schedule` | `quote_ivl` / `ai_ivl` / `mkt_only` | u16/u16/u8 | 排程設定 |
-
