@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 與 AGENTS.md 同步
+
+- `CLAUDE.md` 與 `AGENTS.md` 需同步維護。
+- 凡涉及開發流程、指令、架構、限制與注意事項之變更，應在同一個變更中同時更新兩份文件。
+- 若僅有工具專屬差異，請在兩份文件都註明差異原因。
+
 ## Commands
 
 | 指令 | 說明 |
