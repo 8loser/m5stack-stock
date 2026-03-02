@@ -14,10 +14,25 @@ TBD - created by archiving change twse-portal-stock-management. Update Purpose a
 - **WHEN** `POST /stocks/remove` 成功後呼叫 `scheduler_reload_stock_list()`
 - **THEN** 下個排程週期的 `twse_client_fetch()` 不包含已刪除代號
 
-### Requirement: 非開市固定跳過報價抓取
-排程器 SHALL 在非市場開市時間固定跳過報價抓取，不由 UI 參數切換。
+### Requirement: market_only 設定控制報價抓取時段
+排程器 SHALL 根據 `s_config.market_only` 決定是否限制在市場開市時段才抓取報價：
+- `market_only = true`：非市場時段（`rtc_bm8563_is_market_open()` 返回 false）時跳過報價抓取
+- `market_only = false`：全天候抓取，不受市場時段限制
 
-#### Scenario: 非開市時間觸發報價排程
-- **WHEN** quote timer 到期且 `rtc_bm8563_is_market_open()` 為 false
+此外，當 SNTP 尚未完成同步（`s_sntp_synced == false`）時，無論 `market_only` 設定為何，SHALL 跳過時段限制並直接抓取，以避免 RTC 時間不可信造成的誤判。
+
+#### Scenario: market_only=true，非開市時間觸發排程
+- **WHEN** quote timer 到期且 `s_config.market_only == true` 且 `rtc_bm8563_is_market_open()` 為 false
 - **THEN** 本次報價抓取被跳過
 
+#### Scenario: market_only=false，非開市時間觸發排程
+- **WHEN** quote timer 到期且 `s_config.market_only == false`
+- **THEN** 報價抓取正常執行，不受市場時段限制
+
+#### Scenario: SNTP 尚未同步時觸發排程
+- **WHEN** quote timer 到期且 `s_sntp_synced == false`（SNTP 尚未完成第一次同步）
+- **THEN** 跳過市場時段判斷，報價抓取正常執行
+
+#### Scenario: SNTP 已同步，market_only=true，開市時間
+- **WHEN** `s_sntp_synced == true` 且 `s_config.market_only == true` 且 `rtc_bm8563_is_market_open()` 為 true
+- **THEN** 報價抓取正常執行

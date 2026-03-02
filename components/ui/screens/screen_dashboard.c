@@ -57,7 +57,7 @@ lv_obj_t *screen_dashboard_create(void)
         /* 漲跌幅（右）*/
         s_change_labels[i] = lv_label_create(s_cards[i]);
         lv_obj_align(s_change_labels[i], LV_ALIGN_RIGHT_MID, -4, 0);
-        lv_label_set_text(s_change_labels[i], "±0.00%");
+        lv_label_set_text(s_change_labels[i], "+/-");
         lv_obj_set_style_text_color(s_change_labels[i], lv_color_white(), 0);
     }
 

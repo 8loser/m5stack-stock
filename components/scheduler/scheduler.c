@@ -89,8 +89,8 @@ static void do_fetch_quotes(void)
         return;
     }
 
-    /* 固定策略：僅在市場時段抓取報價 */
-    if (!rtc_bm8563_is_market_open()) {
+    /* SNTP 未同步時跳過市場時段限制，避免 RTC 未校時誤判 */
+    if (s_sntp_synced && s_config.market_only && !rtc_bm8563_is_market_open()) {
         ESP_LOGI(TAG, "非市場時段，跳過報價抓取");
         return;
     }

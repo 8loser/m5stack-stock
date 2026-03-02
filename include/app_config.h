@@ -65,7 +65,7 @@
 /* --- 排程預設值 --- */
 #define DEFAULT_QUOTE_INTERVAL_S    60      /* 報價更新間隔（秒）*/
 #define DEFAULT_AI_INTERVAL_MIN     30      /* AI 分析間隔（分鐘，使用者可調）*/
-#define DEFAULT_MARKET_ONLY         true    /* 僅市場時段更新 */
+#define DEFAULT_MARKET_ONLY         false   /* 全天候更新 */
 
 /* --- WiFi 手機配網 Portal --- */
 #define WIFI_PORTAL_AP_SSID         "Core2-Setup"
