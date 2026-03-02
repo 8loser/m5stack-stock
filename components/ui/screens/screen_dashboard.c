@@ -26,31 +26,11 @@ static int           s_card_count = 0;
 static stock_quote_t s_cached_quotes[MAX_CARDS];
 static bool          s_cached_valid[MAX_CARDS] = {false};
 
-static void on_hw_test_btn_clicked(lv_event_t *e)
-{
-    (void)e;
-    ui_manager_switch_screen(SCREEN_HW_TEST);
-}
-
 lv_obj_t *screen_dashboard_create(void)
 {
     s_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(s_screen, COLOR_BG, 0);
     lv_obj_clear_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *hw_test_btn = lv_btn_create(s_screen);
-    lv_obj_set_size(hw_test_btn, 76, 20);
-    lv_obj_set_pos(hw_test_btn, 240, 2);
-    lv_obj_set_style_bg_color(hw_test_btn, lv_color_hex(0x4A148C), 0);
-    lv_obj_set_style_border_width(hw_test_btn, 1, 0);
-    lv_obj_set_style_border_color(hw_test_btn, lv_color_hex(0x7B1FA2), 0);
-    lv_obj_add_event_cb(hw_test_btn, on_hw_test_btn_clicked, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *hw_test_label = lv_label_create(hw_test_btn);
-    lv_label_set_text(hw_test_label, "HW Test");
-    lv_obj_set_style_text_color(hw_test_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(hw_test_label, &lv_font_montserrat_10, 0);
-    lv_obj_center(hw_test_label);
 
     /* ---- 股票卡片列表 ---- */
     for (int i = 0; i < MAX_CARDS; i++) {
