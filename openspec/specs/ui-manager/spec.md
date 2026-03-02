@@ -189,8 +189,8 @@ screen_info SHALL 使用繁體中文顯示所有使用者可見文字。
 ### Requirement: Portal 頁面繁體中文文字
 screen_portal SHALL 使用繁體中文顯示使用者可見文字。`s_status_lbl`（原顯示「入口已啟動 - 掃描 QR 加入 AP」）已移除，不再列入文字規格。
 
-| 元素 | 中文文字 |
-|------|---------|
+| 元素 | 文字 |
+|------|------|
 | 入口未啟動提示 | "入口未啟動\n\n等待自動啟動,\n再掃描 QR。" |
 | 加入 AP 標題 | "加入 AP:" |
 | 密碼標題 | "密碼:" |
@@ -242,9 +242,9 @@ screen_hw_test SHALL 使用繁體中文顯示所有使用者可見文字。
 ### Requirement: Status bar 繁體中文文字
 status_bar SHALL 使用繁體中文顯示時段和狀態資訊，且中央標題僅在超出可視寬度時向左捲動；文字可完整顯示時不得滾動。Portal 頁面 status bar 使用靜態英文 "Portal"，不顯示動態連線狀態。
 
-| 元素 | 中文文字 |
-|------|---------|
-| 電量 | "電量 --%"（預設）|
+| 元素 | 文字 |
+|------|------|
+| 電量 | "電量 --%"（預設） |
 | Portal 頁面 | "Portal"（靜態，不附加連線狀態） |
 
 #### Scenario: Status bar 電量顯示中文
@@ -262,3 +262,48 @@ status_bar SHALL 使用繁體中文顯示時段和狀態資訊，且中央標題
 #### Scenario: 長標題向左滾動
 - **WHEN** status bar 中央標題超出可視寬度
 - **THEN** 標題啟用向左滾動顯示
+
+### Requirement: 主流程心跳 API
+`ui_manager` SHALL 提供主流程心跳 API，供 `main` 與 `scheduler` 任務更新活性時間戳，並提供查詢目前主流程是否存活的介面。
+
+API 包含：
+- `void ui_manager_heartbeat_feed_main(void)`
+- `void ui_manager_heartbeat_feed_scheduler(void)`
+- `bool ui_manager_is_main_flow_alive(uint32_t *age_main_ms, uint32_t *age_sched_ms)`
+
+#### Scenario: main 任務餵心跳
+- **WHEN** `main` 主迴圈呼叫 `ui_manager_heartbeat_feed_main()`
+- **THEN** `ui_manager` 更新 main 心跳時間戳為當前時間
+
+#### Scenario: scheduler 任務餵心跳
+- **WHEN** `scheduler_task` 呼叫 `ui_manager_heartbeat_feed_scheduler()`
+- **THEN** `ui_manager` 更新 scheduler 心跳時間戳為當前時間
+
+### Requirement: 主流程存活判定門檻
+`ui_manager` SHALL 以雙來源心跳判定主流程存活：僅當 `main` 與 `scheduler` 的心跳 age 都小於等於各自門檻時，回傳 alive=true。
+
+預設門檻：
+- main 門檻 = 1500 ms
+- scheduler 門檻 = 3000 ms
+
+#### Scenario: 雙來源均在門檻內
+- **WHEN** main 與 scheduler 心跳 age 都在門檻內
+- **THEN** `ui_manager_is_main_flow_alive(...)` 回傳 true
+
+#### Scenario: 任一來源超過門檻
+- **WHEN** main 或 scheduler 任一心跳 age 超過門檻
+- **THEN** `ui_manager_is_main_flow_alive(...)` 回傳 false
+
+### Requirement: Status bar 顯示主流程心跳指標
+status bar SHALL 在時間文字前方顯示主流程心跳指標，並依 `ui_manager_is_main_flow_alive(...)` 結果切換樣式：
+- alive=true：顯示愛心 emoji，使用雙擊節奏閃爍
+- alive=false：顯示 `!`，停止閃爍且以警示色呈現
+
+#### Scenario: 主流程正常
+- **WHEN** `ui_manager_is_main_flow_alive(...)` 回傳 true
+- **THEN** status bar 心跳指標顯示愛心 emoji 並以雙擊節奏閃爍
+
+#### Scenario: 主流程疑似卡住
+- **WHEN** `ui_manager_is_main_flow_alive(...)` 回傳 false
+- **THEN** status bar 心跳指標改顯示 `!`，並停止閃爍
+

@@ -1,9 +1,3 @@
-## REMOVED Requirements
-
-### Requirement: Portal 狀態標籤
-**Reason**: `s_status_lbl`（顯示「入口已啟動 - 掃描 QR 加入 AP」）資訊已由 status bar 涵蓋，屬於冗余 UI 元素，對用戶無額外資訊價值。
-**Migration**: 不需替代；status bar 標題已足夠表達目前頁面狀態。
-
 ## MODIFIED Requirements
 
 ### Requirement: Portal 頁面不新增 Settings 入口

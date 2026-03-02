@@ -19,7 +19,7 @@
 ## 4. 驗證
 
 - [x] 4.1 Build 確認無編譯錯誤（`./flash.sh --build-only`）
-- [ ] 4.2 燒錄後進入 Portal 頁面，確認頂部無「入口已啟動」文字標籤
-- [ ] 4.3 確認 QR code 後方無藍色背景方塊
-- [ ] 4.4 確認 status bar 固定顯示 "Portal"，不隨 WiFi 狀態變化
-- [ ] 4.5 確認未啟動狀態下 `s_qr_hint_lbl` 位置正確，不超出左側區域
+- [x] 4.2 燒錄後進入 Portal 頁面，確認頂部無「入口已啟動」文字標籤
+- [x] 4.3 確認 QR code 後方無藍色背景方塊
+- [x] 4.4 確認 status bar 固定顯示 "Portal"，不隨 WiFi 狀態變化
+- [x] 4.5 確認未啟動狀態下 `s_qr_hint_lbl` 位置正確，不超出左側區域

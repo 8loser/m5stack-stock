@@ -2,7 +2,6 @@
 
 ## Purpose
 為 UI 提供可維護的繁體中文字型子集機制，確保中文字可正確顯示並控制韌體體積。
-
 ## Requirements
 ### Requirement: 字型字符集自動擴充腳本
 專案 SHALL 包含 `tools/fonts/fetch_stock_chars.py`，該腳本 SHALL 從輸入的 TWSE JSON 檔案提取股票名稱，抽取 CJK Unified Ideographs（U+4E00–U+9FFF）範圍內的唯一漢字，合併 UI SYMBOLS 後輸出到 stdout。腳本 SHALL 僅使用 Python 標準庫（`json`），不需要第三方套件。若 JSON 無法解析或缺少名稱資料，腳本 SHALL 以非零狀態碼退出。
@@ -57,3 +56,22 @@
 #### Scenario: 擴充字符集不可用
 - **WHEN** 執行 `./generate_fonts.sh`，且 TWSE JSON 下載或解析失敗
 - **THEN** 腳本以非零狀態碼退出，且不執行 `lv_font_conv`
+
+### Requirement: 心跳 emoji 字元納入 UI 字型字符集
+字型產生流程 SHALL 將心跳指標使用的 emoji 字元納入 `ui_symbols.txt` 來源集合，並隨 `generate_fonts.sh` 輸出到 `lv_font_noto_tc_14.c` 與 `lv_font_noto_tc_16.c`。
+
+#### Scenario: 重新產生字型後含心跳 emoji
+- **WHEN** 執行 `./generate_fonts.sh`
+- **THEN** 產生的 Noto TC 子集字型包含心跳 emoji 字元
+
+### Requirement: 心跳字元渲染失敗時 fallback
+當目標字型無法正確渲染心跳 emoji 時，UI SHALL fallback 使用 ASCII `<3` 作為正常心跳符號，避免顯示缺字方框。
+
+#### Scenario: emoji 可渲染
+- **WHEN** 字型包含且可渲染心跳 emoji
+- **THEN** status bar 正常狀態顯示 emoji 心跳符號
+
+#### Scenario: emoji 不可渲染
+- **WHEN** 字型缺少心跳 emoji 或渲染結果為缺字
+- **THEN** status bar 正常狀態改顯示 `<3`
+
