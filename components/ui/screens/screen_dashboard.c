@@ -22,6 +22,7 @@ static lv_obj_t *s_screen  = NULL;
 static lv_obj_t *s_card_list = NULL;
 static lv_obj_t *s_cards[DASHBOARD_VISIBLE_ROWS] = {NULL};
 static lv_obj_t *s_name_labels[DASHBOARD_VISIBLE_ROWS] = {NULL};
+static lv_obj_t *s_industry_labels[DASHBOARD_VISIBLE_ROWS] = {NULL};
 static lv_obj_t *s_price_labels[DASHBOARD_VISIBLE_ROWS] = {NULL};
 static lv_obj_t *s_change_labels[DASHBOARD_VISIBLE_ROWS] = {NULL};
 static lv_obj_t *s_empty_label = NULL;
@@ -41,35 +42,98 @@ static int           s_next_stock_idx = 0;
 static void apply_card_widgets(int idx, const stock_quote_t *q);
 static void render_dashboard_slots(void);
 
+#define CARD_COL_COUNT    4
+#define CARD_LEFT_PAD     8
+#define CARD_RIGHT_PAD    8
+#define CARD_COL_GAP      6
+
+static lv_coord_t s_col_x[CARD_COL_COUNT] = {0};
+static lv_coord_t s_col_w[CARD_COL_COUNT] = {0};
+static bool s_layout_ready = false;
+
+static void compute_card_layout(void)
+{
+    lv_coord_t card_w = (LCD_WIDTH - 8);
+    if (s_cards[0]) {
+        card_w = lv_obj_get_width(s_cards[0]);
+    }
+
+    lv_coord_t content_w = card_w - CARD_LEFT_PAD - CARD_RIGHT_PAD - (CARD_COL_GAP * (CARD_COL_COUNT - 1));
+    if (content_w < 220) {
+        content_w = 220;
+    }
+
+    /* 四欄等寬分配，最後一欄吃餘數，避免累積誤差 */
+    lv_coord_t col_base = content_w / CARD_COL_COUNT;
+    lv_coord_t w_left = col_base;
+    lv_coord_t w_industry = col_base;
+    lv_coord_t w_price = col_base;
+    lv_coord_t used = w_left + w_industry + w_price;
+    lv_coord_t w_change = content_w - used;
+
+    s_col_w[0] = w_left;
+    s_col_w[1] = w_industry;
+    s_col_w[2] = w_price;
+    s_col_w[3] = w_change;
+
+    s_col_x[0] = CARD_LEFT_PAD;
+    s_col_x[1] = s_col_x[0] + s_col_w[0] + CARD_COL_GAP;
+    s_col_x[2] = s_col_x[1] + s_col_w[1] + CARD_COL_GAP;
+    s_col_x[3] = s_col_x[2] + s_col_w[2] + CARD_COL_GAP;
+    s_layout_ready = true;
+}
+
 static void ensure_card_widgets(int idx)
 {
     if (idx < 0 || idx >= DASHBOARD_VISIBLE_ROWS) {
         return;
     }
+    if (!s_layout_ready) {
+        compute_card_layout();
+    }
 
     if (!s_name_labels[idx]) {
         s_name_labels[idx] = lv_label_create(s_cards[idx]);
-        lv_obj_set_pos(s_name_labels[idx], 10, 0);
+        lv_obj_set_pos(s_name_labels[idx], s_col_x[0], 2);
+        lv_obj_set_size(s_name_labels[idx], s_col_w[0], 34);
+        lv_label_set_long_mode(s_name_labels[idx], LV_LABEL_LONG_CLIP);
         lv_label_set_text(s_name_labels[idx], "---");
         lv_obj_set_style_text_color(s_name_labels[idx], lv_color_white(), 0);
         lv_obj_set_style_text_font(s_name_labels[idx], &lv_font_noto_tc_14, 0);
         lv_obj_set_style_text_line_space(s_name_labels[idx], 0, 0);
     }
 
+    if (!s_industry_labels[idx]) {
+        s_industry_labels[idx] = lv_label_create(s_cards[idx]);
+        lv_obj_set_pos(s_industry_labels[idx], s_col_x[1], 10);
+        lv_obj_set_size(s_industry_labels[idx], s_col_w[1], 16);
+        lv_label_set_long_mode(s_industry_labels[idx], LV_LABEL_LONG_DOT);
+        lv_label_set_text(s_industry_labels[idx], "");
+        lv_obj_set_style_text_color(s_industry_labels[idx], lv_color_hex(0xC7D2E0), 0);
+        lv_obj_set_style_text_font(s_industry_labels[idx], &lv_font_noto_tc_14, 0);
+        lv_obj_set_style_text_align(s_industry_labels[idx], LV_TEXT_ALIGN_LEFT, 0);
+    }
+
     if (!s_price_labels[idx]) {
         s_price_labels[idx] = lv_label_create(s_cards[idx]);
-        lv_obj_align(s_price_labels[idx], LV_ALIGN_CENTER, 0, 0);
+        lv_obj_set_pos(s_price_labels[idx], s_col_x[2], 10);
+        lv_obj_set_size(s_price_labels[idx], s_col_w[2], 16);
+        lv_label_set_long_mode(s_price_labels[idx], LV_LABEL_LONG_CLIP);
+        lv_obj_set_style_text_align(s_price_labels[idx], LV_TEXT_ALIGN_RIGHT, 0);
         lv_label_set_text(s_price_labels[idx], "---.--");
         lv_obj_set_style_text_color(s_price_labels[idx], lv_color_white(), 0);
-        lv_obj_set_style_text_font(s_price_labels[idx], &lv_font_noto_tc_16, 0);
+        lv_obj_set_style_text_font(s_price_labels[idx], &lv_font_montserrat_14, 0);
     }
 
     if (!s_change_labels[idx]) {
         s_change_labels[idx] = lv_label_create(s_cards[idx]);
-        lv_obj_align(s_change_labels[idx], LV_ALIGN_RIGHT_MID, -4, 0);
+        lv_obj_set_pos(s_change_labels[idx], s_col_x[3], 10);
+        lv_obj_set_size(s_change_labels[idx], s_col_w[3], 16);
+        lv_label_set_long_mode(s_change_labels[idx], LV_LABEL_LONG_CLIP);
+        lv_obj_set_style_text_align(s_change_labels[idx], LV_TEXT_ALIGN_RIGHT, 0);
         lv_label_set_text(s_change_labels[idx], "+/-");
         lv_obj_set_style_text_color(s_change_labels[idx], lv_color_white(), 0);
-        lv_obj_set_style_text_font(s_change_labels[idx], &lv_font_noto_tc_14, 0);
+        lv_obj_set_style_text_font(s_change_labels[idx], &lv_font_montserrat_10, 0);
     }
 }
 
@@ -108,6 +172,7 @@ static void render_slot_with_stock(int slot, int stock_idx)
         apply_card_widgets(slot, &s_cached_quotes[stock_idx]);
     } else {
         lv_label_set_text(s_name_labels[slot], "---");
+        lv_label_set_text(s_industry_labels[slot], "");
         lv_label_set_text(s_price_labels[slot], "---.--");
         lv_label_set_text(s_change_labels[slot], "+/-");
         lv_obj_set_style_text_color(s_change_labels[slot], lv_color_white(), 0);
@@ -203,10 +268,11 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
 {
     ensure_card_widgets(idx);
     lv_label_set_text_fmt(s_name_labels[idx], "%s\n%s", q->symbol, q->name);
+    lv_label_set_text(s_industry_labels[idx], q->industry);
 
     char price_str[16];
     if (q->is_market_closed) {
-        snprintf(price_str, sizeof(price_str), "%.2f\n休市", q->yesterday_close);
+        snprintf(price_str, sizeof(price_str), "%.2f", q->yesterday_close);
         lv_obj_set_style_text_color(s_price_labels[idx], lv_color_hex(0x888888), 0);
     } else {
         snprintf(price_str, sizeof(price_str), "%.2f", q->current_price);

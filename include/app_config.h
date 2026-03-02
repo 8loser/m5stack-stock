@@ -60,7 +60,7 @@
 /* --- 排程預設值 --- */
 #define DEFAULT_QUOTE_INTERVAL_S    60      /* 報價更新間隔（秒）*/
 #define DEFAULT_MARKET_ONLY         false   /* 全天候更新 */
-#define DASHBOARD_SLOT_ROTATION_MS  2000    /* Dashboard 固定格位輪巡節拍（毫秒）*/
+#define DASHBOARD_SLOT_ROTATION_MS  1500    /* Dashboard 固定格位輪巡節拍（毫秒）*/
 
 /* --- WiFi 手機配網 Portal --- */
 #define WIFI_PORTAL_AP_SSID         "Core2-Setup"

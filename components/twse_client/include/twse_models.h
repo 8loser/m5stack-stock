@@ -5,6 +5,7 @@
 typedef struct {
     char  symbol[8];           /* "2330" */
     char  name[32];            /* "台積電" */
+    char  industry[32];        /* "半導體" */
     float current_price;       /* 現價 */
     float open_price;          /* 開盤 */
     float high_price;          /* 最高 */

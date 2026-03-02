@@ -8,6 +8,7 @@ typedef struct {
     char symbol[8];
     char name[64];
     char short_name[32];
+    char industry[32];
     char market[8];
     bool exists;
 } stock_symbol_info_t;

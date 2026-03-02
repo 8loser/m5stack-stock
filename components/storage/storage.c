@@ -18,6 +18,16 @@ static const char *provider_key_name(uint8_t provider_type)
     }
 }
 
+static bool is_stock_symbol_valid(const char *symbol)
+{
+    return symbol && symbol[0] != '\0' && strlen(symbol) <= 7;
+}
+
+static void make_stock_meta_key(char *buf, size_t buf_size, const char *symbol)
+{
+    snprintf(buf, buf_size, "m_%s", symbol);
+}
+
 esp_err_t storage_init(void)
 {
     ESP_LOGI(TAG, "NVS Storage 就緒");
@@ -477,6 +487,64 @@ esp_err_t storage_stocks_load(stock_list_t *list)
     nvs_get_u8(h, "count", &list->count);
     nvs_close(h);
     return ESP_OK;
+}
+
+esp_err_t storage_stock_meta_save(const char *symbol, const char *name,
+                                  const char *abbr, const char *industry)
+{
+    if (!is_stock_symbol_valid(symbol)) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_STOCKS, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    stock_meta_t meta = {0};
+    strlcpy(meta.name, name ? name : "", sizeof(meta.name));
+    strlcpy(meta.abbr, abbr ? abbr : "", sizeof(meta.abbr));
+    strlcpy(meta.industry, industry ? industry : "", sizeof(meta.industry));
+
+    char key[16] = {0};
+    make_stock_meta_key(key, sizeof(key), symbol);
+    ret = nvs_set_blob(h, key, &meta, sizeof(meta));
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_stock_meta_load(const char *symbol, stock_meta_t *meta)
+{
+    if (!is_stock_symbol_valid(symbol) || !meta) return ESP_ERR_INVALID_ARG;
+    memset(meta, 0, sizeof(*meta));
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_STOCKS, NVS_READONLY, &h);
+    if (ret != ESP_OK) return ret;
+
+    char key[16] = {0};
+    make_stock_meta_key(key, sizeof(key), symbol);
+    size_t sz = sizeof(*meta);
+    ret = nvs_get_blob(h, key, meta, &sz);
+    nvs_close(h);
+    if (ret != ESP_OK) return ret;
+    if (sz != sizeof(*meta)) return ESP_ERR_INVALID_SIZE;
+    return ESP_OK;
+}
+
+esp_err_t storage_stock_meta_remove(const char *symbol)
+{
+    if (!is_stock_symbol_valid(symbol)) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_STOCKS, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    char key[16] = {0};
+    make_stock_meta_key(key, sizeof(key), symbol);
+    ret = nvs_erase_key(h, key);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) ret = ESP_OK;
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
 }
 
 /* -------- 排程設定 -------- */

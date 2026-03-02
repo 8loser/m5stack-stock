@@ -1,8 +1,5 @@
-# portal-stock-management Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change twse-portal-stock-management. Update Purpose after archive.
-## Requirements
 ### Requirement: GET /stocks 回傳現有清單
 `GET /stocks` SHALL 回傳目前 NVS 中儲存的股票清單，格式為 JSON 陣列，每個項目包含 `symbol`、`name`（中文全名）、`abbr`（英文簡稱）與 `industry`（產業別）。當 metadata 存在時 SHALL 直接回傳已保存的欄位；當 metadata 不存在時 SHALL 回傳空字串，不得在 `GET /stocks` 內觸發產業補抓。
 
@@ -59,18 +56,3 @@ TBD - created by archiving change twse-portal-stock-management. Update Purpose a
 #### Scenario: 代號不在清單
 - **WHEN** 送出不在清單中的 symbol
 - **THEN** 回傳 HTTP 404 `{"ok":false,"error":"not_found"}`
-
-### Requirement: Portal 前端 Stocks tab
-Portal 網頁 SHALL 提供 Stocks tab，顯示當前清單（symbol + name）、每列 Remove 按鈕、底部輸入框與 Add 按鈕。Add 動作 SHALL 在等待回應期間禁用按鈕，成功後重新載入清單。Portal 導覽列 SHALL 包含 WiFi、AI、Stocks 三個 tab，AI tab 用於儲存 API key（不觸發 AI 執行）。
-
-#### Scenario: 新增股票
-- **WHEN** 使用者在 Stocks tab 輸入 "2330" 並按 Add
-- **THEN** 呼叫 `POST /stocks/add`，成功後清單刷新顯示新股票
-
-#### Scenario: Remove 股票
-- **WHEN** 使用者按下某股票列的 Remove 按鈕
-- **THEN** 呼叫 `POST /stocks/remove`，成功後該列從清單消失
-
-#### Scenario: AI tab 儲存 API key
-- **WHEN** 使用者在 AI tab 填入 API key 並送出
-- **THEN** 呼叫 `POST /ai`，key 儲存至 NVS，不觸發任何 AI 分析

@@ -1,8 +1,5 @@
-# twse-client Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change twse-portal-stock-management. Update Purpose after archive.
-## Requirements
 ### Requirement: twse_client_validate_symbol 驗證代號合法性
 `twse_client_validate_symbol(symbol, out)` SHALL 呼叫 TWSE stock info API（`ex_ch=tse_<symbol>.tw`），解析 `msgArray[0]` 回傳 `stock_symbol_info_t`：`symbol`、`name`、`short_name`、`market`、`industry`、`exists`。其中 `industry` SHALL 由同次查詢可得欄位或既定 metadata 來源填入；若產業別不可得，SHALL 設為空字串且不得影響 `exists`/`market` 判定。若 `msgArray` 為空或解析失敗，SHALL 設 `exists=false` 並回傳 `ESP_OK`（代號不存在，非 API 錯誤）。HTTP 失敗或 JSON 解析失敗才回傳 `ESP_FAIL`。
 

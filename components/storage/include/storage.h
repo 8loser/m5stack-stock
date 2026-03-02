@@ -35,6 +35,17 @@ typedef struct {
 esp_err_t storage_stocks_save(const stock_list_t *list);
 esp_err_t storage_stocks_load(stock_list_t *list);
 
+typedef struct {
+    char name[64];
+    char abbr[32];
+    char industry[32];
+} stock_meta_t;
+
+esp_err_t storage_stock_meta_save(const char *symbol, const char *name,
+                                  const char *abbr, const char *industry);
+esp_err_t storage_stock_meta_load(const char *symbol, stock_meta_t *meta);
+esp_err_t storage_stock_meta_remove(const char *symbol);
+
 /* ====== 排程設定 ====== */
 typedef struct {
     uint16_t quote_interval_s;   /* 報價更新間隔（秒）*/

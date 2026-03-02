@@ -31,6 +31,18 @@ static bool              s_sntp_synced     = false;
 /* 儲存的股票清單（供排程使用）*/
 static stock_list_t      s_stock_list;
 
+static void enrich_quote_with_industry(stock_quote_t *quote)
+{
+    if (!quote || quote->symbol[0] == '\0') return;
+
+    stock_meta_t meta = {0};
+    if (storage_stock_meta_load(quote->symbol, &meta) == ESP_OK) {
+        strlcpy(quote->industry, meta.industry, sizeof(quote->industry));
+    } else {
+        quote->industry[0] = '\0';
+    }
+}
+
 static bool is_wifi_connected(void)
 {
     wifi_ap_record_t ap_info;
@@ -100,6 +112,7 @@ static void do_fetch_quotes(bool force_fetch)
                         quotes);
     if (ret == ESP_OK && s_quote_queue) {
         for (int i = 0; i < s_stock_list.count; i++) {
+            enrich_quote_with_industry(&quotes[i]);
             xQueueSend(s_quote_queue, &quotes[i], 0);
         }
     }

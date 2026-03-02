@@ -61,6 +61,7 @@ typedef struct {
     char symbol[8];
     char name[64];
     char abbr[32];
+    char industry[32];
 } stock_meta_cache_t;
 
 static stock_meta_cache_t s_stock_meta_cache[MAX_STOCK_COUNT];
@@ -292,7 +293,8 @@ static stock_meta_cache_t *find_stock_meta(const char *symbol)
     return NULL;
 }
 
-static void cache_stock_meta(const char *symbol, const char *name, const char *abbr)
+static void cache_stock_meta(const char *symbol, const char *name,
+                             const char *abbr, const char *industry)
 {
     if (!symbol || symbol[0] == '\0') return;
 
@@ -310,12 +312,27 @@ static void cache_stock_meta(const char *symbol, const char *name, const char *a
     strlcpy(slot->symbol, symbol, sizeof(slot->symbol));
     strlcpy(slot->name, name ? name : "", sizeof(slot->name));
     strlcpy(slot->abbr, abbr ? abbr : "", sizeof(slot->abbr));
+    strlcpy(slot->industry, industry ? industry : "", sizeof(slot->industry));
 }
 
 static void clear_stock_meta(const char *symbol)
 {
     stock_meta_cache_t *slot = find_stock_meta(symbol);
     if (slot) memset(slot, 0, sizeof(*slot));
+}
+
+static void ensure_stock_meta_cached(const char *symbol)
+{
+    if (!symbol || symbol[0] == '\0') return;
+    stock_meta_cache_t *meta = find_stock_meta(symbol);
+    if (meta && (meta->name[0] != '\0' || meta->abbr[0] != '\0' || meta->industry[0] != '\0')) {
+        return;
+    }
+
+    stock_meta_t stored = {0};
+    if (storage_stock_meta_load(symbol, &stored) == ESP_OK) {
+        cache_stock_meta(symbol, stored.name, stored.abbr, stored.industry);
+    }
 }
 
 static esp_err_t portal_scan_get_handler(httpd_req_t *req)
@@ -466,27 +483,19 @@ static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
     }
 
     cJSON_AddNumberToObject(root, "count", list.count);
+    cJSON_AddBoolToObject(root, "ok", true);
     cJSON_AddItemToObject(root, "items", items);
 
     for (int i = 0; i < list.count; i++) {
+        ensure_stock_meta_cached(list.symbols[i]);
         const char *name = "";
         const char *abbr = "";
+        const char *industry = "";
         stock_meta_cache_t *meta = find_stock_meta(list.symbols[i]);
         if (meta) {
             name = meta->name;
             abbr = meta->abbr;
-        }
-
-        if ((!name || name[0] == '\0') && is_sta_connected()) {
-            stock_symbol_info_t info = {0};
-            if (twse_client_validate_symbol(list.symbols[i], &info) == ESP_OK && info.exists) {
-                cache_stock_meta(list.symbols[i], info.name, info.short_name);
-                meta = find_stock_meta(list.symbols[i]);
-                if (meta) {
-                    name = meta->name;
-                    abbr = meta->abbr;
-                }
-            }
+            industry = meta->industry;
         }
 
         cJSON *item = cJSON_CreateObject();
@@ -497,6 +506,7 @@ static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
         cJSON_AddStringToObject(item, "symbol", list.symbols[i]);
         cJSON_AddStringToObject(item, "name", name ? name : "");
         cJSON_AddStringToObject(item, "abbr", abbr ? abbr : "");
+        cJSON_AddStringToObject(item, "industry", industry ? industry : "");
         cJSON_AddItemToArray(items, item);
     }
 
@@ -561,22 +571,30 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
         return send_json_error(req, 500, "save_failed");
     }
 
+    if (storage_stock_meta_save(symbol, info.name, info.short_name, info.industry) != ESP_OK) {
+        stock_list_remove_symbol(&list, symbol);
+        storage_stocks_save(&list);
+        return send_json_error(req, 500, "save_failed");
+    }
+
     scheduler_reload_stock_list();
     scheduler_trigger_quote_now();
-    cache_stock_meta(symbol, info.name, info.short_name);
+    cache_stock_meta(symbol, info.name, info.short_name, info.industry);
     if (s_stock_list_changed_cb) {
         s_stock_list_changed_cb(list.count);
     }
 
     char esc_name[160] = {0};
     char esc_abbr[96] = {0};
+    char esc_industry[96] = {0};
     json_escape(esc_name, sizeof(esc_name), info.name);
     json_escape(esc_abbr, sizeof(esc_abbr), info.short_name);
+    json_escape(esc_industry, sizeof(esc_industry), info.industry);
 
     char resp[PORTAL_JSON_MAX_LEN];
     snprintf(resp, sizeof(resp),
-             "{\"ok\":true,\"item\":{\"symbol\":\"%s\",\"name\":\"%s\",\"abbr\":\"%s\",\"market\":\"tse\"}}",
-             symbol, esc_name, esc_abbr);
+             "{\"ok\":true,\"item\":{\"symbol\":\"%s\",\"name\":\"%s\",\"abbr\":\"%s\",\"industry\":\"%s\",\"market\":\"tse\"}}",
+             symbol, esc_name, esc_abbr, esc_industry);
     return send_json_response(req, 200, resp);
 }
 
@@ -611,6 +629,9 @@ static esp_err_t portal_stocks_remove_post_handler(httpd_req_t *req)
     }
 
     if (storage_stocks_save(&list) != ESP_OK) {
+        return send_json_error(req, 500, "save_failed");
+    }
+    if (storage_stock_meta_remove(symbol) != ESP_OK) {
         return send_json_error(req, 500, "save_failed");
     }
 
@@ -799,14 +820,14 @@ static esp_err_t portal_index_get_handler(httpd_req_t *req)
         "var box=document.getElementById('stocks_list');"
         "if(!d.items||!d.items.length){box.innerHTML='<div class=\"hint\">No stocks configured</div>';return;}"
         "var html='';d.items.forEach(function(it){html+='<div class=\"stock-row\"><div><span class=\"stock-symbol\">'+"
-        "it.symbol+'</span><br><span>'+(it.name||'')+'</span></div><button type=\"button\" style=\"width:auto;padding:6px 10px;background:#c33\" "
+        "it.symbol+'</span><br><span>'+(it.name||'')+'</span><br><span class=\"hint\">'+(it.industry||'')+'</span></div><button type=\"button\" style=\"width:auto;padding:6px 10px;background:#c33\" "
         "onclick=\"removeStock(\\''+it.symbol+'\\')\">Remove</button></div>';});box.innerHTML=html;"
         "}).catch(function(){document.getElementById('stocks_list').innerHTML='<div class=\"err\">Load failed</div>';});}"
         "function addStock(){var sym=(document.getElementById('stock_symbol').value||'').trim();"
         "fetch('/stocks/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym})})"
         ".then(function(r){return r.json().catch(function(){return{};}).then(function(b){return{ok:r.ok,body:b};});})"
         ".then(function(x){if(!x.ok||!x.body.ok){setStocksMsg(stockErr(x.body.error),false);return;}"
-        "setStocksMsg('新增成功：'+x.body.item.symbol+' '+(x.body.item.name||''),true);"
+        "setStocksMsg('新增成功：'+x.body.item.symbol+' '+(x.body.item.name||'')+' / '+(x.body.item.industry||''),true);"
         "document.getElementById('stock_symbol').value='';loadStocks();})"
         ".catch(function(e){setStocksMsg('Request failed: '+(e&&e.message?e.message:'network'),false);});}"
         "function removeStock(sym){fetch('/stocks/remove',{method:'POST',headers:{'Content-Type':'application/json'},"

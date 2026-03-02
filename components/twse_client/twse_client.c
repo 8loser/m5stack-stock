@@ -21,6 +21,145 @@ static QueueHandle_t s_queue        = NULL;
 static TaskHandle_t  s_task_handle  = NULL;
 static bool          s_task_running = false;
 
+typedef struct {
+    const char *code;
+    const char *name;
+} industry_map_t;
+
+static const industry_map_t s_industry_map[] = {
+    {"1", "水泥工業"},
+    {"2", "食品工業"},
+    {"3", "塑膠工業"},
+    {"4", "紡織纖維"},
+    {"5", "電機機械"},
+    {"6", "電器電纜"},
+    {"8", "玻璃陶瓷"},
+    {"9", "造紙工業"},
+    {"10", "鋼鐵工業"},
+    {"11", "橡膠工業"},
+    {"12", "汽車工業"},
+    {"14", "建材營造"},
+    {"15", "航運業"},
+    {"16", "觀光餐旅"},
+    {"17", "金融保險"},
+    {"18", "貿易百貨"},
+    {"19", "綜合"},
+    {"20", "其他"},
+    {"21", "化學工業"},
+    {"22", "生技醫療"},
+    {"23", "油電燃氣"},
+    {"24", "半導體業"},
+    {"25", "電腦及週邊設備業"},
+    {"26", "光電業"},
+    {"27", "通信網路業"},
+    {"28", "電子零組件業"},
+    {"29", "電子通路業"},
+    {"30", "資訊服務業"},
+    {"31", "其他電子業"},
+    {"32", "文化創意業"},
+    {"33", "農業科技業"},
+    {"34", "電子商務"},
+    {"35", "綠能環保"},
+    {"36", "數位雲端"},
+    {"37", "運動休閒"},
+    {"38", "居家生活"},
+    {"80", "管理股票"},
+    {"91", "存託憑證"},
+};
+
+static bool copy_json_string(char *dst, size_t dst_size, cJSON *obj, const char *key)
+{
+    cJSON *j = cJSON_GetObjectItem(obj, key);
+    if (!j || !cJSON_IsString(j) || !j->valuestring || strcmp(j->valuestring, "-") == 0) {
+        return false;
+    }
+    strlcpy(dst, j->valuestring, dst_size);
+    return true;
+}
+
+static bool copy_json_text(char *dst, size_t dst_size, cJSON *obj, const char *key)
+{
+    cJSON *j = cJSON_GetObjectItem(obj, key);
+    if (!j) return false;
+
+    if (cJSON_IsString(j) && j->valuestring && strcmp(j->valuestring, "-") != 0) {
+        strlcpy(dst, j->valuestring, dst_size);
+        return true;
+    }
+
+    if (cJSON_IsNumber(j)) {
+        snprintf(dst, dst_size, "%.0f", j->valuedouble);
+        return true;
+    }
+
+    return false;
+}
+
+static const char *industry_from_code(const char *code)
+{
+    if (!code || code[0] == '\0') return NULL;
+
+    for (size_t i = 0; i < sizeof(s_industry_map) / sizeof(s_industry_map[0]); i++) {
+        if (strcmp(s_industry_map[i].code, code) == 0) {
+            return s_industry_map[i].name;
+        }
+    }
+    return NULL;
+}
+
+static const char *normalize_industry_code(const char *code, char *out, size_t out_size)
+{
+    if (!code || !out || out_size == 0) return NULL;
+    while (*code == '0' && code[1] != '\0') {
+        code++;
+    }
+    strlcpy(out, code, out_size);
+    return out;
+}
+
+static void parse_symbol_metadata(cJSON *item, stock_symbol_info_t *out)
+{
+    /* short_name 優先使用 n；name 優先使用 nf */
+    copy_json_string(out->short_name, sizeof(out->short_name), item, "n");
+    if (!copy_json_string(out->name, sizeof(out->name), item, "nf")) {
+        if (out->short_name[0] != '\0') {
+            strlcpy(out->name, out->short_name, sizeof(out->name));
+        }
+    }
+
+    if (copy_json_string(out->industry, sizeof(out->industry), item, "industry")) {
+        return;
+    }
+
+    /* 常見為產業代碼 i（可能是字串或數字） */
+    char industry_code[12] = {0};
+    if (copy_json_text(industry_code, sizeof(industry_code), item, "i")) {
+        bool all_digit = true;
+        for (size_t i = 0; industry_code[i] != '\0'; i++) {
+            if (industry_code[i] < '0' || industry_code[i] > '9') {
+                all_digit = false;
+                break;
+            }
+        }
+
+        if (all_digit) {
+            char normalized[12] = {0};
+            const char *mapped = industry_from_code(
+                normalize_industry_code(industry_code, normalized, sizeof(normalized)));
+            if (mapped) {
+                strlcpy(out->industry, mapped, sizeof(out->industry));
+                return;
+            }
+        } else {
+            /* 若 i 已是文字，直接使用 */
+            strlcpy(out->industry, industry_code, sizeof(out->industry));
+            return;
+        }
+    }
+
+    out->industry[0] = '\0';
+}
+
 /* HTTP 事件回調，用於接收 body */
 typedef struct {
     char   *buf;
@@ -270,8 +409,6 @@ esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *o
     }
 
     cJSON *sym = cJSON_GetObjectItem(item, "c");
-    cJSON *name = cJSON_GetObjectItem(item, "n");
-    cJSON *full_name = cJSON_GetObjectItem(item, "nf");
     cJSON *ex = cJSON_GetObjectItem(item, "ex");
 
     if (sym && cJSON_IsString(sym) &&
@@ -279,17 +416,7 @@ esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *o
         out->exists = true;
     }
 
-    if (name && cJSON_IsString(name) &&
-        strcmp(name->valuestring, "-") != 0) {
-        strlcpy(out->short_name, name->valuestring, sizeof(out->short_name));
-    }
-
-    if (full_name && cJSON_IsString(full_name) &&
-        strcmp(full_name->valuestring, "-") != 0) {
-        strlcpy(out->name, full_name->valuestring, sizeof(out->name));
-    } else if (out->short_name[0] != '\0') {
-        strlcpy(out->name, out->short_name, sizeof(out->name));
-    }
+    parse_symbol_metadata(item, out);
 
     if (ex && cJSON_IsString(ex)) {
         strlcpy(out->market, ex->valuestring, sizeof(out->market));
