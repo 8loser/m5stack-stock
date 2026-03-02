@@ -8,18 +8,27 @@
 #include <time.h>
 
 #define BAR_TEXT_COLOR lv_color_hex(0xDDE8F2)
+#define HEARTBEAT_COLOR_ON lv_color_hex(0x00C4CF)
+#define HEARTBEAT_COLOR_OFF lv_color_hex(0x00C4CF)
+#define HEARTBEAT_COLOR_ALERT lv_color_hex(0x00C4CF)
+#define HEARTBEAT_EMOJI "♡"
+#define HEARTBEAT_EMOJI_CODEPOINT 0x2661U
 
 /* 狀態列共用（所有頁面皆可見）*/
 static lv_obj_t *s_bar        = NULL;
+static lv_obj_t *s_heartbeat_lbl = NULL;
 static lv_obj_t *s_time_lbl   = NULL;
 static lv_obj_t *s_msg_lbl    = NULL;
 static lv_obj_t *s_wifi_lbl   = NULL;
 static lv_obj_t *s_batt_lbl   = NULL;
 static lv_timer_t *s_update_timer = NULL;
+static lv_timer_t *s_heartbeat_timer = NULL;
 static screen_id_t s_page = SCREEN_DASHBOARD;
 static int s_wifi_state = 0;
 static const int EDGE_PADDING = 4;
 static const int ITEM_GAP = 6;
+static const int HEARTBEAT_LABEL_W = 18;
+static const int HEARTBEAT_LABEL_H = 16;
 
 static void update_message_scroll_mode(void)
 {
@@ -141,9 +150,10 @@ static void refresh_wifi_icon(void)
 
 static void layout_topbar_items(void)
 {
-    if (!s_bar || !s_time_lbl || !s_msg_lbl || !s_wifi_lbl || !s_batt_lbl) return;
+    if (!s_bar || !s_heartbeat_lbl || !s_time_lbl || !s_msg_lbl || !s_wifi_lbl || !s_batt_lbl) return;
 
-    lv_obj_align(s_time_lbl, LV_ALIGN_LEFT_MID, EDGE_PADDING, 0);
+    lv_obj_align(s_heartbeat_lbl, LV_ALIGN_LEFT_MID, EDGE_PADDING, 0);
+    lv_obj_align_to(s_time_lbl, s_heartbeat_lbl, LV_ALIGN_OUT_RIGHT_MID, ITEM_GAP, 0);
     lv_obj_align(s_batt_lbl, LV_ALIGN_RIGHT_MID, -EDGE_PADDING, 0);
     lv_obj_align_to(s_wifi_lbl, s_batt_lbl, LV_ALIGN_OUT_LEFT_MID, -ITEM_GAP, 0);
 
@@ -157,6 +167,39 @@ static void layout_topbar_items(void)
     lv_obj_set_pos(s_msg_lbl, msg_x, 2);
     lv_obj_set_size(s_msg_lbl, msg_w, 16);
     update_message_scroll_mode();
+}
+
+static void heartbeat_update_cb(lv_timer_t *t)
+{
+    (void)t;
+
+    if (!s_heartbeat_lbl) {
+        return;
+    }
+
+    uint32_t age_main_ms = 0;
+    uint32_t age_sched_ms = 0;
+    bool alive = ui_manager_is_main_flow_alive(&age_main_ms, &age_sched_ms);
+    (void)age_main_ms;
+    (void)age_sched_ms;
+
+    if (!alive) {
+        lv_label_set_text(s_heartbeat_lbl, "!");
+        lv_obj_set_style_text_color(s_heartbeat_lbl, HEARTBEAT_COLOR_ALERT, 0);
+        lv_obj_set_style_text_opa(s_heartbeat_lbl, LV_OPA_COVER, 0);
+        return;
+    }
+
+    lv_label_set_text(s_heartbeat_lbl, HEARTBEAT_EMOJI);
+
+    uint32_t phase_ms = lv_tick_get() % 1000U;
+    bool beat_on = (phase_ms >= 180U);
+    lv_obj_set_style_text_color(
+        s_heartbeat_lbl,
+        beat_on ? HEARTBEAT_COLOR_ON : HEARTBEAT_COLOR_OFF,
+        0
+    );
+    lv_obj_set_style_text_opa(s_heartbeat_lbl, beat_on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
 }
 
 static void status_update_cb(lv_timer_t *t)
@@ -192,9 +235,19 @@ void status_bar_create_on(lv_obj_t *parent)
     lv_obj_set_style_bg_color(bar, lv_color_hex(0x0F3460), 0);
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
 
+    s_heartbeat_lbl = lv_label_create(bar);
+    lv_obj_align(s_heartbeat_lbl, LV_ALIGN_LEFT_MID, EDGE_PADDING, 0);
+    lv_obj_set_size(s_heartbeat_lbl, HEARTBEAT_LABEL_W, HEARTBEAT_LABEL_H);
+    lv_label_set_long_mode(s_heartbeat_lbl, LV_LABEL_LONG_CLIP);
+    lv_label_set_text(s_heartbeat_lbl, HEARTBEAT_EMOJI);
+    lv_obj_set_style_text_color(s_heartbeat_lbl, HEARTBEAT_COLOR_ON, 0);
+    lv_obj_set_style_text_font(s_heartbeat_lbl, &lv_font_noto_tc_14, 0);
+    lv_obj_set_style_text_align(s_heartbeat_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_opa(s_heartbeat_lbl, LV_OPA_COVER, 0);
+
     /* 時間 */
     s_time_lbl = lv_label_create(bar);
-    lv_obj_align(s_time_lbl, LV_ALIGN_LEFT_MID, EDGE_PADDING, 0);
+    lv_obj_align_to(s_time_lbl, s_heartbeat_lbl, LV_ALIGN_OUT_RIGHT_MID, ITEM_GAP, 0);
     lv_label_set_text(s_time_lbl, "--:--");
     lv_obj_set_style_text_color(s_time_lbl, BAR_TEXT_COLOR, 0);
     lv_obj_set_style_text_opa(s_time_lbl, LV_OPA_COVER, 0);
@@ -228,11 +281,16 @@ void status_bar_create_on(lv_obj_t *parent)
     refresh_page_message();
     refresh_wifi_icon();
     layout_topbar_items();
+    heartbeat_update_cb(NULL);
 
     /* 定時更新：每 10 秒 */
     if (!s_update_timer) {
         s_update_timer = lv_timer_create(status_update_cb, 10000, NULL);
         status_update_cb(NULL);  /* 立即更新一次 */
+    }
+
+    if (!s_heartbeat_timer) {
+        s_heartbeat_timer = lv_timer_create(heartbeat_update_cb, 120, NULL);
     }
 }
 

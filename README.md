@@ -101,6 +101,9 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
 
 所有頁面共用：
 
+- 主流程心跳（時間左側）
+  - 正常：顯示 `♡`，每秒閃爍一次
+  - 異常：顯示 `!`（停止閃爍）
 - 時間（12 小時制）
 - 中央 screen 標題（`Dashboard / Portal / Log / Info / Settings / HW Test`）
   - `Portal` 頁面固定顯示：`Portal`
@@ -150,4 +153,6 @@ Stocks API 驗證規則：
 
 - 請勿提交真實 API Key、WiFi 密碼或私人端點
 - `build/` 為建置產物，請勿手動修改
+- Core2 這批面板在目前驅動下顏色可能偏移，新增/調整 UI 色彩時建議先參考 `components/ui/screens/screen_dashboard.c` 的校正色（`COLOR_UP/DOWN/FLAT`）再上板確認
+- 若修改 `tools/fonts/ui_symbols.txt`（例如心跳符號），需先執行 `./generate_fonts.sh` 重建子集字型，再編譯與燒錄
 - 若變更 UI/流程，請同步更新本 README

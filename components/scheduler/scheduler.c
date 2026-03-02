@@ -15,6 +15,9 @@
 
 static const char *TAG = "scheduler";
 
+/* Avoid component circular dependency: scheduler only needs this symbol. */
+extern void ui_manager_heartbeat_feed_scheduler(void);
+
 /* Task notification bits */
 #define NOTIFY_QUOTE_BIT  (1 << 0)
 
@@ -112,6 +115,7 @@ static void scheduler_task(void *arg)
 {
     /* 等待 WiFi 連線後啟動 SNTP */
     while (!is_wifi_connected()) {
+        ui_manager_heartbeat_feed_scheduler();
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
     init_sntp();
@@ -122,8 +126,9 @@ static void scheduler_task(void *arg)
     /* 主迴圈：等待 timer 通知 + 監控睡眠條件 */
     while (1) {
         uint32_t bits = 0;
-        /* 最多等 60 秒；timer 到期會提前喚醒 */
-        xTaskNotifyWait(0, UINT32_MAX, &bits, pdMS_TO_TICKS(60000));
+        /* 最多等 1 秒；timer 到期會提前喚醒 */
+        xTaskNotifyWait(0, UINT32_MAX, &bits, pdMS_TO_TICKS(1000));
+        ui_manager_heartbeat_feed_scheduler();
 
         if (bits & NOTIFY_QUOTE_BIT) {
             do_fetch_quotes();

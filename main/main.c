@@ -126,6 +126,7 @@ void app_main(void)
             ESP_LOGW(TAG, "heap 不足警告: %u bytes", free_heap);
         }
 
+        ui_manager_heartbeat_feed_main();
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

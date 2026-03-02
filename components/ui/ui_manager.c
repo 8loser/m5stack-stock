@@ -10,6 +10,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/portmacro.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -90,6 +91,12 @@ static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 static SemaphoreHandle_t s_ui_mutex   = NULL;
 static lv_disp_t        *s_disp       = NULL;
 static screen_id_t       s_cur_screen = SCREEN_DASHBOARD;
+static portMUX_TYPE      s_heartbeat_lock = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t          s_main_heartbeat_ms = 0;
+static uint32_t          s_scheduler_heartbeat_ms = 0;
+
+#define MAIN_HEARTBEAT_TIMEOUT_MS      1500U
+#define SCHED_HEARTBEAT_TIMEOUT_MS     3000U
 static const screen_id_t s_nav_screens[] = {
     SCREEN_DASHBOARD,
     SCREEN_LOG,
@@ -140,10 +147,15 @@ static void lvgl_task(void *arg)
 
 esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
 {
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
     s_ui_mutex = ui_mutex;
     s_cur_screen = SCREEN_DASHBOARD;
     s_nav_idx = 0;
     s_mid_btn_idx = 0;
+    taskENTER_CRITICAL(&s_heartbeat_lock);
+    s_main_heartbeat_ms = now_ms;
+    s_scheduler_heartbeat_ms = now_ms;
+    taskEXIT_CRITICAL(&s_heartbeat_lock);
 
     lv_init();
 
@@ -359,6 +371,49 @@ void ui_manager_show_loading(bool show)
         loading_spinner_set_visible(show);
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
+}
+
+void ui_manager_heartbeat_feed_main(void)
+{
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+    taskENTER_CRITICAL(&s_heartbeat_lock);
+    s_main_heartbeat_ms = now_ms;
+    taskEXIT_CRITICAL(&s_heartbeat_lock);
+}
+
+void ui_manager_heartbeat_feed_scheduler(void)
+{
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+    taskENTER_CRITICAL(&s_heartbeat_lock);
+    s_scheduler_heartbeat_ms = now_ms;
+    taskEXIT_CRITICAL(&s_heartbeat_lock);
+}
+
+bool ui_manager_is_main_flow_alive(uint32_t *age_main_ms, uint32_t *age_sched_ms)
+{
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+    uint32_t main_ms = 0;
+    uint32_t sched_ms = 0;
+    uint32_t main_age = 0;
+    uint32_t sched_age = 0;
+
+    taskENTER_CRITICAL(&s_heartbeat_lock);
+    main_ms = s_main_heartbeat_ms;
+    sched_ms = s_scheduler_heartbeat_ms;
+    taskEXIT_CRITICAL(&s_heartbeat_lock);
+
+    main_age = now_ms - main_ms;
+    sched_age = now_ms - sched_ms;
+
+    if (age_main_ms) {
+        *age_main_ms = main_age;
+    }
+    if (age_sched_ms) {
+        *age_sched_ms = sched_age;
+    }
+
+    return (main_age <= MAIN_HEARTBEAT_TIMEOUT_MS) &&
+           (sched_age <= SCHED_HEARTBEAT_TIMEOUT_MS);
 }
 
 void ui_manager_log_stock(log_level_t level, const char *fmt, ...)
