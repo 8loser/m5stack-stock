@@ -74,6 +74,7 @@ void app_main(void)
     /* Phase 3: 儲存 & WiFi */
     ESP_LOGI(TAG, "初始化 Storage...");
     ESP_ERROR_CHECK(storage_init());
+    ESP_ERROR_CHECK(storage_wifi_migrate_legacy());
 
     ESP_LOGI(TAG, "初始化 WiFi...");
     ESP_ERROR_CHECK(wifi_manager_init());

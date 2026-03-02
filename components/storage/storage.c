@@ -4,6 +4,7 @@
 #include "nvs.h"
 #include "esp_log.h"
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "storage";
 
@@ -25,42 +26,302 @@ esp_err_t storage_init(void)
 
 /* -------- WiFi -------- */
 
-esp_err_t storage_wifi_save(const char *ssid, const char *password)
+static void make_ap_ssid_key(char *buf, size_t buf_size, uint8_t idx)
+{
+    snprintf(buf, buf_size, "ap_%d_ssid", idx);
+}
+
+static void make_ap_pass_key(char *buf, size_t buf_size, uint8_t idx)
+{
+    snprintf(buf, buf_size, "ap_%d_pass", idx);
+}
+
+static esp_err_t load_ap_from_handle(nvs_handle_t h, uint8_t idx,
+                                     char *ssid, size_t ssid_size,
+                                     char *password, size_t pw_size)
+{
+    char ssid_key[16] = {0};
+    char pass_key[16] = {0};
+    make_ap_ssid_key(ssid_key, sizeof(ssid_key), idx);
+    make_ap_pass_key(pass_key, sizeof(pass_key), idx);
+
+    esp_err_t ret = nvs_get_str(h, ssid_key, ssid, &ssid_size);
+    if (ret != ESP_OK) return ret;
+    ret = nvs_get_str(h, pass_key, password, &pw_size);
+    if (ret != ESP_OK) return ret;
+    return ESP_OK;
+}
+
+static esp_err_t save_ap_to_handle(nvs_handle_t h, uint8_t idx, const char *ssid, const char *password)
+{
+    char ssid_key[16] = {0};
+    char pass_key[16] = {0};
+    make_ap_ssid_key(ssid_key, sizeof(ssid_key), idx);
+    make_ap_pass_key(pass_key, sizeof(pass_key), idx);
+
+    esp_err_t ret = nvs_set_str(h, ssid_key, ssid);
+    if (ret != ESP_OK) return ret;
+    ret = nvs_set_str(h, pass_key, password);
+    if (ret != ESP_OK) return ret;
+    return ESP_OK;
+}
+
+uint8_t storage_wifi_ap_count(void)
+{
+    uint8_t count = 0;
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_WIFI, NVS_READONLY, &h);
+    if (ret != ESP_OK) return 0;
+
+    ret = nvs_get_u8(h, "ap_count", &count);
+    nvs_close(h);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) return 0;
+    if (ret != ESP_OK) return 0;
+    if (count > WIFI_MAX_AP_COUNT) return WIFI_MAX_AP_COUNT;
+    return count;
+}
+
+esp_err_t storage_wifi_save_ap(uint8_t idx, const char *ssid, const char *password)
+{
+    if (!ssid || !password || idx >= WIFI_MAX_AP_COUNT) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_WIFI, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    ret = save_ap_to_handle(h, idx, ssid, password);
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_wifi_load_ap(uint8_t idx, char *ssid, size_t ssid_size,
+                               char *password, size_t pw_size)
+{
+    if (!ssid || !password || idx >= WIFI_MAX_AP_COUNT) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_WIFI, NVS_READONLY, &h);
+    if (ret != ESP_OK) return ret;
+
+    ret = load_ap_from_handle(h, idx, ssid, ssid_size, password, pw_size);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_wifi_remove_ap(uint8_t idx)
 {
     nvs_handle_t h;
     esp_err_t ret = nvs_open(NVS_NS_WIFI, NVS_READWRITE, &h);
     if (ret != ESP_OK) return ret;
 
-    nvs_set_str(h, "ssid", ssid);
-    nvs_set_str(h, "password", password);
-    ret = nvs_commit(h);
+    uint8_t count = 0;
+    ret = nvs_get_u8(h, "ap_count", &count);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(h);
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (ret != ESP_OK || idx >= count) {
+        nvs_close(h);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (uint8_t i = idx; i + 1 < count; i++) {
+        char next_ssid[WIFI_SSID_MAX_LEN] = {0};
+        char next_pass[WIFI_PASS_MAX_LEN] = {0};
+        ret = load_ap_from_handle(h, i + 1, next_ssid, sizeof(next_ssid), next_pass, sizeof(next_pass));
+        if (ret != ESP_OK) {
+            nvs_close(h);
+            return ret;
+        }
+        ret = save_ap_to_handle(h, i, next_ssid, next_pass);
+        if (ret != ESP_OK) {
+            nvs_close(h);
+            return ret;
+        }
+    }
+
+    char last_ssid_key[16] = {0};
+    char last_pass_key[16] = {0};
+    make_ap_ssid_key(last_ssid_key, sizeof(last_ssid_key), (uint8_t)(count - 1));
+    make_ap_pass_key(last_pass_key, sizeof(last_pass_key), (uint8_t)(count - 1));
+    ret = nvs_erase_key(h, last_ssid_key);
+    if (ret != ESP_OK && ret != ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(h);
+        return ret;
+    }
+    ret = nvs_erase_key(h, last_pass_key);
+    if (ret != ESP_OK && ret != ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(h);
+        return ret;
+    }
+
+    ret = nvs_set_u8(h, "ap_count", (uint8_t)(count - 1));
+    if (ret == ESP_OK) ret = nvs_commit(h);
     nvs_close(h);
-    ESP_LOGI(TAG, "WiFi 設定已儲存 SSID=%s", ssid);
+    return ret;
+}
+
+esp_err_t storage_wifi_add_ap(const char *ssid, const char *password)
+{
+    if (!ssid || !password || ssid[0] == '\0') return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_WIFI, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    uint8_t count = 0;
+    ret = nvs_get_u8(h, "ap_count", &count);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        count = 0;
+        ret = ESP_OK;
+    }
+    if (ret != ESP_OK) {
+        nvs_close(h);
+        return ret;
+    }
+    if (count > WIFI_MAX_AP_COUNT) count = WIFI_MAX_AP_COUNT;
+
+    for (uint8_t i = 0; i < count; i++) {
+        char saved_ssid[WIFI_SSID_MAX_LEN] = {0};
+        size_t ssid_sz = sizeof(saved_ssid);
+        char ssid_key[16] = {0};
+        make_ap_ssid_key(ssid_key, sizeof(ssid_key), i);
+        ret = nvs_get_str(h, ssid_key, saved_ssid, &ssid_sz);
+        if (ret != ESP_OK) {
+            nvs_close(h);
+            return ret;
+        }
+        if (strcmp(saved_ssid, ssid) == 0) {
+            char pass_key[16] = {0};
+            make_ap_pass_key(pass_key, sizeof(pass_key), i);
+            ret = nvs_set_str(h, pass_key, password);
+            if (ret == ESP_OK) ret = nvs_commit(h);
+            nvs_close(h);
+            return ret;
+        }
+    }
+
+    if (count >= WIFI_MAX_AP_COUNT) {
+        for (uint8_t i = 0; i + 1 < count; i++) {
+            char next_ssid[WIFI_SSID_MAX_LEN] = {0};
+            char next_pass[WIFI_PASS_MAX_LEN] = {0};
+            ret = load_ap_from_handle(h, i + 1, next_ssid, sizeof(next_ssid), next_pass, sizeof(next_pass));
+            if (ret != ESP_OK) {
+                nvs_close(h);
+                return ret;
+            }
+            ret = save_ap_to_handle(h, i, next_ssid, next_pass);
+            if (ret != ESP_OK) {
+                nvs_close(h);
+                return ret;
+            }
+        }
+        char last_ssid_key[16] = {0};
+        char last_pass_key[16] = {0};
+        make_ap_ssid_key(last_ssid_key, sizeof(last_ssid_key), (uint8_t)(count - 1));
+        make_ap_pass_key(last_pass_key, sizeof(last_pass_key), (uint8_t)(count - 1));
+        ret = nvs_erase_key(h, last_ssid_key);
+        if (ret != ESP_OK && ret != ESP_ERR_NVS_NOT_FOUND) {
+            nvs_close(h);
+            return ret;
+        }
+        ret = nvs_erase_key(h, last_pass_key);
+        if (ret != ESP_OK && ret != ESP_ERR_NVS_NOT_FOUND) {
+            nvs_close(h);
+            return ret;
+        }
+        count--;
+    }
+
+    ret = save_ap_to_handle(h, count, ssid, password);
+    if (ret != ESP_OK) {
+        nvs_close(h);
+        return ret;
+    }
+    ret = nvs_set_u8(h, "ap_count", (uint8_t)(count + 1));
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_wifi_migrate_legacy(void)
+{
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_WIFI, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    uint8_t count = 0;
+    ret = nvs_get_u8(h, "ap_count", &count);
+    if (ret == ESP_OK) {
+        nvs_close(h);
+        return ESP_OK;
+    }
+    if (ret != ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(h);
+        return ret;
+    }
+
+    char legacy_ssid[WIFI_SSID_MAX_LEN] = {0};
+    char legacy_password[WIFI_PASS_MAX_LEN] = {0};
+    size_t ssid_sz = sizeof(legacy_ssid);
+    ret = nvs_get_str(h, "ssid", legacy_ssid, &ssid_sz);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ret = nvs_set_u8(h, "ap_count", 0);
+        if (ret == ESP_OK) ret = nvs_commit(h);
+        if (ret == ESP_OK) ESP_LOGI(TAG, "WiFi AP 清單初始化 ap_count=0");
+        nvs_close(h);
+        return ret;
+    }
+    if (ret != ESP_OK) {
+        nvs_close(h);
+        return ret;
+    }
+
+    size_t pass_sz = sizeof(legacy_password);
+    ret = nvs_get_str(h, "password", legacy_password, &pass_sz);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        legacy_password[0] = '\0';
+        ret = ESP_OK;
+    }
+    if (ret != ESP_OK) {
+        nvs_close(h);
+        return ret;
+    }
+
+    ret = save_ap_to_handle(h, 0, legacy_ssid, legacy_password);
+    if (ret == ESP_OK) ret = nvs_set_u8(h, "ap_count", 1);
+    if (ret == ESP_OK) ret = nvs_erase_key(h, "ssid");
+    if (ret == ESP_OK || ret == ESP_ERR_NVS_NOT_FOUND) ret = ESP_OK;
+    if (ret == ESP_OK) ret = nvs_erase_key(h, "password");
+    if (ret == ESP_OK || ret == ESP_ERR_NVS_NOT_FOUND) ret = ESP_OK;
+    if (ret == ESP_OK) ret = nvs_commit(h);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi 設定已從舊格式遷移");
+    }
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_wifi_save(const char *ssid, const char *password)
+{
+    esp_err_t ret = storage_wifi_add_ap(ssid, password);
+    if (ret == ESP_OK) ESP_LOGI(TAG, "WiFi 設定已儲存 SSID=%s", ssid);
     return ret;
 }
 
 esp_err_t storage_wifi_load(char *ssid, size_t ssid_size,
                              char *password, size_t pw_size)
 {
-    nvs_handle_t h;
-    esp_err_t ret = nvs_open(NVS_NS_WIFI, NVS_READONLY, &h);
-    if (ret != ESP_OK) return ret;
-
-    nvs_get_str(h, "ssid", ssid, &ssid_size);
-    nvs_get_str(h, "password", password, &pw_size);
-    nvs_close(h);
-    return ESP_OK;
+    if (!ssid || !password) return ESP_ERR_INVALID_ARG;
+    if (storage_wifi_ap_count() == 0) return ESP_ERR_NOT_FOUND;
+    return storage_wifi_load_ap(0, ssid, ssid_size, password, pw_size);
 }
 
 bool storage_wifi_has_saved(void)
 {
-    char ssid[64] = {0};
-    size_t ssid_size = sizeof(ssid);
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS_WIFI, NVS_READONLY, &h) != ESP_OK) return false;
-    esp_err_t ret = nvs_get_str(h, "ssid", ssid, &ssid_size);
-    nvs_close(h);
-    return (ret == ESP_OK && strlen(ssid) > 0);
+    return storage_wifi_ap_count() > 0;
 }
 
 /* -------- AI -------- */

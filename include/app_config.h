@@ -70,6 +70,9 @@
 #define WIFI_PORTAL_AP_CHANNEL      1
 #define WIFI_PORTAL_MAX_STA         4
 #define WIFI_PORTAL_URL             "http://192.168.4.1"
+#define WIFI_MAX_AP_COUNT           5
+#define WIFI_SSID_MAX_LEN           33
+#define WIFI_PASS_MAX_LEN           65
 
 /* --- 台灣股市時段 --- */
 #define MARKET_OPEN_HOUR        9

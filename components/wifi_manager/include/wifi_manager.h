@@ -19,6 +19,7 @@ typedef void (*wifi_state_cb_t)(wifi_state_t state, const char *ip_str);
 
 esp_err_t   wifi_manager_init(void);
 esp_err_t   wifi_manager_connect(const char *ssid, const char *password);
+esp_err_t   wifi_manager_connect_any_saved(void);
 esp_err_t   wifi_manager_connect_saved(void);
 esp_err_t   wifi_manager_disconnect(void);
 wifi_state_t wifi_manager_get_state(void);

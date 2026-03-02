@@ -614,6 +614,68 @@ static esp_err_t portal_stocks_remove_post_handler(httpd_req_t *req)
     return send_json_response(req, 200, "{\"ok\":true}");
 }
 
+static esp_err_t portal_saved_aps_get_handler(httpd_req_t *req)
+{
+    char buf[256];
+    size_t pos = 0;
+    uint8_t count = storage_wifi_ap_count();
+
+    buf[pos++] = '[';
+    for (uint8_t i = 0; i < count && pos < sizeof(buf) - 2; i++) {
+        char ssid[WIFI_SSID_MAX_LEN] = {0};
+        char pass[WIFI_PASS_MAX_LEN] = {0};
+        if (storage_wifi_load_ap(i, ssid, sizeof(ssid), pass, sizeof(pass)) != ESP_OK) {
+            continue;
+        }
+
+        char esc[68] = {0};
+        json_escape(esc, sizeof(esc), ssid);
+        int n = snprintf(buf + pos, sizeof(buf) - pos,
+                         "%s{\"ssid\":\"%s\"}", (pos > 1) ? "," : "", esc);
+        if (n <= 0 || (size_t)n >= sizeof(buf) - pos) break;
+        pos += (size_t)n;
+    }
+    buf[pos++] = ']';
+    buf[pos] = '\0';
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, buf, (ssize_t)pos);
+}
+
+static esp_err_t portal_saved_aps_remove_post_handler(httpd_req_t *req)
+{
+    char *body = NULL;
+    if (read_request_body_alloc(req, &body) != ESP_OK) {
+        return send_json_error(req, 400, ERR_INVALID_FORMAT);
+    }
+
+    char target_ssid[WIFI_SSID_MAX_LEN] = {0};
+    bool has_ssid = get_form_value(body, "ssid", target_ssid, sizeof(target_ssid));
+    free(body);
+
+    if (!has_ssid || target_ssid[0] == '\0') {
+        return send_json_error(req, 400, ERR_INVALID_FORMAT);
+    }
+
+    uint8_t count = storage_wifi_ap_count();
+    for (uint8_t i = 0; i < count; i++) {
+        char ssid[WIFI_SSID_MAX_LEN] = {0};
+        char pass[WIFI_PASS_MAX_LEN] = {0};
+        if (storage_wifi_load_ap(i, ssid, sizeof(ssid), pass, sizeof(pass)) != ESP_OK) {
+            continue;
+        }
+
+        if (strcmp(ssid, target_ssid) == 0) {
+            if (storage_wifi_remove_ap(i) != ESP_OK) {
+                return send_json_error(req, 500, "remove_failed");
+            }
+            return send_json_response(req, 200, "{\"ok\":true}");
+        }
+    }
+
+    return send_json_error(req, 404, ERR_NOT_FOUND);
+}
+
 static esp_err_t portal_index_get_handler(httpd_req_t *req)
 {
     static const char *html =
@@ -659,7 +721,9 @@ static esp_err_t portal_index_get_handler(httpd_req_t *req)
         "<input name='password' maxlength='64' type='password'>"
         "<button type='submit'>Connect</button>"
         "<div class='hint'>Connect success will switch Core2 back to STA mode.</div>"
-        "</form></div>"
+        "</form>"
+        "<h3>Saved Networks</h3><div id='saved_aps_list'>Loading...</div>"
+        "</div>"
         "<div id='card_ai' class='card section-card'>"
         "<h3>AI Settings</h3>"
         "<form method='post' action='/ai'>"
@@ -683,6 +747,7 @@ static esp_err_t portal_index_get_handler(httpd_req_t *req)
         "</div>"
         "</div>"
         "<script>"
+        "var s_saved_ssids=[];"
         "function showTab(tab){"
         "var ids=['wifi','ai','stocks'];"
         "ids.forEach(function(x){"
@@ -692,14 +757,16 @@ static esp_err_t portal_index_get_handler(httpd_req_t *req)
         "if(btn) btn.className='menu-btn'+(x===tab?' active':'');"
         "});"
         "if(tab==='stocks'){loadStocks();}"
+        "if(tab==='wifi'){loadSavedAps();}"
         "}"
         "fetch('/scan').then(function(r){return r.json();}).then(function(a){"
         "var s=document.getElementById('ss');"
         "s.options.length=0;"
         "s.add(new Option('-- Select AP --',''));"
         "a.forEach(function(x){"
+        "var saved=s_saved_ssids.indexOf(x.ssid)>=0;"
         "var o=new Option();"
-        "o.textContent=x.ssid+'  ('+x.rssi+'dBm)';"
+        "o.textContent=x.ssid+(saved?' [Saved]':'')+'  ('+x.rssi+'dBm)';"
         "o.value=x.ssid;"
         "s.add(o);});"
         "s.add(new Option('Other (manual)','__manual__'));"
@@ -740,10 +807,25 @@ static esp_err_t portal_index_get_handler(httpd_req_t *req)
         ".then(function(x){if(!x.ok||!x.body.ok){setStocksMsg(stockErr(x.body.error),false);return;}"
         "setStocksMsg('已移除：'+sym,true);loadStocks();})"
         ".catch(function(e){setStocksMsg('Request failed: '+(e&&e.message?e.message:'network'),false);});}"
+        "function loadSavedAps(){fetch('/saved_aps').then(function(r){return r.json();}).then(function(a){"
+        "s_saved_ssids=(a||[]).map(function(x){return x.ssid||'';}).filter(function(x){return x.length>0;});"
+        "var box=document.getElementById('saved_aps_list');if(!box)return;"
+        "if(!s_saved_ssids.length){box.innerHTML='<div class=\"hint\">No saved networks</div>';return;}"
+        "var h='';s_saved_ssids.forEach(function(ssid){"
+        "h+='<div class=\"stock-row\"><div><span class=\"stock-symbol\">'+ssid+'</span></div>' +"
+        "'<button type=\"button\" style=\"width:auto;padding:6px 10px;background:#c33\" onclick=\"removeSavedAp(\\''+ssid.replace(/'/g,\"\\\\'\")+'\\')\">Remove</button></div>';});"
+        "box.innerHTML=h;}).catch(function(){var box=document.getElementById('saved_aps_list');"
+        "if(box)box.innerHTML='<div class=\"err\">Load failed</div>';});}"
+        "function removeSavedAp(ssid){var b='ssid='+encodeURIComponent(ssid||'');"
+        "fetch('/saved_aps/remove',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})"
+        ".then(function(r){return r.json().catch(function(){return{};}).then(function(j){return{ok:r.ok,body:j};});})"
+        ".then(function(x){if(!x.ok||!x.body.ok){return;}loadSavedAps();})"
+        ".catch(function(){});}"
         "function chk(s){"
         "document.getElementById('m').style.display="
         "(s.value=='__manual__')?'block':'none';}"
         "showTab('wifi');"
+        "loadSavedAps();"
         "loadStocks();"
         "</script></body></html>";
 
@@ -789,6 +871,22 @@ static esp_err_t portal_wifi_post_handler(httpd_req_t *req)
         free(conn_req);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "ssid required");
         return ESP_FAIL;
+    }
+
+    if (conn_req->password[0] == '\0') {
+        uint8_t count = storage_wifi_ap_count();
+        for (uint8_t i = 0; i < count; i++) {
+            char ssid[WIFI_SSID_MAX_LEN] = {0};
+            char password[WIFI_PASS_MAX_LEN] = {0};
+            if (storage_wifi_load_ap(i, ssid, sizeof(ssid), password, sizeof(password)) != ESP_OK) {
+                continue;
+            }
+            if (strcmp(ssid, conn_req->ssid) == 0) {
+                strncpy(conn_req->password, password, sizeof(conn_req->password) - 1);
+                conn_req->password[sizeof(conn_req->password) - 1] = '\0';
+                break;
+            }
+        }
     }
 
     s_connecting_busy = true;
@@ -877,6 +975,20 @@ static esp_err_t start_portal_http_server(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t saved_aps_get_uri = {
+        .uri      = "/saved_aps",
+        .method   = HTTP_GET,
+        .handler  = portal_saved_aps_get_handler,
+        .user_ctx = NULL,
+    };
+
+    httpd_uri_t saved_aps_remove_uri = {
+        .uri      = "/saved_aps/remove",
+        .method   = HTTP_POST,
+        .handler  = portal_saved_aps_remove_post_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_register_uri_handler(s_httpd, &index_uri);
     httpd_register_uri_handler(s_httpd, &wifi_uri);
     httpd_register_uri_handler(s_httpd, &scan_uri);
@@ -885,6 +997,8 @@ static esp_err_t start_portal_http_server(void)
     httpd_register_uri_handler(s_httpd, &stocks_uri);
     httpd_register_uri_handler(s_httpd, &stocks_add_uri);
     httpd_register_uri_handler(s_httpd, &stocks_remove_uri);
+    httpd_register_uri_handler(s_httpd, &saved_aps_get_uri);
+    httpd_register_uri_handler(s_httpd, &saved_aps_remove_uri);
 
     return ESP_OK;
 }
@@ -998,7 +1112,7 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
                                             pdMS_TO_TICKS(30000));
     if (bits & WIFI_CONNECTED_BIT) {
         /* 儲存成功的設定 */
-        storage_wifi_save(ssid, password);
+        storage_wifi_add_ap(ssid, password);
         return ESP_OK;
     }
 
@@ -1012,16 +1126,35 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
     return ESP_FAIL;
 }
 
-esp_err_t wifi_manager_connect_saved(void)
+esp_err_t wifi_manager_connect_any_saved(void)
 {
-    char ssid[64] = {0}, password[128] = {0};
-    if (!storage_wifi_has_saved()) {
+    uint8_t count = storage_wifi_ap_count();
+    if (count == 0) {
         ESP_LOGI(TAG, "無已儲存的 WiFi 設定");
         notify_state(WIFI_STATE_DISCONNECTED);
         return ESP_ERR_NOT_FOUND;
     }
-    storage_wifi_load(ssid, sizeof(ssid), password, sizeof(password));
-    return wifi_manager_connect(ssid, password);
+
+    for (uint8_t i = 0; i < count; i++) {
+        char ssid[WIFI_SSID_MAX_LEN] = {0};
+        char password[WIFI_PASS_MAX_LEN] = {0};
+        if (storage_wifi_load_ap(i, ssid, sizeof(ssid), password, sizeof(password)) != ESP_OK) {
+            continue;
+        }
+
+        ESP_LOGI(TAG, "嘗試已儲存 AP %d/%d: %s", i + 1, count, ssid);
+        if (wifi_manager_connect(ssid, password) == ESP_OK) {
+            return ESP_OK;
+        }
+    }
+
+    notify_state(WIFI_STATE_FAILED);
+    return ESP_FAIL;
+}
+
+esp_err_t wifi_manager_connect_saved(void)
+{
+    return wifi_manager_connect_any_saved();
 }
 
 esp_err_t wifi_manager_disconnect(void)

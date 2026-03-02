@@ -8,6 +8,13 @@ esp_err_t storage_wifi_save(const char *ssid, const char *password);
 esp_err_t storage_wifi_load(char *ssid, size_t ssid_size,
                              char *password, size_t pw_size);
 bool      storage_wifi_has_saved(void);
+uint8_t   storage_wifi_ap_count(void);
+esp_err_t storage_wifi_save_ap(uint8_t idx, const char *ssid, const char *password);
+esp_err_t storage_wifi_load_ap(uint8_t idx, char *ssid, size_t ssid_size,
+                               char *password, size_t pw_size);
+esp_err_t storage_wifi_remove_ap(uint8_t idx);
+esp_err_t storage_wifi_add_ap(const char *ssid, const char *password);
+esp_err_t storage_wifi_migrate_legacy(void);
 
 /* ====== AI 設定 ====== */
 esp_err_t storage_ai_save_provider(uint8_t provider_type);
