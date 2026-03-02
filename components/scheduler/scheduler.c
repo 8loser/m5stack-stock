@@ -201,6 +201,19 @@ void scheduler_trigger_quote_now(void)
     }
 }
 
+uint32_t scheduler_get_seconds_to_next_quote(void)
+{
+    if (!s_quote_timer) {
+        return 0;
+    }
+
+    TickType_t expiry_tick = xTimerGetExpiryTime(s_quote_timer);
+    TickType_t now_tick = xTaskGetTickCount();
+    TickType_t diff_tick = (expiry_tick > now_tick) ? (expiry_tick - now_tick) : 0;
+
+    return (uint32_t)(diff_tick / configTICK_RATE_HZ);
+}
+
 esp_err_t scheduler_reload_stock_list(void)
 {
     esp_err_t ret = storage_stocks_load(&s_stock_list);

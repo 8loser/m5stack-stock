@@ -25,6 +25,11 @@ void      scheduler_get_config(schedule_config_t *cfg);
 void      scheduler_trigger_quote_now(void);
 
 /**
+ * @brief 取得距離下次報價觸發的剩餘秒數
+ */
+uint32_t  scheduler_get_seconds_to_next_quote(void);
+
+/**
  * @brief 重新載入儲存的股票清單（下個排程週期生效）
  */
 esp_err_t scheduler_reload_stock_list(void);

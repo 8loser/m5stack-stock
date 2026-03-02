@@ -299,6 +299,17 @@ void ui_manager_update_quote(const stock_quote_t *quote)
     }
 }
 
+void ui_manager_set_dashboard_card_count(uint8_t n)
+{
+    extern void screen_dashboard_set_card_count(uint8_t n);
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        screen_dashboard_set_card_count(n);
+        xSemaphoreGiveRecursive(s_ui_mutex);
+    } else {
+        ESP_LOGW(TAG, "set_dashboard_card_count timeout, n=%u", (unsigned)n);
+    }
+}
+
 void ui_manager_update_wifi_state(int state, const char *ip)
 {
     extern void status_bar_update_wifi(int state, const char *ip);

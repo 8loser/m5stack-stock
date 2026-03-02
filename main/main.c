@@ -75,6 +75,10 @@ void app_main(void)
     ESP_LOGI(TAG, "初始化 Storage...");
     ESP_ERROR_CHECK(storage_init());
     ESP_ERROR_CHECK(storage_wifi_migrate_legacy());
+    stock_list_t stocks = {0};
+    if (storage_stocks_load(&stocks) == ESP_OK) {
+        ui_manager_set_dashboard_card_count(stocks.count);
+    }
 
     ESP_LOGI(TAG, "初始化 WiFi...");
     ESP_ERROR_CHECK(wifi_manager_init());

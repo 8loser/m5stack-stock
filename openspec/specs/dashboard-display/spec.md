@@ -1,5 +1,9 @@
-## ADDED Requirements
+# dashboard-display Specification
 
+## Purpose
+TBD - created by syncing change fix-dashboard-display. Update Purpose after archive.
+
+## Requirements
 ### Requirement: Stock symbol fully visible
 Dashboard 的每張股票 card SHALL 完整顯示股票代碼文字，不得有任何像素被裁切。
 
@@ -10,8 +14,6 @@ Dashboard 的每張股票 card SHALL 完整顯示股票代碼文字，不得有�
 #### Scenario: Card name label two-line display
 - **WHEN** `apply_card_widgets` 將 symbol + name 以換行格式寫入 name label
 - **THEN** 兩行文字 SHALL 皆在 card 邊界內完整顯示
-
----
 
 ### Requirement: Next update time label
 Dashboard 底部 SHALL 顯示下次報價排程的預計更新時間（絕對時間 HH:MM:SS）。
@@ -27,8 +29,6 @@ Dashboard 底部 SHALL 顯示下次報價排程的預計更新時間（絕對時
 #### Scenario: Next time not shown before first quote
 - **WHEN** 裝置剛開機且尚未收到任何報價
 - **THEN** "Next:" 標籤 SHALL 顯示佔位文字（如 "Next: --:--:--"）
-
----
 
 ### Requirement: Dynamic stock card count
 Dashboard SHALL 只顯示已設定的股票數量所對應的 card row，不顯示空白佔位 row。
@@ -51,11 +51,11 @@ Dashboard SHALL 只顯示已設定的股票數量所對應的 card row，不顯�
 
 #### Scenario: Count exceeds visible area — auto page flip
 - **WHEN** 設定的股票數量超過 5（最多 10）
-- **THEN** Dashboard SHALL 每隔 `DASHBOARD_PAGE_FLIP_S` 秒自動以滑動動畫切換至下一批 card，並循環回第一批
+- **THEN** Dashboard SHALL 維持固定 5 列顯示，並每隔 `DASHBOARD_PAGE_FLIP_S` 秒切換到下一批 5 檔內容，循環回第一批
 
 #### Scenario: Single page — no visible flip
 - **WHEN** 設定的股票數量不超過 5
-- **THEN** Dashboard SHALL 不產生可見的自動捲動效果
+- **THEN** Dashboard SHALL 不切換頁面內容（維持單頁）
 
 #### Scenario: Row count applied at boot without waiting for quote
 - **WHEN** 裝置完成 `storage_init()` 後

@@ -38,37 +38,37 @@ return (uint32_t)(diff / configTICK_RATE_HZ);
 
 呼叫時機：`ui_manager_update_quote()` 每次收到報價時，同步呼叫 scheduler 取得剩餘秒數，換算成絕對時間後更新 `s_next_label`。
 
-### D3：動態 card 數 + 自動輪播分頁（採用）
+### D3：固定 5 列 + 每頁 5 檔內容輪換（採用）
 
-**採用**：`s_card_list` 捲動容器 + LVGL Timer 定期自動翻頁。
+**採用**：固定 5 張 card（對應 5 列）+ LVGL Timer 定期切換資料頁，不做 `scroll_to` 動畫。
 
 ```
 s_card_list: lv_obj_t
   pos:  (4, 24)
   size: (LCD_WIDTH - 8, 182)   ← 剛好到 footer 上方
   style: bg_opa=TRANSP, border_width=0, pad_all=0
-  scrollable: 開啟（支援手動滑動）
+  scrollable: 關閉（固定 5 列）
 ```
 
-Card 在容器內以 `lv_obj_set_pos(card, 0, i * 36)` 排列。`MAX_CARDS` 改為 `MAX_STOCK_COUNT`（10）。
+Card 在容器內固定建立 5 張（`DASHBOARD_VISIBLE_ROWS=5`），位置為 `lv_obj_set_pos(card, 0, i * 36)`。
 
 **自動翻頁**：建立 LVGL Timer（`lv_timer_create`），週期為 `DASHBOARD_PAGE_FLIP_S`（定義在 `app_config.h`，預設 5 秒）。每次觸發：
 
 ```c
 static int s_cur_page = 0;
-int total_pages = (s_card_count + 4) / 5;   // ceil(count / 5)
+int total_pages = (s_card_count + 4) / 5;   // ceil(count / 5), 每頁 5 檔
 s_cur_page = (s_cur_page + 1) % total_pages;
-lv_obj_scroll_to_y(s_card_list, s_cur_page * 5 * 36, LV_ANIM_ON);
+render_current_page();   // 直接重繪 5 列內容，不捲動
 ```
 
-- 5 支以內：total_pages=1，timer 觸發但 scroll 位置不變，無視覺效果
-- 6-10 支：自動以平滑動畫滑至下一批，回捲時同樣帶動畫
+- 5 支以內：total_pages=1，維持同一頁
+- 6-10 支：固定列數不變，只輪換顯示下一批 5 檔內容
 
 **延遲初始化**：card 全部 hidden，`screen_dashboard_set_card_count(uint8_t n)` 由 main.c 在 `storage_init()` 後呼叫（持 g_ui_mutex）。同時重設 `s_cur_page = 0`。
 
 **空白提示**：在 `s_card_list` 內建立 `s_empty_label`，居中顯示 `"No stocks configured.\nGo to Settings to add."`；count=0 時顯示，count≥1 時 hidden。
 
-**捨棄**：手動捲動唯一方式。缺點：設備放置不操作時使用者無法得知有更多股票。
+**捨棄**：捲動動畫翻頁。缺點：快速觀看時可能不易追蹤列位置，且在小螢幕上容易造成視覺跳動。
 
 ### D4："Next:" 標籤位置
 螢幕 240px，`s_card_list` 底邊在 y=206。
@@ -84,8 +84,7 @@ lv_obj_scroll_to_y(s_card_list, s_cur_page * 5 * 36, LV_ANIM_ON);
 | 捲動容器 bg 透明 | 需設 `bg_opa=LV_OPA_TRANSP` 避免覆蓋 screen 背景色 |
 | card 寬度 | 容器寬 = LCD_WIDTH-8，card 寬改為容器寬（`LCD_WIDTH - 8`），與原邏輯一致 |
 | 翻頁 timer 與 LVGL task | `lv_timer_create` 在 LVGL task 內執行，天然持有 LVGL context，無需額外持鎖 |
-| 手動捲動後被 timer 覆蓋 | 使用者手動滑動後，下次 timer 觸發會跳回自動分頁位置，屬預期行為（看板模式） |
-| 只有 1 頁時 timer 仍在跑 | scroll_to_y(0, ...) 呼叫無副作用，不影響效能 |
+| 只有 1 頁時 timer 仍在跑 | callback 會提早 return，不進行重繪 |
 
 ## Migration Plan
 

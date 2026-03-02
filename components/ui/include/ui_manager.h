@@ -27,6 +27,7 @@ screen_id_t ui_manager_get_current_screen(void);
 void ui_manager_update_quote(const stock_quote_t *quote);
 void ui_manager_update_wifi_state(int state, const char *ip);
 void ui_manager_show_loading(bool show);
+void ui_manager_set_dashboard_card_count(uint8_t n);
 void ui_manager_log_stock(log_level_t level, const char *fmt, ...);
 void ui_manager_log_wifi(log_level_t level, const char *fmt, ...);
 void ui_manager_log_sys(log_level_t level, const char *fmt, ...);

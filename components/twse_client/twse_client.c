@@ -13,7 +13,8 @@
 
 static const char *TAG = "twse";
 
-#define HTTP_BUF_SIZE   4096
+#define HTTP_BUF_INIT_SIZE  4096
+#define HTTP_BUF_MAX_SIZE   32768
 #define MAX_SYMBOLS     10
 
 static QueueHandle_t s_queue        = NULL;
@@ -23,7 +24,7 @@ static bool          s_task_running = false;
 /* HTTP 事件回調，用於接收 body */
 typedef struct {
     char   *buf;
-    size_t  buf_size;
+    size_t  capacity;
     size_t  data_len;
     bool    overflow;
 } http_ctx_t;
@@ -32,12 +33,26 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 {
     http_ctx_t *ctx = (http_ctx_t *)evt->user_data;
     if (evt->event_id == HTTP_EVENT_ON_DATA) {
-        if (ctx->data_len + evt->data_len < ctx->buf_size) {
-            memcpy(ctx->buf + ctx->data_len, evt->data, evt->data_len);
-            ctx->data_len += evt->data_len;
-        } else {
-            ctx->overflow = true;
+        size_t needed = ctx->data_len + evt->data_len + 1;
+        if (needed > ctx->capacity) {
+            size_t new_cap = ctx->capacity;
+            while (new_cap < needed && new_cap < HTTP_BUF_MAX_SIZE) {
+                new_cap *= 2;
+            }
+            if (new_cap < needed || new_cap > HTTP_BUF_MAX_SIZE) {
+                ctx->overflow = true;
+                return ESP_OK;
+            }
+            char *new_buf = realloc(ctx->buf, new_cap);
+            if (!new_buf) {
+                ctx->overflow = true;
+                return ESP_OK;
+            }
+            ctx->buf = new_buf;
+            ctx->capacity = new_cap;
         }
+        memcpy(ctx->buf + ctx->data_len, evt->data, evt->data_len);
+        ctx->data_len += evt->data_len;
     }
     return ESP_OK;
 }
@@ -116,10 +131,15 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
     snprintf(url, sizeof(url),
              "%s?ex_ch=%s&json=1&delay=0", TWSE_BASE_URL, ex_ch);
 
-    char *buf = malloc(HTTP_BUF_SIZE);
+    char *buf = malloc(HTTP_BUF_INIT_SIZE);
     if (!buf) return ESP_ERR_NO_MEM;
 
-    http_ctx_t ctx = {.buf = buf, .buf_size = HTTP_BUF_SIZE - 1, .data_len = 0};
+    http_ctx_t ctx = {
+        .buf = buf,
+        .capacity = HTTP_BUF_INIT_SIZE,
+        .data_len = 0,
+        .overflow = false,
+    };
 
     esp_http_client_config_t cfg = {
         .url            = url,
@@ -131,20 +151,25 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     esp_err_t ret = esp_http_client_perform(client);
+    int status_code = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
 
     if (ret != ESP_OK || ctx.overflow) {
-        ESP_LOGE(TAG, "HTTP 請求失敗: %s", esp_err_to_name(ret));
-        free(buf);
+        ESP_LOGE(TAG, "HTTP 請求失敗: err=%s status=%d len=%u overflow=%d",
+                 esp_err_to_name(ret),
+                 status_code,
+                 (unsigned)ctx.data_len,
+                 ctx.overflow ? 1 : 0);
+        free(ctx.buf);
         return ESP_FAIL;
     }
 
-    buf[ctx.data_len] = '\0';
-    ESP_LOGD(TAG, "TWSE 回應: %.200s...", buf);
+    ctx.buf[ctx.data_len] = '\0';
+    ESP_LOGD(TAG, "TWSE 回應: %.200s...", ctx.buf);
 
     /* 解析 JSON */
-    cJSON *root = cJSON_Parse(buf);
-    free(buf);
+    cJSON *root = cJSON_Parse(ctx.buf);
+    free(ctx.buf);
 
     if (!root) {
         ESP_LOGE(TAG, "JSON 解析失敗");
@@ -190,10 +215,15 @@ esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *o
     snprintf(url, sizeof(url),
              "%s?ex_ch=tse_%s.tw&json=1&delay=0", TWSE_BASE_URL, symbol);
 
-    char *buf = malloc(HTTP_BUF_SIZE);
+    char *buf = malloc(HTTP_BUF_INIT_SIZE);
     if (!buf) return ESP_ERR_NO_MEM;
 
-    http_ctx_t ctx = {.buf = buf, .buf_size = HTTP_BUF_SIZE - 1, .data_len = 0};
+    http_ctx_t ctx = {
+        .buf = buf,
+        .capacity = HTTP_BUF_INIT_SIZE,
+        .data_len = 0,
+        .overflow = false,
+    };
 
     esp_http_client_config_t cfg = {
         .url            = url,
@@ -205,17 +235,22 @@ esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *o
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     esp_err_t ret = esp_http_client_perform(client);
+    int status_code = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
 
     if (ret != ESP_OK || ctx.overflow) {
-        ESP_LOGE(TAG, "驗證代號 HTTP 失敗: %s", esp_err_to_name(ret));
-        free(buf);
+        ESP_LOGE(TAG, "驗證代號 HTTP 失敗: err=%s status=%d len=%u overflow=%d",
+                 esp_err_to_name(ret),
+                 status_code,
+                 (unsigned)ctx.data_len,
+                 ctx.overflow ? 1 : 0);
+        free(ctx.buf);
         return ESP_FAIL;
     }
 
-    buf[ctx.data_len] = '\0';
-    cJSON *root = cJSON_Parse(buf);
-    free(buf);
+    ctx.buf[ctx.data_len] = '\0';
+    cJSON *root = cJSON_Parse(ctx.buf);
+    free(ctx.buf);
 
     if (!root) {
         ESP_LOGE(TAG, "驗證代號 JSON 解析失敗");

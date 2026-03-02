@@ -57,12 +57,13 @@
 /* --- 股票 --- */
 #define MAX_STOCK_COUNT         10
 #define STOCK_SYMBOL_LEN        8
-#define DEFAULT_STOCKS          {"2330", "2317"}
+#define DEFAULT_STOCKS          {"2330", "2317", "2409", "6770", "1802", "2367"}
 #define DEFAULT_STOCK_COUNT     2
 
 /* --- 排程預設值 --- */
 #define DEFAULT_QUOTE_INTERVAL_S    60      /* 報價更新間隔（秒）*/
 #define DEFAULT_MARKET_ONLY         false   /* 全天候更新 */
+#define DASHBOARD_PAGE_FLIP_S       5       /* Dashboard 自動翻頁間隔（秒）*/
 
 /* --- WiFi 手機配網 Portal --- */
 #define WIFI_PORTAL_AP_SSID         "Core2-Setup"

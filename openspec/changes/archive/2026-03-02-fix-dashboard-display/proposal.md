@@ -6,14 +6,14 @@ Dashboard 有三個顯示問題：股票代碼文字被截斷（LVGL padding 造
 
 - 移除 card 預設 padding，修復股票代碼上半部被截斷的問題
 - Dashboard 底部新增 "Next: HH:MM:SS" 標籤，顯示下次報價更新的預計時間
-- Dashboard row 數改為動態：只顯示已設定的股票數量，不再顯示空白 "---" row
+- Dashboard 改為固定 5 列顯示，當股票數超過 5 時每頁 5 檔輪換內容（不做捲動動畫）
 - `scheduler` 新增 API 供外部查詢距下次報價觸發的剩餘秒數
 
 ## Capabilities
 
 ### New Capabilities
 
-- `dashboard-display`: Dashboard 頁面的 layout 修正與動態 row 顯示，包含 padding fix、next-update 標籤、動態 card 數量控制
+- `dashboard-display`: Dashboard 頁面的 layout 修正與固定 5 列輪頁顯示，包含 padding fix、next-update 標籤、分頁內容輪換控制
 
 ### Modified Capabilities
 
