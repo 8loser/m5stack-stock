@@ -9,3 +9,5 @@ managed_components/
 .venv_font/
 tools/fonts/*.ttf
 __pycache__/
+
+tools/fonts/twse_symbols.txt
