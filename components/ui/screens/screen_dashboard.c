@@ -7,12 +7,15 @@
 #include <string.h>
 #include <time.h>
 
-/* ====== 顏色定義 ====== */
-#define COLOR_UP    lv_color_hex(0xFF4444)   /* 漲：紅 */
-#define COLOR_DOWN  lv_color_hex(0x44BB44)   /* 跌：綠 */
-#define COLOR_FLAT  lv_color_hex(0xFFFFFF)   /* 平：白 */
+/* ====== 顏色定義 ======
+ * 注意：Core2 這批面板在目前驅動設定下，標準 RGB hex 的實際顯色會偏移；
+ * 下列為實機校正值（目標顯示：漲=紅、跌=綠、平=灰）。
+ * 若後續更動 LCD color order / swap 設定，需重新校正這三個值。 */
+#define COLOR_UP    lv_color_hex(0x00C4CF)   /* 漲：紅（實機校正） */
+#define COLOR_DOWN  lv_color_hex(0x8864B0)   /* 跌：綠（實機校正） */
+#define COLOR_FLAT  lv_color_hex(0xA84890)   /* 平：灰（實機校正） */
 #define COLOR_BG    lv_color_hex(0x1A1A2E)   /* 深藍背景 */
-#define COLOR_CARD  lv_color_hex(0x16213E)   /* 卡片背景 */
+#define COLOR_CARD  lv_color_hex(0x1C2A4A)   /* 卡片背景 */
 #define DASHBOARD_VISIBLE_ROWS 5
 
 static lv_obj_t *s_screen  = NULL;
@@ -43,10 +46,11 @@ static void ensure_card_widgets(int idx)
 
     if (!s_name_labels[idx]) {
         s_name_labels[idx] = lv_label_create(s_cards[idx]);
-        lv_obj_set_pos(s_name_labels[idx], 4, 4);
+        lv_obj_set_pos(s_name_labels[idx], 10, 0);
         lv_label_set_text(s_name_labels[idx], "---");
         lv_obj_set_style_text_color(s_name_labels[idx], lv_color_white(), 0);
         lv_obj_set_style_text_font(s_name_labels[idx], &lv_font_noto_tc_14, 0);
+        lv_obj_set_style_text_line_space(s_name_labels[idx], 0, 0);
     }
 
     if (!s_price_labels[idx]) {
@@ -120,7 +124,7 @@ lv_obj_t *screen_dashboard_create(void)
 
     s_card_list = lv_obj_create(s_screen);
     lv_obj_set_pos(s_card_list, 4, 24);
-    lv_obj_set_size(s_card_list, LCD_WIDTH - 8, 182);
+    lv_obj_set_size(s_card_list, LCD_WIDTH - 8, 194);
     lv_obj_set_style_bg_opa(s_card_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_card_list, 0, 0);
     lv_obj_set_style_pad_all(s_card_list, 0, 0);
@@ -130,11 +134,13 @@ lv_obj_t *screen_dashboard_create(void)
     /* ---- 股票卡片列表 ---- */
     for (int i = 0; i < DASHBOARD_VISIBLE_ROWS; i++) {
         s_cards[i] = lv_obj_create(s_card_list);
-        lv_obj_set_size(s_cards[i], LCD_WIDTH - 8, 32);
-        lv_obj_set_pos(s_cards[i], 0, i * 36);
+        lv_obj_set_size(s_cards[i], LCD_WIDTH - 8, 38);
+        lv_obj_set_pos(s_cards[i], 0, i * 39);
         lv_obj_set_style_bg_color(s_cards[i], COLOR_CARD, 0);
         lv_obj_set_style_radius(s_cards[i], 4, 0);
         lv_obj_set_style_pad_all(s_cards[i], 0, 0);
+        lv_obj_set_style_border_side(s_cards[i], LV_BORDER_SIDE_LEFT, 0);
+        lv_obj_set_style_border_width(s_cards[i], 4, 0);
         lv_obj_clear_flag(s_cards[i], LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(s_cards[i], LV_OBJ_FLAG_HIDDEN);
     }
@@ -149,13 +155,13 @@ lv_obj_t *screen_dashboard_create(void)
 
     /* 最後更新時間 */
     s_update_label = lv_label_create(s_screen);
-    lv_obj_set_pos(s_update_label, 4, 207);
-    lv_label_set_text(s_update_label, "更新: --:--:--");
+    lv_obj_set_pos(s_update_label, 4, 220);
+    lv_label_set_text(s_update_label, "Upd --:--:--");
     lv_obj_set_style_text_color(s_update_label, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(s_update_label, &lv_font_noto_tc_14, 0);
 
     s_next_label = lv_label_create(s_screen);
-    lv_obj_set_pos(s_next_label, 4, 220);
+    lv_obj_align(s_next_label, LV_ALIGN_BOTTOM_RIGHT, -4, -4);
     lv_label_set_text(s_next_label, "Next: --:--:--");
     lv_obj_set_style_text_color(s_next_label, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(s_next_label, &lv_font_montserrat_10, 0);
@@ -185,18 +191,15 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
     snprintf(change_str, sizeof(change_str), "%+.2f%%", q->change_percent);
     lv_label_set_text(s_change_labels[idx], change_str);
 
-    lv_color_t color;
-    if (q->change_percent > 0.01f)       color = COLOR_UP;
-    else if (q->change_percent < -0.01f) color = COLOR_DOWN;
-    else                                  color = COLOR_FLAT;
-    lv_obj_set_style_text_color(s_change_labels[idx], color, 0);
-    lv_obj_set_style_bg_color(s_cards[idx],
-                               (q->change_percent > 0.01f)  ? lv_color_hex(0x2D0000) :
-                               (q->change_percent < -0.01f) ? lv_color_hex(0x002D00) :
-                               COLOR_CARD, 0);
+    lv_color_t accent = (q->change_percent > 0.01f) ? COLOR_UP :
+                        (q->change_percent < -0.01f) ? COLOR_DOWN :
+                        COLOR_FLAT;
+    lv_obj_set_style_text_color(s_change_labels[idx], accent, 0);
+    lv_obj_set_style_border_color(s_cards[idx], accent, 0);
+    lv_obj_set_style_bg_color(s_cards[idx], COLOR_CARD, 0);
 
     char time_str[40];
-    snprintf(time_str, sizeof(time_str), "更新: %s", q->trade_time);
+    snprintf(time_str, sizeof(time_str), "Upd %s", q->trade_time);
     lv_label_set_text(s_update_label, time_str);
 
     uint32_t remaining_s = scheduler_get_seconds_to_next_quote();
