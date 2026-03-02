@@ -53,6 +53,32 @@ cd m5stack_stock
 ./flash.sh --shell
 ```
 
+## 字型擴充與重生
+
+當股票名稱出現缺字或方塊時，可重生 Noto Sans TC 子集字型：
+
+```bash
+# 1) 測試抓取 TWSE 股票名稱字符集（預設會先做 SSL 驗證）
+curl --fail --silent --show-error --location \
+  https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL \
+  | python3 tools/fonts/fetch_stock_chars.py --input-json -
+
+# 2) 產生 14px / 16px 字型
+./generate_fonts.sh
+
+# 3) 檢查字型大小（擴充後通常會明顯增加）
+wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_tc_16.c
+```
+
+說明：
+
+- `generate_fonts.sh` 會先用 `curl` 下載 TWSE JSON，再交給 Python 解析字符集。
+- 若遇到憑證驗證錯誤，腳本會自動改用 `curl -k` 重試。
+- 若下載或解析失敗，腳本會直接中止，不會繼續執行 `lv_font_conv`。
+- 字型工具集中放在 `tools/fonts/`。
+- 每次執行會同步更新 `tools/fonts/twse_symbols.txt`（實際送給 `lv_font_conv --symbols` 的字元集）。
+- 完成後請重新執行 `./flash.sh --build-only` 或 `./flash.sh`。
+
 ## 目前 UI 與操作
 
 ### 底部虛擬按鍵（觸控區）
