@@ -4,7 +4,7 @@ idf_component_register(
     REQUIRES
         board
         storage
-        wifi_manager
+        device_server
         twse_client
         scheduler
         ui

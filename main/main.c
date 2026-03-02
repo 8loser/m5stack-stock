@@ -10,19 +10,19 @@
 #include "app_config.h"
 #include "board.h"
 #include "storage.h"
-#include "wifi_manager.h"
+#include "device_server.h"
 #include "twse_client.h"
 #include "scheduler.h"
 #include "ui_manager.h"
 
 static const char *TAG = "main";
 
-/* WiFi 狀態回調：橋接 wifi_manager → ui_manager */
+/* WiFi 狀態回調：橋接 device_server → ui_manager */
 static void on_wifi_state(wifi_state_t state, const char *ip)
 {
     ui_manager_update_wifi_state((int)state, ip);
     if (state == WIFI_STATE_CONNECTED) {
-        const char *ssid = wifi_manager_get_connected_ssid();
+        const char *ssid = device_server_get_connected_ssid();
         ui_manager_log_wifi(LOG_LEVEL_INFO, "Connected: %s (%s)",
                             (ssid && ssid[0] != '\0') ? ssid : "unknown",
                             (ip != NULL) ? ip : "");
@@ -81,11 +81,11 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "初始化 WiFi...");
-    ESP_ERROR_CHECK(wifi_manager_init());
-    wifi_manager_set_callback(on_wifi_state);
+    ESP_ERROR_CHECK(device_server_init());
+    device_server_set_callback(on_wifi_state);
 
     /* 嘗試自動連線；若無設定則導向 Portal 頁面，由使用者手動啟動配網入口 */
-    ret = wifi_manager_connect_saved();
+    ret = device_server_connect_saved();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "未連上既有 WiFi，請至 Portal 頁面手動啟動");
         ui_manager_switch_screen(SCREEN_PORTAL);

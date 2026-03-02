@@ -19,7 +19,7 @@ idf_component_register(
         storage
         twse_client
         scheduler
-        wifi_manager
+        device_server
         freertos
         log
         esp_timer

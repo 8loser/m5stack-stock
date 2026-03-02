@@ -3,7 +3,7 @@
 #include "esp_system.h"
 #include "storage.h"
 #include "ui_compat.h"
-#include "wifi_manager.h"
+#include "device_server.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -118,8 +118,8 @@ void screen_info_refresh(void)
         char network_text[160];
         const char *display_ssid = "未儲存";
         const char *display_ip = "--";
-        wifi_state_t state = wifi_manager_get_state();
-        const char *ip = wifi_manager_get_ip();
+        wifi_state_t state = device_server_get_state();
+        const char *ip = device_server_get_ip();
 
         if (storage_wifi_load(ssid, sizeof(ssid), password, sizeof(password)) == ESP_OK &&
             ssid[0] != '\0') {

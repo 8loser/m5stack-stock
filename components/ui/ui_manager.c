@@ -35,7 +35,13 @@ static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
     static bool s_last_pressed = false;
     static bool s_hw_btn_fired = false;
     touch_point_t pt;
-    ft6336u_read(&pt);
+    esp_err_t touch_ret = ft6336u_read(&pt);
+    if (touch_ret != ESP_OK) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        s_last_pressed = false;
+        s_hw_btn_fired = false;
+        return;
+    }
 
     if (!board_is_screen_on()) {
         data->state = LV_INDEV_STATE_RELEASED;
@@ -49,7 +55,11 @@ static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
         ESP_LOGI(TAG, "touch down x=%d y=%d", pt.x, pt.y);
     }
 
-    if (pt.pressed && pt.y >= TOUCH_BTN_Y_MIN) {
+    /* 兼容兩種 FT6336U 座標回報：
+     * - raw 韌體座標：底部鍵常見 y≈270~279
+     * - 已映射面板座標：底部鍵落在 y≈220~239 */
+    bool in_bottom_btn_zone = (pt.y >= TOUCH_BTN_Y_MIN) || (pt.y >= (LCD_HEIGHT - 20));
+    if (pt.pressed && in_bottom_btn_zone) {
         if (!s_hw_btn_fired) {
             s_hw_btn_fired = true;
             uint8_t btn = (pt.x < TOUCH_BTN_A_X_MAX) ? 0 :
@@ -88,7 +98,12 @@ static const screen_id_t s_nav_screens[] = {
     SCREEN_HW_TEST,
 };
 static const size_t s_nav_screens_count = sizeof(s_nav_screens) / sizeof(s_nav_screens[0]);
+static const screen_id_t s_mid_screens[] = {
+    SCREEN_DASHBOARD,
+    SCREEN_PORTAL,
+};
 static int s_nav_idx = 0;
+static int s_mid_btn_idx = 0;
 
 /* 各頁面的 lv_obj */
 static lv_obj_t *s_screens[SCREEN_COUNT] = {NULL};
@@ -128,6 +143,7 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     s_ui_mutex = ui_mutex;
     s_cur_screen = SCREEN_DASHBOARD;
     s_nav_idx = 0;
+    s_mid_btn_idx = 0;
 
     lv_init();
 
@@ -215,12 +231,14 @@ void ui_manager_switch_screen(screen_id_t id)
     if (id >= SCREEN_COUNT) return;
     if (s_screens[id] == NULL) return;
     screen_id_t prev = s_cur_screen;
+    ESP_LOGI(TAG, "[%u ms] switch_screen %d -> %d",
+             (unsigned)esp_log_timestamp(), (int)prev, (int)id);
+
     /* 離開 Portal 頁面時關閉 provisioning portal（含 SoftAP） */
     if (prev == SCREEN_PORTAL && id != SCREEN_PORTAL) {
         extern void screen_portal_close_portal(void);
         screen_portal_close_portal();
     }
-
     s_cur_screen = id;
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         extern void status_bar_set_page(screen_id_t page);
@@ -255,13 +273,19 @@ void ui_manager_switch_screen(screen_id_t id)
             break;
         }
     }
+    for (size_t i = 0; i < sizeof(s_mid_screens) / sizeof(s_mid_screens[0]); i++) {
+        if (s_mid_screens[i] == id) {
+            s_mid_btn_idx = (int)i;
+            break;
+        }
+    }
 }
 
 static void handle_hw_button(uint8_t btn)
 {
     ESP_LOGI(TAG, "handle_hw_button: cur=%d btn=%u", (int)s_cur_screen, btn);
 
-    if (s_cur_screen == SCREEN_PORTAL) {
+    if (s_cur_screen == SCREEN_PORTAL && (btn == 0 || btn == 2)) {
         if (btn <= 2) {
             ui_manager_switch_screen(SCREEN_DASHBOARD);
         }
@@ -269,7 +293,12 @@ static void handle_hw_button(uint8_t btn)
     }
 
     if (btn == 1) {
-        ui_manager_switch_screen(SCREEN_PORTAL);
+        /* 還原為 Portal 觸發路徑，先驗證 APSTA 穩定性 */
+        if (s_cur_screen != SCREEN_PORTAL) {
+            ui_manager_switch_screen(SCREEN_PORTAL);
+            return;
+        }
+        ui_manager_switch_screen(SCREEN_DASHBOARD);
         return;
     }
 

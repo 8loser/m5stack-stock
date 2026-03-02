@@ -1,5 +1,5 @@
 #include "ui_manager.h"
-#include "wifi_manager.h"
+#include "device_server.h"
 #include "app_config.h"
 #include "ui_compat.h"
 #include "esp_log.h"
@@ -53,39 +53,49 @@ static void update_portal_ui(bool active)
 
 void screen_portal_open_portal(void)
 {
-    if (!wifi_manager_is_provisioning_portal_active()) {
-        esp_err_t ret = wifi_manager_start_provisioning_portal();
-        update_portal_ui(ret == ESP_OK);
+    ESP_LOGI(TAG, "[%u ms] open_portal begin active=%d softap=%d",
+             (unsigned)esp_log_timestamp(),
+             (int)device_server_is_provisioning_portal_active(),
+             (int)is_softap_enabled());
+    if (device_server_is_provisioning_portal_active()) {
+        update_portal_ui(true);
+        ESP_LOGI(TAG, "[%u ms] open_portal skip (already active)",
+                 (unsigned)esp_log_timestamp());
+        return;
+    }
+
+    esp_err_t ret = device_server_start_provisioning_portal();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "[%u ms] open_portal failed: %s",
+                 (unsigned)esp_log_timestamp(), esp_err_to_name(ret));
+        update_portal_ui(false);
     } else {
         update_portal_ui(true);
+        ESP_LOGI(TAG, "[%u ms] open_portal done",
+                 (unsigned)esp_log_timestamp());
     }
 }
 
 void screen_portal_close_portal(void)
 {
-    if (!wifi_manager_is_provisioning_portal_active() &&
-        !is_softap_enabled()) {
-        update_portal_ui(false);
+    ESP_LOGI(TAG, "[%u ms] close_portal begin active=%d softap=%d",
+             (unsigned)esp_log_timestamp(),
+             (int)device_server_is_provisioning_portal_active(),
+             (int)is_softap_enabled());
+    if (!device_server_is_provisioning_portal_active() && !is_softap_enabled()) {
+        ESP_LOGI(TAG, "[%u ms] close_portal skip (already inactive)",
+                 (unsigned)esp_log_timestamp());
         return;
     }
 
-    esp_err_t ret = wifi_manager_stop_provisioning_portal();
+    esp_err_t ret = device_server_stop_provisioning_portal();
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "停止 portal 失敗: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "[%u ms] close_portal failed: %s",
+                 (unsigned)esp_log_timestamp(), esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "[%u ms] close_portal done",
+                 (unsigned)esp_log_timestamp());
     }
-
-    /* 二次檢查 SoftAP/portal 是否已停止；若仍啟用，再嘗試一次停止 */
-    if (wifi_manager_is_provisioning_portal_active() ||
-        is_softap_enabled()) {
-        ESP_LOGW(TAG, "偵測到 portal/AP 仍啟用，進行第二次停止");
-        ret = wifi_manager_stop_provisioning_portal();
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "第二次停止 portal 失敗: %s", esp_err_to_name(ret));
-        }
-    }
-
-    update_portal_ui(wifi_manager_is_provisioning_portal_active() ||
-                     is_softap_enabled());
 }
 
 lv_obj_t *screen_portal_create(void)
@@ -136,8 +146,8 @@ lv_obj_t *screen_portal_create(void)
     /* WiFi QR：掃描後手機直接加入 AP（WIFI: URI）*/
     char portal_ap_qr_str[96];
     snprintf(portal_ap_qr_str, sizeof(portal_ap_qr_str), "WIFI:T:WPA;S:%s;P:%s;;",
-             wifi_manager_get_provisioning_ap_ssid(),
-             wifi_manager_get_provisioning_ap_password());
+             device_server_get_provisioning_ap_ssid(),
+             device_server_get_provisioning_ap_password());
     s_qr_obj = lv_qrcode_create(left_panel, 146,
                                 lv_color_hex(0x000000),
                                 lv_color_hex(0xFFFFFF));
@@ -163,7 +173,7 @@ lv_obj_t *screen_portal_create(void)
     lv_obj_set_pos(ssid_lbl, 176, 22);
     lv_obj_set_width(ssid_lbl, 138);
     lv_label_set_long_mode(ssid_lbl, LV_LABEL_LONG_DOT);
-    lv_label_set_text(ssid_lbl, wifi_manager_get_provisioning_ap_ssid());
+    lv_label_set_text(ssid_lbl, device_server_get_provisioning_ap_ssid());
     lv_obj_set_style_text_color(ssid_lbl, lv_color_white(), 0);
     lv_obj_set_style_text_font(ssid_lbl, &lv_font_noto_tc_14, 0);
 
@@ -175,7 +185,7 @@ lv_obj_t *screen_portal_create(void)
 
     lv_obj_t *pwd_lbl = lv_label_create(s_qr_area);
     lv_obj_set_pos(pwd_lbl, 176, 64);
-    lv_label_set_text(pwd_lbl, wifi_manager_get_provisioning_ap_password());
+    lv_label_set_text(pwd_lbl, device_server_get_provisioning_ap_password());
     lv_obj_set_style_text_color(pwd_lbl, lv_color_white(), 0);
     lv_obj_set_style_text_font(pwd_lbl, &lv_font_noto_tc_14, 0);
 
@@ -200,7 +210,7 @@ lv_obj_t *screen_portal_create(void)
     lv_obj_set_style_text_font(hint_lbl, &lv_font_noto_tc_14, 0);
 
     /* 根據目前 Portal 狀態初始化 UI */
-    update_portal_ui(wifi_manager_is_provisioning_portal_active());
+    update_portal_ui(device_server_is_provisioning_portal_active());
 
     return s_screen;
 }

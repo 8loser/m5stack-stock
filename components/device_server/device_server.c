@@ -1,4 +1,4 @@
-#include "wifi_manager.h"
+#include "device_server.h"
 #include "storage.h"
 #include "scheduler.h"
 #include "twse_client.h"
@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <ctype.h>
 
-static const char *TAG = "wifi_mgr";
+static const char *TAG = "device_srv";
 
 #define WIFI_CONNECTED_BIT  BIT0
 #define WIFI_FAIL_BIT       BIT1
@@ -138,11 +138,11 @@ static void wifi_connect_task(void *arg)
     }
 
     ESP_LOGI(TAG, "Portal 提交配網，嘗試連線 SSID=%s", req->ssid);
-    esp_err_t ret = wifi_manager_connect(req->ssid, req->password);
+    esp_err_t ret = device_server_connect(req->ssid, req->password);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Portal 配網成功");
         if (s_portal_active) {
-            esp_err_t stop_ret = wifi_manager_stop_provisioning_portal();
+            esp_err_t stop_ret = device_server_stop_provisioning_portal();
             if (stop_ret != ESP_OK) {
                 ESP_LOGW(TAG, "Portal 停止失敗: %s", esp_err_to_name(stop_ret));
             }
@@ -1016,8 +1016,17 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
     if (base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         /* STA 啟動不代表正在連線；只有呼叫 connect 時才進入 CONNECTING */
         notify_state(WIFI_STATE_DISCONNECTED);
+        ESP_LOGI(TAG, "[%u ms] STA_START", (unsigned)esp_log_timestamp());
 
     } else if (base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        const wifi_event_sta_disconnected_t *disc = (const wifi_event_sta_disconnected_t *)event_data;
+        wifi_mode_t mode = WIFI_MODE_NULL;
+        esp_wifi_get_mode(&mode);
+        ESP_LOGW(TAG, "[%u ms] STA_DISCONNECTED reason=%d mode=%d retry=%d/%d",
+                 (unsigned)esp_log_timestamp(),
+                 disc ? (int)disc->reason : -1, (int)mode,
+                 s_retry_count, MAX_RETRY);
+
         s_ip_str[0] = '\0';
         s_connected_ssid[0] = '\0';
         if (s_retry_count < MAX_RETRY) {
@@ -1045,13 +1054,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         s_retry_count = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         notify_state(WIFI_STATE_CONNECTED);
+        ESP_LOGI(TAG, "[%u ms] STA_GOT_IP", (unsigned)esp_log_timestamp());
         ESP_LOGI(TAG, "WiFi 已連線 SSID=%s IP=%s",
                  (s_connected_ssid[0] != '\0') ? s_connected_ssid : "unknown",
                  s_ip_str);
     }
 }
 
-esp_err_t wifi_manager_init(void)
+esp_err_t device_server_init(void)
 {
     if (s_initialized) return ESP_OK;
 
@@ -1085,11 +1095,11 @@ esp_err_t wifi_manager_init(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     s_initialized = true;
-    ESP_LOGI(TAG, "WiFi Manager 初始化完成");
+    ESP_LOGI(TAG, "Device Server 初始化完成");
     return ESP_OK;
 }
 
-esp_err_t wifi_manager_connect(const char *ssid, const char *password)
+esp_err_t device_server_connect(const char *ssid, const char *password)
 {
     wifi_config_t wifi_cfg = {0};
     strncpy((char *)wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid) - 1);
@@ -1126,7 +1136,7 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
     return ESP_FAIL;
 }
 
-esp_err_t wifi_manager_connect_any_saved(void)
+esp_err_t device_server_connect_any_saved(void)
 {
     uint8_t count = storage_wifi_ap_count();
     if (count == 0) {
@@ -1143,7 +1153,7 @@ esp_err_t wifi_manager_connect_any_saved(void)
         }
 
         ESP_LOGI(TAG, "嘗試已儲存 AP %d/%d: %s", i + 1, count, ssid);
-        if (wifi_manager_connect(ssid, password) == ESP_OK) {
+        if (device_server_connect(ssid, password) == ESP_OK) {
             return ESP_OK;
         }
     }
@@ -1152,12 +1162,12 @@ esp_err_t wifi_manager_connect_any_saved(void)
     return ESP_FAIL;
 }
 
-esp_err_t wifi_manager_connect_saved(void)
+esp_err_t device_server_connect_saved(void)
 {
-    return wifi_manager_connect_any_saved();
+    return device_server_connect_any_saved();
 }
 
-esp_err_t wifi_manager_disconnect(void)
+esp_err_t device_server_disconnect(void)
 {
     s_retry_count = MAX_RETRY;  /* 停止自動重試 */
     esp_wifi_disconnect();
@@ -1165,37 +1175,40 @@ esp_err_t wifi_manager_disconnect(void)
     return ESP_OK;
 }
 
-wifi_state_t wifi_manager_get_state(void)
+wifi_state_t device_server_get_state(void)
 {
     return s_state;
 }
 
-bool wifi_manager_is_connected(void)
+bool device_server_is_connected(void)
 {
     return (s_state == WIFI_STATE_CONNECTED);
 }
 
-const char *wifi_manager_get_ip(void)
+const char *device_server_get_ip(void)
 {
     return s_ip_str;
 }
 
-const char *wifi_manager_get_connected_ssid(void)
+const char *device_server_get_connected_ssid(void)
 {
     return s_connected_ssid;
 }
 
-void wifi_manager_set_callback(wifi_state_cb_t cb)
+void device_server_set_callback(wifi_state_cb_t cb)
 {
     s_callback = cb;
 }
 
-esp_err_t wifi_manager_start_provisioning_portal(void)
+esp_err_t device_server_start_provisioning_portal(void)
 {
     if (!s_initialized) return ESP_ERR_INVALID_STATE;
     if (s_portal_active) return ESP_OK;
+    ESP_LOGI(TAG, "[%u ms] portal_start begin", (unsigned)esp_log_timestamp());
 
     if (!s_ap_netif) {
+        ESP_LOGI(TAG, "[%u ms] portal_start create_default_wifi_ap",
+                 (unsigned)esp_log_timestamp());
         s_ap_netif = esp_netif_create_default_wifi_ap();
         if (!s_ap_netif) {
             ESP_LOGE(TAG, "建立 AP netif 失敗");
@@ -1211,18 +1224,24 @@ esp_err_t wifi_manager_start_provisioning_portal(void)
     ap_cfg.ap.max_connection = WIFI_PORTAL_MAX_STA;
     ap_cfg.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
 
+    ESP_LOGI(TAG, "[%u ms] portal_start esp_wifi_set_mode(APSTA)",
+             (unsigned)esp_log_timestamp());
     esp_err_t ret = esp_wifi_set_mode(WIFI_MODE_APSTA);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "切換 APSTA 模式失敗: %s", esp_err_to_name(ret));
         return ret;
     }
 
+    ESP_LOGI(TAG, "[%u ms] portal_start esp_wifi_set_config(AP)",
+             (unsigned)esp_log_timestamp());
     ret = esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "設定 AP 參數失敗: %s", esp_err_to_name(ret));
         return ret;
     }
 
+    ESP_LOGI(TAG, "[%u ms] portal_start httpd_start",
+             (unsigned)esp_log_timestamp());
     ret = start_portal_http_server();
     if (ret != ESP_OK) return ret;
 
@@ -1232,43 +1251,49 @@ esp_err_t wifi_manager_start_provisioning_portal(void)
     return ESP_OK;
 }
 
-esp_err_t wifi_manager_stop_provisioning_portal(void)
+esp_err_t device_server_stop_provisioning_portal(void)
 {
     if (!s_portal_active) return ESP_OK;
+    ESP_LOGI(TAG, "[%u ms] portal_stop begin", (unsigned)esp_log_timestamp());
 
-    stop_portal_http_server();
+    ESP_LOGI(TAG, "[%u ms] portal_stop esp_wifi_set_mode(STA)",
+             (unsigned)esp_log_timestamp());
     esp_err_t ret = esp_wifi_set_mode(WIFI_MODE_STA);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "切換 STA 模式失敗: %s", esp_err_to_name(ret));
         return ret;
     }
 
+    ESP_LOGI(TAG, "[%u ms] portal_stop httpd_stop",
+             (unsigned)esp_log_timestamp());
+    stop_portal_http_server();
+
     s_portal_active = false;
     ESP_LOGI(TAG, "Portal 已停止");
     return ESP_OK;
 }
 
-bool wifi_manager_is_provisioning_portal_active(void)
+bool device_server_is_provisioning_portal_active(void)
 {
     return s_portal_active;
 }
 
-const char *wifi_manager_get_provisioning_ap_ssid(void)
+const char *device_server_get_provisioning_ap_ssid(void)
 {
     return s_portal_ap_ssid;
 }
 
-const char *wifi_manager_get_provisioning_ap_password(void)
+const char *device_server_get_provisioning_ap_password(void)
 {
     return s_portal_ap_password;
 }
 
-const char *wifi_manager_get_provisioning_url(void)
+const char *device_server_get_provisioning_url(void)
 {
     return s_portal_url;
 }
 
-esp_err_t wifi_manager_scan(wifi_ap_info_t *results, uint16_t *count,
+esp_err_t device_server_scan(wifi_ap_info_t *results, uint16_t *count,
                              uint16_t max_count)
 {
     wifi_scan_config_t scan_cfg = {
