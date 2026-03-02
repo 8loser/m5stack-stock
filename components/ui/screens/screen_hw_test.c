@@ -11,13 +11,7 @@
 
 static const lv_font_t *hw_test_text_font(void)
 {
-#if defined(LV_FONT_MONTSERRAT_12) && LV_FONT_MONTSERRAT_12
-    return &lv_font_montserrat_12;
-#elif defined(LV_FONT_MONTSERRAT_14) && LV_FONT_MONTSERRAT_14
-    return &lv_font_montserrat_14;
-#else
-    return LV_FONT_DEFAULT;
-#endif
+    return &lv_font_noto_tc_14;
 }
 
 static lv_obj_t *create_test_button(lv_obj_t *parent, int x, int y, int w, int h,
@@ -65,21 +59,21 @@ lv_obj_t *screen_hw_test_create(void)
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *vibration_label = lv_label_create(screen);
-    lv_label_set_text(vibration_label, "VIBRATION TEST");
+    lv_label_set_text(vibration_label, "震動測試");
     lv_obj_set_style_text_font(vibration_label, hw_test_text_font(), 0);
     lv_obj_set_style_text_color(vibration_label, COLOR_VIB_SECTION, 0);
     lv_obj_set_pos(vibration_label, 12, content_top + 0);
 
-    create_test_button(screen, 12, content_top + 16, 298, 40, COLOR_VIB_BTN, "Vibrate",
+    create_test_button(screen, 12, content_top + 16, 298, 40, COLOR_VIB_BTN, "震動",
                        on_alert_clicked);
 
     lv_obj_t *audio_label = lv_label_create(screen);
-    lv_label_set_text(audio_label, "AUDIO TEST");
+    lv_label_set_text(audio_label, "音效測試");
     lv_obj_set_style_text_font(audio_label, hw_test_text_font(), 0);
     lv_obj_set_style_text_color(audio_label, COLOR_AUDIO_SECTION, 0);
     lv_obj_set_pos(audio_label, 12, content_top + 60);
 
-    create_test_button(screen, 12, content_top + 76, 298, 40, COLOR_AUDIO_BTN, "Beep",
+    create_test_button(screen, 12, content_top + 76, 298, 40, COLOR_AUDIO_BTN, "嗶聲",
                        on_beep_clicked);
 
     return screen;

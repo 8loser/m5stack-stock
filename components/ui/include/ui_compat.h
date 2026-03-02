@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lvgl.h"
+#include "ui_font.h"
 
 /* Fallback fonts for configurations that only enable a subset of Montserrat sizes. */
 #ifndef LV_FONT_MONTSERRAT_10
@@ -13,7 +14,7 @@
 #define LV_FONT_MONTSERRAT_20 0
 #endif
 
-#define UI_FONT_TEXT_DEFAULT lv_font_montserrat_14
+#define UI_FONT_TEXT_DEFAULT lv_font_noto_tc_14
 
 #if !LV_FONT_MONTSERRAT_10
 #define lv_font_montserrat_10 UI_FONT_TEXT_DEFAULT

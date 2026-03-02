@@ -11,7 +11,7 @@
 #define COLOR_TOGGLE_ON  lv_color_hex(0x1E88E5)
 
 static const uint16_t INTERVAL_VALUES[] = {60, 300, 600};
-static const char *INTERVAL_LABELS[] = {"1 min", "5 min", "10 min"};
+static const char *INTERVAL_LABELS[] = {"1 分鐘", "5 分鐘", "10 分鐘"};
 static const char *TAG = "screen_settings";
 
 static lv_obj_t *s_interval_btns[3] = {0};
@@ -21,13 +21,12 @@ static uint16_t s_selected_interval_idx = 0;
 
 static const lv_font_t *settings_font(void)
 {
-#if defined(LV_FONT_MONTSERRAT_12) && LV_FONT_MONTSERRAT_12
-    return &lv_font_montserrat_12;
-#elif defined(LV_FONT_MONTSERRAT_14) && LV_FONT_MONTSERRAT_14
-    return &lv_font_montserrat_14;
-#else
-    return LV_FONT_DEFAULT;
-#endif
+    return &lv_font_noto_tc_14;
+}
+
+static const lv_font_t *settings_title_font(void)
+{
+    return &lv_font_noto_tc_16;
 }
 
 static uint16_t abs_diff_u16(uint16_t a, uint16_t b)
@@ -63,11 +62,11 @@ static void persist_selected_interval(void)
     apply_ret = scheduler_apply_config(&cfg);
     save_ret = storage_schedule_save(&cfg);
     if (apply_ret == ESP_OK && save_ret == ESP_OK) {
-        lv_label_set_text(s_feedback_lbl, "Saved successfully");
+        lv_label_set_text(s_feedback_lbl, "儲存成功");
         lv_obj_set_style_text_color(s_feedback_lbl, lv_color_hex(0x81C784), 0);
         ESP_LOGI(TAG, "saved: quote=%us market_only=1", cfg.quote_interval_s);
     } else {
-        lv_label_set_text(s_feedback_lbl, "Save failed");
+        lv_label_set_text(s_feedback_lbl, "儲存失敗");
         lv_obj_set_style_text_color(s_feedback_lbl, lv_color_hex(0xEF5350), 0);
         ESP_LOGW(TAG, "save failed: apply=%s storage=%s",
                  esp_err_to_name(apply_ret), esp_err_to_name(save_ret));
@@ -125,10 +124,12 @@ lv_obj_t *screen_settings_create(void)
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
     interval_label = lv_label_create(screen);
-    lv_label_set_text(interval_label, "Quote Interval");
+    lv_label_set_text(interval_label, "報價間隔");
+    lv_obj_set_width(interval_label, LCD_WIDTH);
+    lv_obj_set_style_text_align(interval_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(interval_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(interval_label, settings_font(), 0);
-    lv_obj_set_pos(interval_label, 98, 66);
+    lv_obj_set_style_text_font(interval_label, settings_title_font(), 0);
+    lv_obj_set_pos(interval_label, 0, 62);
 
     for (uint16_t i = 0; i < 3; i++) {
         s_interval_btns[i] = lv_btn_create(screen);

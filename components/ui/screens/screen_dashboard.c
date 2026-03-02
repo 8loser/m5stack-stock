@@ -46,27 +46,29 @@ lv_obj_t *screen_dashboard_create(void)
         lv_obj_set_pos(s_name_labels[i], 4, 4);
         lv_label_set_text(s_name_labels[i], "---");
         lv_obj_set_style_text_color(s_name_labels[i], lv_color_white(), 0);
+        lv_obj_set_style_text_font(s_name_labels[i], &lv_font_noto_tc_14, 0);
 
         /* 現價（中）*/
         s_price_labels[i] = lv_label_create(s_cards[i]);
         lv_obj_align(s_price_labels[i], LV_ALIGN_CENTER, 0, 0);
         lv_label_set_text(s_price_labels[i], "---.--");
         lv_obj_set_style_text_color(s_price_labels[i], lv_color_white(), 0);
-        lv_obj_set_style_text_font(s_price_labels[i], &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(s_price_labels[i], &lv_font_noto_tc_16, 0);
 
         /* 漲跌幅（右）*/
         s_change_labels[i] = lv_label_create(s_cards[i]);
         lv_obj_align(s_change_labels[i], LV_ALIGN_RIGHT_MID, -4, 0);
         lv_label_set_text(s_change_labels[i], "+/-");
         lv_obj_set_style_text_color(s_change_labels[i], lv_color_white(), 0);
+        lv_obj_set_style_text_font(s_change_labels[i], &lv_font_noto_tc_14, 0);
     }
 
     /* 最後更新時間 */
     s_update_label = lv_label_create(s_screen);
     lv_obj_set_pos(s_update_label, 4, 206);
-    lv_label_set_text(s_update_label, "Updated: --:--:--");
+    lv_label_set_text(s_update_label, "更新: --:--:--");
     lv_obj_set_style_text_color(s_update_label, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(s_update_label, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(s_update_label, &lv_font_noto_tc_14, 0);
 
     return s_screen;
 }
@@ -80,7 +82,7 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
 
     char price_str[16];
     if (q->is_market_closed) {
-        snprintf(price_str, sizeof(price_str), "%.2f\nclosed", q->yesterday_close);
+        snprintf(price_str, sizeof(price_str), "%.2f\n休市", q->yesterday_close);
         lv_obj_set_style_text_color(s_price_labels[idx], lv_color_hex(0x888888), 0);
     } else {
         snprintf(price_str, sizeof(price_str), "%.2f", q->current_price);
@@ -103,7 +105,7 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
                                COLOR_CARD, 0);
 
     char time_str[40];
-    snprintf(time_str, sizeof(time_str), "Updated: %s", q->trade_time);
+    snprintf(time_str, sizeof(time_str), "更新: %s", q->trade_time);
     lv_label_set_text(s_update_label, time_str);
 }
 

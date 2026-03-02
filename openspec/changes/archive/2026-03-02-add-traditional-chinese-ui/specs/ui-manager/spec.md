@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: status bar 顯示所有 screen 的正確名稱
-`ui_manager_switch_screen()` 呼叫 `status_bar_set_page(id)` 後，status bar SHALL 於中央區域顯示與目前 screen 對應的正確繁體中文名稱，涵蓋全部五個 screen。
+`ui_manager_switch_screen()` 呼叫 `status_bar_set_page(id)` 後，status bar SHALL 於中央區域顯示與目前 screen 對應的正確繁體中文名稱，涵蓋全部六個 screen。
 
 名稱對照如下：
 
@@ -12,6 +12,7 @@
 | SCREEN_INFO | "資訊" |
 | SCREEN_SETTINGS | "設定" |
 | SCREEN_PORTAL | "入口設定"（後接連線狀態） |
+| SCREEN_HW_TEST | "硬體測試" |
 
 #### Scenario: 切換至 Settings 頁面
 - **WHEN** 呼叫 `ui_manager_switch_screen(SCREEN_SETTINGS)`
@@ -54,7 +55,7 @@ screen_dashboard SHALL 使用繁體中文顯示所有使用者可見文字，字
 - **THEN** 時間戳前綴為 "更新: "
 
 ### Requirement: Settings 頁面繁體中文文字
-screen_settings SHALL 使用繁體中文顯示所有使用者可見文字。
+screen_settings SHALL 使用繁體中文顯示所有使用者可見文字，且標題 SHALL 使用較大字級並水平置中。
 
 | 元素 | 中文文字 |
 |------|---------|
@@ -65,7 +66,7 @@ screen_settings SHALL 使用繁體中文顯示所有使用者可見文字。
 
 #### Scenario: 設定頁顯示中文標題
 - **WHEN** 切換至 Settings 頁面
-- **THEN** 標題顯示 "報價間隔"
+- **THEN** 標題顯示 "報價間隔" 且置中顯示
 
 #### Scenario: 儲存成功顯示中文
 - **WHEN** 設定儲存成功
@@ -127,8 +128,20 @@ screen_log SHALL 使用繁體中文顯示所有使用者可見文字。
 - **WHEN** Log 頁面顯示
 - **THEN** 分類 tab 顯示 "股票"、"WiFi"、"AI"、"系統"
 
+### Requirement: HW Test 頁面繁體中文文字
+screen_hw_test SHALL 使用繁體中文顯示所有使用者可見文字。
+
+| 元素 | 中文文字 |
+|------|---------|
+| 區段標題 | "震動測試"、"音效測試" |
+| 按鈕文字 | "震動"、"嗶聲" |
+
+#### Scenario: HW Test 頁面顯示中文
+- **WHEN** 切換至 HW Test 頁面
+- **THEN** 顯示 "震動測試"、"音效測試" 及對應中文按鈕文字
+
 ### Requirement: Status bar 繁體中文文字
-status_bar SHALL 使用繁體中文顯示時段和狀態資訊。
+status_bar SHALL 使用繁體中文顯示時段和狀態資訊，且中央標題僅在超出可視寬度時向左捲動；文字可完整顯示時不得滾動。
 
 | 元素 | 中文文字 |
 |------|---------|
@@ -144,3 +157,11 @@ status_bar SHALL 使用繁體中文顯示時段和狀態資訊。
 #### Scenario: Portal 狀態中文
 - **WHEN** 在 Portal 頁面且 WiFi 已連線
 - **THEN** status bar 顯示 "入口設定 - 已連線 (IP)"
+
+#### Scenario: 短標題不滾動
+- **WHEN** status bar 中央標題可完整顯示於可視寬度內
+- **THEN** 標題保持固定，不進行滾動動畫
+
+#### Scenario: 長標題向左滾動
+- **WHEN** status bar 中央標題超出可視寬度
+- **THEN** 標題啟用向左滾動顯示

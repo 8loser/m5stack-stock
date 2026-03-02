@@ -10,6 +10,8 @@ idf_component_register(
         "widgets/status_bar.c"
         "widgets/stock_card.c"
         "widgets/loading_spinner.c"
+        "fonts/lv_font_noto_tc_14.c"
+        "fonts/lv_font_noto_tc_16.c"
     INCLUDE_DIRS "include"
     REQUIRES
         lvgl

@@ -22,6 +22,31 @@ static char s_wifi_ip[24] = {0};
 static const int EDGE_PADDING = 4;
 static const int ITEM_GAP = 6;
 
+static void update_message_scroll_mode(void)
+{
+    if (!s_msg_lbl) return;
+
+    const char *text = lv_label_get_text(s_msg_lbl);
+    const lv_font_t *font = lv_obj_get_style_text_font(s_msg_lbl, 0);
+    lv_point_t text_size = {0};
+    lv_coord_t label_width = lv_obj_get_width(s_msg_lbl);
+    lv_coord_t letter_space = lv_obj_get_style_text_letter_space(s_msg_lbl, 0);
+    lv_coord_t line_space = lv_obj_get_style_text_line_space(s_msg_lbl, 0);
+
+    if (!text || !font || label_width <= 0) return;
+
+    lv_txt_get_size(&text_size, text, font, letter_space, line_space,
+                    LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+
+    if (text_size.x > label_width) {
+        lv_label_set_long_mode(s_msg_lbl, LV_LABEL_LONG_SCROLL);
+        lv_obj_set_style_text_align(s_msg_lbl, LV_TEXT_ALIGN_LEFT, 0);
+    } else {
+        lv_label_set_long_mode(s_msg_lbl, LV_LABEL_LONG_CLIP);
+        lv_obj_set_style_text_align(s_msg_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    }
+}
+
 static void get_time_ampm(char *out, size_t out_sz)
 {
     int hour24 = -1;
@@ -69,41 +94,42 @@ static void refresh_page_message(void)
     if (!s_msg_lbl) return;
 
     char buf[128];
-    const char *page_name = "Dashboard";
+    const char *page_name = "儀表板";
     switch (s_page) {
     case SCREEN_DASHBOARD:
-        page_name = "Dashboard";
+        page_name = "儀表板";
         break;
     case SCREEN_LOG:
-        page_name = "Log";
+        page_name = "日誌";
         break;
     case SCREEN_INFO:
-        page_name = "Info";
+        page_name = "資訊";
         break;
     case SCREEN_SETTINGS:
-        page_name = "Settings";
+        page_name = "設定";
         break;
     case SCREEN_HW_TEST:
-        page_name = "HW Test";
+        page_name = "硬體測試";
         break;
     default:
-        page_name = "Dashboard";
+        page_name = "儀表板";
         break;
     }
 
     if (s_page == SCREEN_PORTAL) {
         if (s_wifi_state == 2 /* CONNECTED */) {
-            snprintf(buf, sizeof(buf), "Portal Setup - Connected (%s)",
+            snprintf(buf, sizeof(buf), "入口設定 - 已連線 (%s)",
                      (s_wifi_ip[0] != '\0') ? s_wifi_ip : "OK");
         } else if (s_wifi_state == 1 /* CONNECTING */) {
-            snprintf(buf, sizeof(buf), "Portal Setup - Connecting...");
+            snprintf(buf, sizeof(buf), "入口設定 - 連線中...");
         } else {
-            snprintf(buf, sizeof(buf), "Portal Setup - Offline");
+            snprintf(buf, sizeof(buf), "入口設定 - 離線");
         }
     } else {
         snprintf(buf, sizeof(buf), "%s", page_name);
     }
     lv_label_set_text(s_msg_lbl, buf);
+    update_message_scroll_mode();
 }
 
 static void refresh_wifi_icon(void)
@@ -140,6 +166,7 @@ static void layout_topbar_items(void)
 
     lv_obj_set_pos(s_msg_lbl, msg_x, 2);
     lv_obj_set_size(s_msg_lbl, msg_w, 16);
+    update_message_scroll_mode();
 }
 
 static void status_update_cb(lv_timer_t *t)
@@ -184,15 +211,15 @@ void status_bar_create_on(lv_obj_t *parent)
     lv_obj_set_style_text_font(s_time_lbl, &lv_font_montserrat_14, 0);
     lv_obj_move_foreground(s_time_lbl);
 
-    /* 中央頁面訊息（左右滾動） */
+    /* 中央頁面訊息（僅過長時左捲） */
     s_msg_lbl = lv_label_create(bar);
     lv_obj_set_pos(s_msg_lbl, 82, 2);
     lv_obj_set_size(s_msg_lbl, LCD_WIDTH - 152, 16);
-    lv_label_set_long_mode(s_msg_lbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_label_set_text(s_msg_lbl, "Dashboard");
+    lv_label_set_long_mode(s_msg_lbl, LV_LABEL_LONG_CLIP);
+    lv_label_set_text(s_msg_lbl, "儀表板");
     lv_obj_set_style_text_align(s_msg_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_msg_lbl, BAR_TEXT_COLOR, 0);
-    lv_obj_set_style_text_font(s_msg_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(s_msg_lbl, &lv_font_noto_tc_14, 0);
     lv_obj_set_style_anim_speed(s_msg_lbl, 30, 0);
 
     /* 電量 */
@@ -204,9 +231,9 @@ void status_bar_create_on(lv_obj_t *parent)
 
     s_batt_lbl = lv_label_create(bar);
     lv_obj_align(s_batt_lbl, LV_ALIGN_RIGHT_MID, -EDGE_PADDING, 0);
-    lv_label_set_text(s_batt_lbl, "BAT --%");
+    lv_label_set_text(s_batt_lbl, "電量 --%");
     lv_obj_set_style_text_color(s_batt_lbl, BAR_TEXT_COLOR, 0);
-    lv_obj_set_style_text_font(s_batt_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(s_batt_lbl, &lv_font_noto_tc_14, 0);
 
     refresh_page_message();
     refresh_wifi_icon();

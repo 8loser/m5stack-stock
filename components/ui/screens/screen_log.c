@@ -104,23 +104,17 @@ static void log_format_entry_text(const log_entry_t *entry, char *out, size_t ou
 
 static const lv_font_t *log_line_font(void)
 {
-#if defined(LV_FONT_MONTSERRAT_12) && LV_FONT_MONTSERRAT_12
-    return &lv_font_montserrat_12;
-#elif defined(LV_FONT_MONTSERRAT_14) && LV_FONT_MONTSERRAT_14
-    return &lv_font_montserrat_14;
-#else
-    return LV_FONT_DEFAULT;
-#endif
+    return &lv_font_noto_tc_14;
 }
 
 static const char *log_tag_to_str(log_tag_t tag)
 {
     switch (tag) {
-    case LOG_TAG_STOCK: return "STOCK";
-    case LOG_TAG_WIFI:  return "WIFI";
+    case LOG_TAG_STOCK: return "股票";
+    case LOG_TAG_WIFI:  return "WiFi";
     case LOG_TAG_AI:    return "AI";
-    case LOG_TAG_SYS:   return "SYS";
-    default:            return "SYS";
+    case LOG_TAG_SYS:   return "系統";
+    default:            return "系統";
     }
 }
 
@@ -172,9 +166,9 @@ lv_obj_t *screen_log_create(void)
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *title = lv_label_create(screen);
-    lv_label_set_text(title, "Event Log");
+    lv_label_set_text(title, "事件日誌");
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title, &lv_font_noto_tc_16, 0);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 8, 6);
 
     s_log_list = lv_obj_create(screen);

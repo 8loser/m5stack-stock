@@ -31,7 +31,7 @@ static bool is_softap_enabled(void)
 static void update_portal_ui(bool active)
 {
     if (active) {
-        lv_label_set_text(s_status_lbl, "Portal active - scan QR to join AP");
+        lv_label_set_text(s_status_lbl, "入口已啟動 - 掃描 QR 加入 AP");
         lv_obj_set_style_text_color(s_status_lbl, lv_color_hex(0x4CAF50), 0);
         if (s_qr_obj) {
             lv_obj_clear_flag(s_qr_obj, LV_OBJ_FLAG_HIDDEN);
@@ -40,7 +40,7 @@ static void update_portal_ui(bool active)
             lv_obj_add_flag(s_qr_hint_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     } else {
-        lv_label_set_text(s_status_lbl, "Portal inactive - waiting to start");
+        lv_label_set_text(s_status_lbl, "入口未啟動 - 等待自動啟動");
         lv_obj_set_style_text_color(s_status_lbl, lv_color_hex(0xAAAAAA), 0);
         if (s_qr_obj) {
             lv_obj_add_flag(s_qr_obj, LV_OBJ_FLAG_HIDDEN);
@@ -98,9 +98,9 @@ lv_obj_t *screen_portal_create(void)
     lv_obj_set_pos(s_status_lbl, 4, 22);
     lv_obj_set_width(s_status_lbl, LCD_WIDTH - 8);
     lv_label_set_long_mode(s_status_lbl, LV_LABEL_LONG_DOT);
-    lv_label_set_text(s_status_lbl, "Portal inactive");
+    lv_label_set_text(s_status_lbl, "入口未啟動");
     lv_obj_set_style_text_color(s_status_lbl, lv_color_hex(0xAAAAAA), 0);
-    lv_obj_set_style_text_font(s_status_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(s_status_lbl, &lv_font_noto_tc_14, 0);
 
     /* 主要內容區：固定顯示，避免底部空白 */
     s_qr_area = lv_obj_create(s_screen);
@@ -127,10 +127,10 @@ lv_obj_t *screen_portal_create(void)
     lv_obj_set_width(s_qr_hint_lbl, 148);
     lv_label_set_long_mode(s_qr_hint_lbl, LV_LABEL_LONG_WRAP);
     lv_label_set_text(s_qr_hint_lbl,
-                      "Portal not active.\n\nWait for auto-start,\nthen scan QR.");
+                      "入口未啟動\n\n等待自動啟動，\n再掃描 QR。");
     lv_obj_set_style_text_align(s_qr_hint_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_qr_hint_lbl, lv_color_hex(0xB0BEC5), 0);
-    lv_obj_set_style_text_font(s_qr_hint_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(s_qr_hint_lbl, &lv_font_noto_tc_14, 0);
 
 #if LV_USE_QRCODE
     /* WiFi QR：掃描後手機直接加入 AP（WIFI: URI）*/
@@ -146,18 +146,18 @@ lv_obj_t *screen_portal_create(void)
 #else
     s_qr_obj = lv_label_create(left_panel);
     lv_obj_center(s_qr_obj);
-    lv_label_set_text(s_qr_obj, "QR disabled\nenter SSID manually");
+    lv_label_set_text(s_qr_obj, "QR 未啟用\n請手動輸入 SSID");
     lv_obj_set_style_text_align(s_qr_obj, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(s_qr_obj, lv_color_hex(0xFFCC66), 0);
-    lv_obj_set_style_text_font(s_qr_obj, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(s_qr_obj, &lv_font_noto_tc_14, 0);
 #endif
 
     /* 右側說明資訊 */
     lv_obj_t *hdr_ap = lv_label_create(s_qr_area);
     lv_obj_set_pos(hdr_ap, 176, 8);
-    lv_label_set_text(hdr_ap, "Join AP:");
+    lv_label_set_text(hdr_ap, "加入 AP:");
     lv_obj_set_style_text_color(hdr_ap, lv_color_hex(0x64B5F6), 0);
-    lv_obj_set_style_text_font(hdr_ap, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(hdr_ap, &lv_font_noto_tc_14, 0);
 
     lv_obj_t *ssid_lbl = lv_label_create(s_qr_area);
     lv_obj_set_pos(ssid_lbl, 176, 22);
@@ -165,39 +165,39 @@ lv_obj_t *screen_portal_create(void)
     lv_label_set_long_mode(ssid_lbl, LV_LABEL_LONG_DOT);
     lv_label_set_text(ssid_lbl, wifi_manager_get_provisioning_ap_ssid());
     lv_obj_set_style_text_color(ssid_lbl, lv_color_white(), 0);
-    lv_obj_set_style_text_font(ssid_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(ssid_lbl, &lv_font_noto_tc_14, 0);
 
     lv_obj_t *hdr_pwd = lv_label_create(s_qr_area);
     lv_obj_set_pos(hdr_pwd, 176, 50);
-    lv_label_set_text(hdr_pwd, "Pwd:");
+    lv_label_set_text(hdr_pwd, "密碼:");
     lv_obj_set_style_text_color(hdr_pwd, lv_color_hex(0x64B5F6), 0);
-    lv_obj_set_style_text_font(hdr_pwd, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(hdr_pwd, &lv_font_noto_tc_14, 0);
 
     lv_obj_t *pwd_lbl = lv_label_create(s_qr_area);
     lv_obj_set_pos(pwd_lbl, 176, 64);
     lv_label_set_text(pwd_lbl, wifi_manager_get_provisioning_ap_password());
     lv_obj_set_style_text_color(pwd_lbl, lv_color_white(), 0);
-    lv_obj_set_style_text_font(pwd_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(pwd_lbl, &lv_font_noto_tc_14, 0);
 
     lv_obj_t *hdr_url = lv_label_create(s_qr_area);
     lv_obj_set_pos(hdr_url, 176, 92);
-    lv_label_set_text(hdr_url, "URL:");
+    lv_label_set_text(hdr_url, "網址:");
     lv_obj_set_style_text_color(hdr_url, lv_color_hex(0x64B5F6), 0);
-    lv_obj_set_style_text_font(hdr_url, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(hdr_url, &lv_font_noto_tc_14, 0);
 
     lv_obj_t *url_lbl = lv_label_create(s_qr_area);
     lv_obj_set_pos(url_lbl, 176, 106);
     lv_label_set_text(url_lbl, "192.168.4.1");
     lv_obj_set_style_text_color(url_lbl, lv_color_white(), 0);
-    lv_obj_set_style_text_font(url_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(url_lbl, &lv_font_noto_tc_14, 0);
 
     lv_obj_t *hint_lbl = lv_label_create(s_qr_area);
     lv_obj_set_pos(hint_lbl, 176, 136);
     lv_obj_set_width(hint_lbl, 138);
     lv_label_set_long_mode(hint_lbl, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(hint_lbl, "1. Join AP\n2. Open browser\n3. Submit WiFi");
+    lv_label_set_text(hint_lbl, "1. 加入 AP\n2. 開啟瀏覽器\n3. 提交 WiFi");
     lv_obj_set_style_text_color(hint_lbl, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(hint_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_font(hint_lbl, &lv_font_noto_tc_14, 0);
 
     /* 根據目前 Portal 狀態初始化 UI */
     update_portal_ui(wifi_manager_is_provisioning_portal_active());
