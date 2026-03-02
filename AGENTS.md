@@ -5,6 +5,8 @@
 
 - `main/`：程式入口與共用設定（`main.c`、`app_config.h`）
 - `components/`：功能模組（board HAL、WiFi、storage、TWSE client、AI provider、scheduler、UI）
+- `docs/hardware_quick_ref.md`：低 token 硬體速查（AI 開發預設先讀）
+- `docs/hardware_core2_reference.md`：Core2 官方規格、PinMap 與完整對照（需要細節時再查）
 - `examples/`：遠端設定範例（`token_config_example.json`、`prompt_config_example.json`）
 - `build/`：建置產物（請勿手動修改）
 - 根目錄設定：`CMakeLists.txt`、`partitions.csv`、`sdkconfig*`、`idf_component.yml`
@@ -52,3 +54,7 @@
 ## AI 文件同步規範
 - `AGENTS.md` 與 `CLAUDE.md` 需同步維護；凡共通規範變更，兩份文件必須同次更新。
 - 若僅更新其中一份，必須在該文件標註「不同步原因」與適用範圍（工具專屬差異）。
+
+## AI 開發上下文最小化
+- 本專案以 AI 協作為主，預設先讀 `docs/hardware_quick_ref.md`，避免每次載入完整硬體文件。
+- 只有在需要 pinmap 背景、官方連結或完整規格時，才展開 `docs/hardware_core2_reference.md`。

@@ -7,3 +7,4 @@ managed_components/
 *.swp
 *.swo
 .venv_font/
+components/ui/fonts/*.ttf

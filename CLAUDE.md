@@ -29,6 +29,8 @@ ESP-IDF (C) 專案，7 個元件，FreeRTOS 多核心任務。
 ```
 main/app_config.h        # 所有硬體 pin、任務優先級、NVS namespace 常數
 main/main.c              # 初始化順序 + 全域 queue/mutex 宣告
+docs/hardware_quick_ref.md  # 低 token 硬體速查（AI 開發預設先讀）
+docs/hardware_core2_reference.md  # Core2 官方規格、PinMap 與完整對照（需要細節時再查）
 
 components/
   board/                 # HAL 層，所有硬體抽象
@@ -84,3 +86,8 @@ scheduler Timer（ai_ivl）
 | `ai_cfg` | `api_key` | str | API Key |
 | `stocks` | `symbols` / `count` | blob/u8 | 監控股票清單 |
 | `schedule` | `quote_ivl` / `ai_ivl` / `mkt_only` | u16/u16/u8 | 排程設定 |
+
+## AI 開發上下文最小化
+
+- 本專案以 AI 協作為主，預設先讀 `docs/hardware_quick_ref.md`，避免每次載入完整硬體文件。
+- 只有在需要 pinmap 背景、官方連結或完整規格時，才展開 `docs/hardware_core2_reference.md`。
