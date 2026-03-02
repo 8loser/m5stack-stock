@@ -342,8 +342,12 @@ void ui_manager_set_dashboard_card_count(uint8_t n)
 void ui_manager_update_wifi_state(int state, const char *ip)
 {
     extern void status_bar_update_wifi(int state, const char *ip);
+    extern void screen_portal_refresh_network_info(void);
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         status_bar_update_wifi(state, ip);
+        if (s_cur_screen == SCREEN_PORTAL) {
+            screen_portal_refresh_network_info();
+        }
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
 }

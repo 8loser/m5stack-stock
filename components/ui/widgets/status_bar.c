@@ -18,7 +18,6 @@ static lv_obj_t *s_batt_lbl   = NULL;
 static lv_timer_t *s_update_timer = NULL;
 static screen_id_t s_page = SCREEN_DASHBOARD;
 static int s_wifi_state = 0;
-static char s_wifi_ip[24] = {0};
 static const int EDGE_PADDING = 4;
 static const int ITEM_GAP = 6;
 
@@ -108,6 +107,9 @@ static void refresh_page_message(void)
     case SCREEN_SETTINGS:
         page_name = "設定";
         break;
+    case SCREEN_PORTAL:
+        page_name = "Portal";
+        break;
     case SCREEN_HW_TEST:
         page_name = "硬體測試";
         break;
@@ -115,19 +117,7 @@ static void refresh_page_message(void)
         page_name = "儀表板";
         break;
     }
-
-    if (s_page == SCREEN_PORTAL) {
-        if (s_wifi_state == 2 /* CONNECTED */) {
-            snprintf(buf, sizeof(buf), "入口設定 - 已連線 (%s)",
-                     (s_wifi_ip[0] != '\0') ? s_wifi_ip : "OK");
-        } else if (s_wifi_state == 1 /* CONNECTING */) {
-            snprintf(buf, sizeof(buf), "入口設定 - 連線中...");
-        } else {
-            snprintf(buf, sizeof(buf), "入口設定 - 離線");
-        }
-    } else {
-        snprintf(buf, sizeof(buf), "%s", page_name);
-    }
+    snprintf(buf, sizeof(buf), "%s", page_name);
     lv_label_set_text(s_msg_lbl, buf);
     update_message_scroll_mode();
 }
@@ -249,12 +239,7 @@ void status_bar_create_on(lv_obj_t *parent)
 void status_bar_update_wifi(int state, const char *ip)
 {
     s_wifi_state = state;
-    if (ip && ip[0] != '\0') {
-        strncpy(s_wifi_ip, ip, sizeof(s_wifi_ip) - 1);
-        s_wifi_ip[sizeof(s_wifi_ip) - 1] = '\0';
-    } else {
-        s_wifi_ip[0] = '\0';
-    }
+    (void)ip;
     refresh_page_message();
     refresh_wifi_icon();
     layout_topbar_items();

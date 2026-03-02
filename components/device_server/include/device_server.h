@@ -34,6 +34,7 @@ bool        device_server_is_provisioning_portal_active(void);
 const char *device_server_get_provisioning_ap_ssid(void);
 const char *device_server_get_provisioning_ap_password(void);
 const char *device_server_get_provisioning_url(void);
+const char *device_server_get_provisioning_ap_ip(void);
 
 /* AP 掃描 */
 esp_err_t   device_server_scan(wifi_ap_info_t *results, uint16_t *count,

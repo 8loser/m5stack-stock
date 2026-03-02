@@ -5,7 +5,7 @@
 - 台股（TWSE）報價輪詢
 - AI 分析（Gemini / Claude / OpenAI）
 - 手機配網 Portal（SoftAP + Web）
-- 觸控 UI（Dashboard / Portal / Log / Info / Settings）
+- 觸控 UI（Dashboard / Portal / Log / Info / Settings / HW Test）
 
 ## 硬體需求
 
@@ -83,7 +83,7 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
 
 ### 底部虛擬按鍵（觸控區）
 
-- 左鍵：切到上一頁（輪詢頁面：`Dashboard -> Log -> Info -> Settings`）
+- 左鍵：切到上一頁（輪詢頁面：`Dashboard -> Log -> Info -> Settings -> HW Test`）
 - 中鍵：進入 `Portal`
 - 右鍵：切到下一頁（同上輪詢）
 - 在 `Portal` 頁面時，任一底部鍵都會回到 `Dashboard`
@@ -95,14 +95,15 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
 - `Log`：顯示系統事件（STOCK / WIFI / AI / SYS）
 - `Info`：顯示裝置資訊、WiFi 狀態、AI Provider 狀態、排程摘要
 - `Settings`：切換報價更新間隔（1 / 5 / 10 分鐘）
+- `HW Test`：提供震動與嗶聲硬體測試按鈕
 
 ### 頂部狀態列
 
 所有頁面共用：
 
 - 時間（12 小時制）
-- 中央 screen 標題（`Dashboard / Log / Info / Settings`）
-  - `Portal` 頁面維持特殊格式：`Portal Setup - ...`
+- 中央 screen 標題（`Dashboard / Portal / Log / Info / Settings / HW Test`）
+  - `Portal` 頁面固定顯示：`Portal`
 - WiFi 圖示（連線/連線中/離線）
 - 電量百分比
 
@@ -138,7 +139,7 @@ Stocks API 驗證規則：
 - `main/`：入口與全域設定
 - `components/board/`：硬體抽象層（LCD/Touch/AXP192/RTC/音效/震動）
 - `components/ui/`：LVGL UI（screens/widgets/ui manager）
-- `components/wifi_manager/`：STA 連線、SoftAP、Portal HTTP 服務
+- `components/device_server/`：STA 連線、SoftAP、Portal HTTP 服務
 - `components/twse_client/`：TWSE API 抓價與代號驗證
 - `components/ai_provider/`：AI provider 封裝
 - `components/scheduler/`：報價/AI 排程與睡眠策略

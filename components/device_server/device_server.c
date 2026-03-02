@@ -1293,6 +1293,23 @@ const char *device_server_get_provisioning_url(void)
     return s_portal_url;
 }
 
+const char *device_server_get_provisioning_ap_ip(void)
+{
+    static char ap_ip_str[20] = "0.0.0.0";
+    esp_netif_ip_info_t ip_info = {0};
+
+    if (!s_ap_netif) {
+        return ap_ip_str;
+    }
+
+    if (esp_netif_get_ip_info(s_ap_netif, &ip_info) != ESP_OK) {
+        return ap_ip_str;
+    }
+
+    snprintf(ap_ip_str, sizeof(ap_ip_str), IPSTR, IP2STR(&ip_info.ip));
+    return ap_ip_str;
+}
+
 esp_err_t device_server_scan(wifi_ap_info_t *results, uint16_t *count,
                              uint16_t max_count)
 {
