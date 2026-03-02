@@ -55,6 +55,23 @@
 - `AGENTS.md` 與 `CLAUDE.md` 需同步維護；凡共通規範變更，兩份文件必須同次更新。
 - 若僅更新其中一份，必須在該文件標註「不同步原因」與適用範圍（工具專屬差異）。
 
+## Gotchas
+
+| 坑點 | 說明 |
+|------|------|
+| LVGL 非 thread-safe | 所有 `lv_*` 呼叫必須持有 `g_ui_mutex` |
+| TWSE 休市回傳 `"-"` | `parse_stock_item` 設 `is_market_closed=true`，顯示昨收 |
+| IDF v5.1+ I2S | 用 `i2s_std.h` 新 API；`driver/i2s.h` 已棄用 |
+| PSRAM 大型 buffer | `heap_caps_malloc(n, MALLOC_CAP_SPIRAM)`，LVGL/HTTP buffer 優先放 PSRAM |
+| GitHub Gist redirect | HTTP client 設 `follow_redirects=true, max_redirection_count=3` |
+| BM8563 alarm 暫存器 | `0x80` bit = 不比較；設 alarm 時日期/星期欄位需設 `0x80` |
+| LCD flush callback | `lv_disp_flush_ready` 必須在 SPI DMA 傳輸完成後呼叫 |
+| Monitor 鎖 port | `--monitor` 持有 `/dev/ttyACM0`；flash 前需先 `kill $(lsof -t /dev/ttyACM0)` |
+| UI 字型 | 全英文介面，`UI_FONT_TEXT_DEFAULT = lv_font_montserrat_14`（`components/ui/include/ui_compat.h`）；勿嘗試 CJK 字型 |
+| LVGL event callback 重用 | 不可傳 dummy `lv_event_t{}`（code=0 = `LV_EVENT_ALL`，CLICKED check 失敗）；改抽 helper function 直接呼叫 |
+| status_bar 顯隱 | 建在 `lv_layer_top()`；用 `lv_obj_add/clear_flag(LV_OBJ_FLAG_HIDDEN)` 控制；`switch_screen` 時同步呼叫 |
+| FT6336U 底部虛擬按鍵 | FT6336U 韌體固定回報值；實測 y=270–279（x: A≈95, B≈190, C≈272–290）；`TOUCH_BTN_Y_MIN=LCD_HEIGHT`（240）攔截，不傳給 LVGL |
+
 ## AI 開發上下文最小化
 - 本專案以 AI 協作為主，預設先讀 `docs/hardware_quick_ref.md`，避免每次載入完整硬體文件。
 - 只有在需要 pinmap 背景、官方連結或完整規格時，才展開 `docs/hardware_core2_reference.md`。
