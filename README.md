@@ -58,25 +58,29 @@ cd m5stack_stock
 當股票名稱出現缺字或方塊時，可重生 Noto Sans TC 子集字型：
 
 ```bash
-# 1) 測試抓取 TWSE 股票名稱字符集（預設會先做 SSL 驗證）
+# 1) （可選）線上更新 TWSE 股票名稱字集
 curl --fail --silent --show-error --location \
   https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL \
   | python3 tools/fonts/fetch_stock_chars.py --input-json -
 
-# 2) 產生 14px / 16px 字型
-./generate_fonts.sh
+# 2) 產生 14px / 16px 字型（預設離線，不連網）
+./generate_fonts.sh --offline
 
-# 3) 檢查字型大小（擴充後通常會明顯增加）
+# 3) 線上模式：先更新 twse_symbols.txt 再產生字型
+./generate_fonts.sh --online
+
+# 4) 檢查字型大小（擴充後通常會明顯增加）
 wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_tc_16.c
 ```
 
 說明：
 
-- `generate_fonts.sh` 會先用 `curl` 下載 TWSE JSON，再交給 Python 解析字符集。
-- 若遇到憑證驗證錯誤，腳本會自動改用 `curl -k` 重試。
-- 若下載或解析失敗，腳本會直接中止，不會繼續執行 `lv_font_conv`。
+- `generate_fonts.sh` 支援 `--offline`（預設）與 `--online`。
+- 每次執行都會先掃描 `components/ui` 字串常量，自動更新 `tools/fonts/ui_symbols.txt`。
+- `--offline` 直接使用既有 `tools/fonts/twse_symbols.txt`；若檔案缺失或為空會失敗退出，且不執行 `lv_font_conv`。
+- `--online` 會先下載 TWSE JSON 更新 `tools/fonts/twse_symbols.txt`（若憑證驗證失敗會用 `curl -k` 重試）。
+- 腳本會合併 `ui_symbols.txt` 與 `twse_symbols.txt` 作為 `lv_font_conv --symbols` 輸入。
 - 字型工具集中放在 `tools/fonts/`。
-- 每次執行會同步更新 `tools/fonts/twse_symbols.txt`（實際送給 `lv_font_conv --symbols` 的字元集）。
 - 完成後請重新執行 `./flash.sh --build-only` 或 `./flash.sh`。
 
 ## 目前 UI 與操作
@@ -87,6 +91,12 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
 - 中鍵：進入 `Portal`
 - 右鍵：切到下一頁（同上輪詢）
 - 在 `Portal` 頁面時，任一底部鍵都會回到 `Dashboard`
+
+### 自動返回 Dashboard
+
+- 在非 `Portal`、非 `Dashboard` 頁面，若 10 秒內沒有觸控，會自動返回 `Dashboard`
+- 熄屏期間不進行閒置超時判定
+- 熄屏時若目前不在 `Dashboard`，會預先切回 `Dashboard`；因此亮屏第一時間會直接顯示 `Dashboard`
 
 ### 頁面
 

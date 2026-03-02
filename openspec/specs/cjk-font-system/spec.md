@@ -3,12 +3,23 @@
 ## Purpose
 為 UI 提供可維護的繁體中文字型子集機制，確保中文字可正確顯示並控制韌體體積。
 ## Requirements
+### Requirement: UI 字元掃描腳本產生 ui_symbols.txt
+專案 SHALL 包含 `tools/fonts/extract_ui_symbols.py`。該腳本 SHALL 掃描 UI 原始碼字串常量，抽取 UI 所需中文字元與常用符號，去重後輸出到 `tools/fonts/ui_symbols.txt`，供字型產生流程使用。
+
+#### Scenario: 成功掃描 UI 原始碼
+- **WHEN** 執行 UI 字元掃描腳本，且輸入目錄存在可解析字串
+- **THEN** 產生非空且去重後的 `ui_symbols.txt`
+
+#### Scenario: 輸入來源無法掃描
+- **WHEN** 執行 UI 字元掃描腳本，且輸入目錄不存在或無法讀取
+- **THEN** 腳本以非零狀態碼退出並輸出錯誤訊息
+
 ### Requirement: 字型字符集自動擴充腳本
-專案 SHALL 包含 `tools/fonts/fetch_stock_chars.py`，該腳本 SHALL 從輸入的 TWSE JSON 檔案提取股票名稱，抽取 CJK Unified Ideographs（U+4E00–U+9FFF）範圍內的唯一漢字，合併 UI SYMBOLS 後輸出到 stdout。腳本 SHALL 僅使用 Python 標準庫（`json`），不需要第三方套件。若 JSON 無法解析或缺少名稱資料，腳本 SHALL 以非零狀態碼退出。
+專案 SHALL 包含 `tools/fonts/fetch_stock_chars.py`，該腳本 SHALL 從輸入的 TWSE JSON 檔案提取股票名稱，抽取 CJK Unified Ideographs（U+4E00–U+9FFF）範圍內的唯一漢字並輸出到 stdout。腳本 SHALL 僅使用 Python 標準庫（`json`），不需要第三方套件。若 JSON 無法解析或缺少名稱資料，腳本 SHALL 以非零狀態碼退出。
 
 #### Scenario: 成功取得股票名稱
 - **WHEN** 執行 `python3 fetch_stock_chars.py --input-json <twse.json>`，且 JSON 內容有效
-- **THEN** stdout 輸出合併 UI SYMBOLS 與所有股票名稱漢字的唯一字元字串，退出碼為 0
+- **THEN** stdout 輸出所有股票名稱漢字的唯一字元字串，退出碼為 0
 
 #### Scenario: JSON 輸入無效
 - **WHEN** 執行 `python3 fetch_stock_chars.py --input-json <twse.json>`，且 JSON 非法或缺少可用名稱欄位
@@ -47,14 +58,22 @@
 - **THEN** 可使用 `&lv_font_noto_tc_14` 和 `&lv_font_noto_tc_16`
 
 ### Requirement: 字型產生腳本
-專案 SHALL 包含字型產生腳本（`generate_fonts.sh`）。腳本 SHALL 先下載 TWSE JSON，再呼叫 `fetch_stock_chars.py` 取得擴充字符集；若下載或解析失敗，SHALL 直接中止並顯示錯誤訊息。腳本 SHALL 於執行時顯示實際使用的字符集來源。
+專案 SHALL 包含字型產生腳本（`generate_fonts.sh`）。腳本 SHALL 先執行 UI 字元掃描流程產生 `ui_symbols.txt`，再依模式處理 TWSE 字元來源：`--online` 模式 SHALL 下載 TWSE JSON 並更新 `twse_symbols.txt`；`--offline` 模式 SHALL 直接使用既有 `twse_symbols.txt`。腳本在未指定模式時 SHALL 預設使用 `--offline`。最終 SHALL 合併 `ui_symbols.txt` 與 `twse_symbols.txt` 作為 `lv_font_conv --symbols` 輸入，並產生 14/16 字型。
 
-#### Scenario: 擴充字符集可用
-- **WHEN** 執行 `./generate_fonts.sh`，且 TWSE JSON 下載與解析成功
-- **THEN** 以擴充字符集（UI SYMBOLS + 股票名稱漢字）產生字型，並顯示「使用擴充字符集」訊息
+#### Scenario: 預設離線模式產生字型
+- **WHEN** 執行 `./generate_fonts.sh` 且 `twse_symbols.txt` 存在且非空
+- **THEN** 腳本不進行網路下載，直接使用現有 `twse_symbols.txt` 與新產生的 `ui_symbols.txt` 合併產生字型
 
-#### Scenario: 擴充字符集不可用
-- **WHEN** 執行 `./generate_fonts.sh`，且 TWSE JSON 下載或解析失敗
+#### Scenario: 線上模式更新 TWSE 後產生字型
+- **WHEN** 執行 `./generate_fonts.sh --online` 且 TWSE JSON 下載與解析成功
+- **THEN** 腳本更新 `twse_symbols.txt`，再以合併字符集產生字型
+
+#### Scenario: 離線模式缺少 TWSE 字集檔
+- **WHEN** 執行 `./generate_fonts.sh --offline` 且 `twse_symbols.txt` 不存在或為空
+- **THEN** 腳本以非零狀態碼退出，且不執行 `lv_font_conv`
+
+#### Scenario: 線上模式更新失敗
+- **WHEN** 執行 `./generate_fonts.sh --online` 且 TWSE JSON 下載或解析失敗
 - **THEN** 腳本以非零狀態碼退出，且不執行 `lv_font_conv`
 
 ### Requirement: 心跳 emoji 字元納入 UI 字型字符集
@@ -74,4 +93,3 @@
 #### Scenario: emoji 不可渲染
 - **WHEN** 字型缺少心跳 emoji 或渲染結果為缺字
 - **THEN** status bar 正常狀態改顯示 `<3`
-

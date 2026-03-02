@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 import sys
 
 
-UI_SYMBOLS_FILE = "ui_symbols.txt"
 TWSE_NAME_KEYS = (
     "證券名稱",
     "公司名稱",
@@ -15,13 +13,6 @@ TWSE_NAME_KEYS = (
     "CompanyName",
     "SecurityName",
 )
-
-
-def load_ui_symbols():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    symbols_path = os.path.join(script_dir, UI_SYMBOLS_FILE)
-    with open(symbols_path, "r", encoding="utf-8") as f:
-        return f.read().strip()
 
 
 def load_json(input_path: str):
@@ -83,12 +74,7 @@ def collect_unique_cjk(texts):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Extract TWSE stock name chars from JSON")
-    parser.add_argument(
-        "--ui-only",
-        action="store_true",
-        help="Output only built-in UI symbols without loading stock JSON",
-    )
+    parser = argparse.ArgumentParser(description="Extract TWSE stock-name CJK chars from JSON")
     parser.add_argument(
         "--input-json",
         default="-",
@@ -99,15 +85,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-    try:
-        ui_symbols = load_ui_symbols()
-    except Exception as exc:
-        print(f"Error: failed to load UI symbols file: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    if args.ui_only:
-        sys.stdout.write("".join(sorted(set(ui_symbols))))
-        return
 
     try:
         data = load_json(args.input_json)
@@ -117,10 +94,11 @@ def main():
         sys.exit(1)
 
     cjk_chars = collect_unique_cjk(all_names)
-    combined_chars = set(ui_symbols)
-    combined_chars.update(cjk_chars)
+    output = "".join(sorted(cjk_chars))
+    if not output:
+        print("Error: no CJK symbols extracted from stock names", file=sys.stderr)
+        sys.exit(1)
 
-    output = "".join(sorted(combined_chars))
     sys.stdout.write(output)
 
 
