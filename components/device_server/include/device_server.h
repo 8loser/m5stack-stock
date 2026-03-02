@@ -16,6 +16,7 @@ typedef struct {
 } wifi_ap_info_t;
 
 typedef void (*wifi_state_cb_t)(wifi_state_t state, const char *ip_str);
+typedef void (*stock_list_changed_cb_t)(uint8_t count);
 
 esp_err_t   device_server_init(void);
 esp_err_t   device_server_connect(const char *ssid, const char *password);
@@ -42,3 +43,4 @@ esp_err_t   device_server_scan(wifi_ap_info_t *results, uint16_t *count,
 
 /* 狀態回調 */
 void        device_server_set_callback(wifi_state_cb_t cb);
+void        device_server_set_stock_list_changed_callback(stock_list_changed_cb_t cb);

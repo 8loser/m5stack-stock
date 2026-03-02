@@ -19,7 +19,8 @@ static const char *TAG = "scheduler";
 extern void ui_manager_heartbeat_feed_scheduler(void);
 
 /* Task notification bits */
-#define NOTIFY_QUOTE_BIT  (1 << 0)
+#define NOTIFY_QUOTE_BIT        (1 << 0)
+#define NOTIFY_FORCE_QUOTE_BIT  (1 << 1)
 
 static schedule_config_t s_config;
 static QueueHandle_t     s_quote_queue     = NULL;
@@ -73,7 +74,7 @@ static void init_sntp(void)
     ESP_LOGI(TAG, "SNTP 初始化完成（時區: CST+8）");
 }
 
-static void do_fetch_quotes(void)
+static void do_fetch_quotes(bool force_fetch)
 {
     if (!is_wifi_connected()) {
         ESP_LOGW(TAG, "WiFi 未連線，跳過報價抓取");
@@ -86,7 +87,7 @@ static void do_fetch_quotes(void)
     }
 
     /* SNTP 未同步時跳過市場時段限制，避免 RTC 未校時誤判 */
-    if (s_sntp_synced && s_config.market_only && !rtc_bm8563_is_market_open()) {
+    if (!force_fetch && s_sntp_synced && s_config.market_only && !rtc_bm8563_is_market_open()) {
         ESP_LOGI(TAG, "非市場時段，跳過報價抓取");
         return;
     }
@@ -121,7 +122,7 @@ static void scheduler_task(void *arg)
     init_sntp();
 
     /* 立即抓一次報價 */
-    do_fetch_quotes();
+    do_fetch_quotes(false);
 
     /* 主迴圈：等待 timer 通知 + 監控睡眠條件 */
     while (1) {
@@ -130,8 +131,10 @@ static void scheduler_task(void *arg)
         xTaskNotifyWait(0, UINT32_MAX, &bits, pdMS_TO_TICKS(1000));
         ui_manager_heartbeat_feed_scheduler();
 
-        if (bits & NOTIFY_QUOTE_BIT) {
-            do_fetch_quotes();
+        if (bits & NOTIFY_FORCE_QUOTE_BIT) {
+            do_fetch_quotes(true);
+        } else if (bits & NOTIFY_QUOTE_BIT) {
+            do_fetch_quotes(false);
         }
 
         if (sleep_manager_is_enabled() && sleep_manager_should_sleep()) {
@@ -202,7 +205,7 @@ void scheduler_get_config(schedule_config_t *cfg)
 void scheduler_trigger_quote_now(void)
 {
     if (s_scheduler_task) {
-        xTaskNotify(s_scheduler_task, NOTIFY_QUOTE_BIT, eSetBits);
+        xTaskNotify(s_scheduler_task, NOTIFY_FORCE_QUOTE_BIT, eSetBits);
     }
 }
 

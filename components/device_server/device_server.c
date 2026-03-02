@@ -45,6 +45,7 @@ static char               s_ip_str[20]       = "0.0.0.0";
 static char               s_connected_ssid[33] = "";
 static int                s_retry_count      = 0;
 static wifi_state_cb_t    s_callback         = NULL;
+static stock_list_changed_cb_t s_stock_list_changed_cb = NULL;
 static bool               s_initialized      = false;
 
 static esp_netif_t       *s_ap_netif         = NULL;
@@ -561,7 +562,11 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
     }
 
     scheduler_reload_stock_list();
+    scheduler_trigger_quote_now();
     cache_stock_meta(symbol, info.name, info.short_name);
+    if (s_stock_list_changed_cb) {
+        s_stock_list_changed_cb(list.count);
+    }
 
     char esc_name[160] = {0};
     char esc_abbr[96] = {0};
@@ -611,6 +616,9 @@ static esp_err_t portal_stocks_remove_post_handler(httpd_req_t *req)
 
     scheduler_reload_stock_list();
     clear_stock_meta(symbol);
+    if (s_stock_list_changed_cb) {
+        s_stock_list_changed_cb(list.count);
+    }
     return send_json_response(req, 200, "{\"ok\":true}");
 }
 
@@ -1198,6 +1206,11 @@ const char *device_server_get_connected_ssid(void)
 void device_server_set_callback(wifi_state_cb_t cb)
 {
     s_callback = cb;
+}
+
+void device_server_set_stock_list_changed_callback(stock_list_changed_cb_t cb)
+{
+    s_stock_list_changed_cb = cb;
 }
 
 esp_err_t device_server_start_provisioning_portal(void)

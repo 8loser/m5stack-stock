@@ -86,6 +86,14 @@ Dashboard SHALL 只顯示已設定的股票數量所對應資料，並在超過�
 - **WHEN** 裝置完成 `storage_init()` 後
 - **THEN** Dashboard card 可見數量 SHALL 立即反映設定值，不需等待報價資料到達
 
+#### Scenario: Row count applied after portal stock add
+- **WHEN** 使用者在 Portal 成功新增股票並切回 Dashboard
+- **THEN** Dashboard card 可見數量 SHALL 立即反映新增後 count，不需等待下一筆報價
+
+#### Scenario: Row count applied after portal stock removal
+- **WHEN** 使用者在 Portal 成功刪除股票並切回 Dashboard
+- **THEN** Dashboard card 可見數量 SHALL 立即反映刪除後 count，不需等待下一筆報價
+
 ### Requirement: Slot color reflects currently displayed quote
 每個固定格位在刷新內容時，SHALL 使用該格當前顯示股票的漲跌資料更新顏色，避免顏色與內容不一致。
 
@@ -104,4 +112,3 @@ Dashboard SHALL 只顯示已設定的股票數量所對應資料，並在超過�
 #### Scenario: Rotation refresh keeps color-content consistency
 - **WHEN** UI 節拍觸發固定格位輪巡替換內容
 - **THEN** 新內容顯示完成後，同一格位的顏色 SHALL 對應新內容的漲跌狀態
-

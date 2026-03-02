@@ -31,6 +31,12 @@ static void on_wifi_state(wifi_state_t state, const char *ip)
     }
 }
 
+static void on_stock_list_changed(uint8_t count)
+{
+    ui_manager_set_dashboard_card_count(count);
+    ui_manager_log_stock(LOG_LEVEL_INFO, "Stock list changed, count=%u", (unsigned)count);
+}
+
 /* 全域共用資源 */
 QueueHandle_t   g_quote_queue      = NULL;
 SemaphoreHandle_t g_ui_mutex       = NULL;
@@ -83,6 +89,7 @@ void app_main(void)
     ESP_LOGI(TAG, "初始化 WiFi...");
     ESP_ERROR_CHECK(device_server_init());
     device_server_set_callback(on_wifi_state);
+    device_server_set_stock_list_changed_callback(on_stock_list_changed);
 
     /* 嘗試自動連線；若無設定則導向 Portal 頁面，由使用者手動啟動配網入口 */
     ret = device_server_connect_saved();
