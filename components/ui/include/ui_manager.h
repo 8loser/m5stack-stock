@@ -12,6 +12,7 @@ typedef enum {
     SCREEN_LOG          = 2,
     SCREEN_INFO         = 3,
     SCREEN_SETTINGS     = 4,
+    SCREEN_HW_TEST      = 5,
     SCREEN_COUNT
 } screen_id_t;
 

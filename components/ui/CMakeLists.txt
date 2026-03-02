@@ -6,6 +6,7 @@ idf_component_register(
         "screens/screen_log.c"
         "screens/screen_info.c"
         "screens/screen_settings.c"
+        "screens/screen_hw_test.c"
         "widgets/status_bar.c"
         "widgets/stock_card.c"
         "widgets/loading_spinner.c"

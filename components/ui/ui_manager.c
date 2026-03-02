@@ -85,6 +85,7 @@ static const screen_id_t s_nav_screens[] = {
     SCREEN_LOG,
     SCREEN_INFO,
     SCREEN_SETTINGS,
+    SCREEN_HW_TEST,
 };
 static const size_t s_nav_screens_count = sizeof(s_nav_screens) / sizeof(s_nav_screens[0]);
 static int s_nav_idx = 0;
@@ -97,6 +98,7 @@ extern lv_obj_t *screen_dashboard_create(void);
 extern lv_obj_t *screen_portal_create(void);
 extern lv_obj_t *screen_info_create(void);
 extern lv_obj_t *screen_settings_create(void);
+extern lv_obj_t *screen_hw_test_create(void);
 extern void screen_settings_load(void);
 
 static void ui_manager_log_v(log_tag_t tag, log_level_t level, const char *fmt, va_list ap)
@@ -124,6 +126,8 @@ static void lvgl_task(void *arg)
 esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
 {
     s_ui_mutex = ui_mutex;
+    s_cur_screen = SCREEN_DASHBOARD;
+    s_nav_idx = 0;
 
     lv_init();
 
@@ -180,6 +184,7 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     s_screens[SCREEN_LOG]         = screen_log_create();
     s_screens[SCREEN_INFO]        = screen_info_create();
     s_screens[SCREEN_SETTINGS]    = screen_settings_create();
+    s_screens[SCREEN_HW_TEST]     = screen_hw_test_create();
 
     /* 顯示 Dashboard */
     lv_scr_load(s_screens[SCREEN_DASHBOARD]);
@@ -210,7 +215,6 @@ void ui_manager_switch_screen(screen_id_t id)
     if (id >= SCREEN_COUNT) return;
     if (s_screens[id] == NULL) return;
     screen_id_t prev = s_cur_screen;
-
     /* 離開 Portal 頁面時關閉 provisioning portal（含 SoftAP） */
     if (prev == SCREEN_PORTAL && id != SCREEN_PORTAL) {
         extern void screen_portal_close_portal(void);
@@ -243,6 +247,13 @@ void ui_manager_switch_screen(screen_id_t id)
     if (id == SCREEN_PORTAL && prev != SCREEN_PORTAL) {
         extern void screen_portal_open_portal(void);
         screen_portal_open_portal();
+    }
+
+    for (size_t i = 0; i < s_nav_screens_count; i++) {
+        if (s_nav_screens[i] == id) {
+            s_nav_idx = (int)i;
+            break;
+        }
     }
 }
 

@@ -83,6 +83,9 @@ static void refresh_page_message(void)
     case SCREEN_SETTINGS:
         page_name = "Settings";
         break;
+    case SCREEN_HW_TEST:
+        page_name = "HW Test";
+        break;
     default:
         page_name = "Dashboard";
         break;

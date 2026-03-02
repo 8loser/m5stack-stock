@@ -458,8 +458,14 @@ esp_err_t storage_stocks_load(stock_list_t *list)
     if (ret != ESP_OK) {
         /* 預設股票清單 */
         const char *defaults[] = DEFAULT_STOCKS;
-        list->count = DEFAULT_STOCK_COUNT;
-        for (int i = 0; i < list->count; i++) {
+        size_t defaults_count = sizeof(defaults) / sizeof(defaults[0]);
+
+        list->count = (uint8_t)defaults_count;
+        if (list->count > MAX_STOCK_COUNT) {
+            list->count = MAX_STOCK_COUNT;
+        }
+
+        for (uint8_t i = 0; i < list->count; i++) {
             strncpy(list->symbols[i], defaults[i], 7);
             list->symbols[i][7] = '\0';
         }

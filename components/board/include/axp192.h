@@ -23,6 +23,7 @@ esp_err_t axp192_set_lcd_power(bool enable);
 esp_err_t axp192_set_lcd_backlight(uint8_t brightness); /* 0-255 */
 esp_err_t axp192_set_lcd_backlight_power(bool enable);
 esp_err_t axp192_set_vibration(bool enable);
+esp_err_t axp192_set_speaker_enable(bool enable);
 esp_err_t axp192_set_bus_power(bool enable);
 float     axp192_get_battery_voltage(void);
 uint8_t   axp192_get_battery_percent(void);

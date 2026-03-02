@@ -13,3 +13,17 @@
 #### Scenario: 初始化後可切換
 - **WHEN** `ui_manager_init()` 完成
 - **THEN** `s_screens[SCREEN_HW_TEST]` 非 NULL，`ui_manager_switch_screen(SCREEN_HW_TEST)` 可正常執行
+
+### Requirement: SCREEN_HW_TEST 納入硬體按鍵輪詢導航
+`ui_manager.c` 的 `s_nav_screens[]` SHALL 包含 `SCREEN_HW_TEST`，使 Core2 左右鍵輪詢可切換到 HW Test 頁面。
+
+#### Scenario: 左右鍵輪詢包含 HW Test
+- **WHEN** 使用者使用 btn=0 或 btn=2 進行頁面輪詢
+- **THEN** 輪詢序列包含 `SCREEN_HW_TEST`
+
+### Requirement: status bar 顯示 HW Test 頁面名稱
+status bar 頁面名稱對照 SHALL 包含 `SCREEN_HW_TEST -> "HW Test"`。
+
+#### Scenario: 切換至 HW Test
+- **WHEN** 呼叫 `ui_manager_switch_screen(SCREEN_HW_TEST)`
+- **THEN** status bar 中央顯示文字包含 "HW Test"

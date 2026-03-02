@@ -57,8 +57,8 @@
 /* --- 股票 --- */
 #define MAX_STOCK_COUNT         10
 #define STOCK_SYMBOL_LEN        8
-#define DEFAULT_STOCKS          {"2330", "2317", "2454", "2412", "3008"}
-#define DEFAULT_STOCK_COUNT     5
+#define DEFAULT_STOCKS          {"2330", "2317"}
+#define DEFAULT_STOCK_COUNT     2
 
 /* --- 排程預設值 --- */
 #define DEFAULT_QUOTE_INTERVAL_S    60      /* 報價更新間隔（秒）*/
@@ -93,6 +93,6 @@
 #define AUDIO_BEEP_MS           100
 
 /* --- M5Core2 FT6336U 底部虛擬按鍵感應區域 --- */
-#define TOUCH_BTN_Y_MIN         200   /* y >= 200 = 底部按鍵區域（Core2 實測可命中） */
+#define TOUCH_BTN_Y_MIN         LCD_HEIGHT  /* y >= 240 才視為底部按鍵區域，避免攔截正常觸控 */
 #define TOUCH_BTN_A_X_MAX       (LCD_WIDTH / 3)         /* 左 1/3 */
 #define TOUCH_BTN_B_X_MAX       ((LCD_WIDTH * 2) / 3)   /* 中 1/3；其餘為右 1/3 */

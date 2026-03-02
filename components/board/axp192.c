@@ -112,16 +112,33 @@ esp_err_t axp192_set_lcd_backlight(uint8_t brightness)
 
 esp_err_t axp192_set_vibration(bool enable)
 {
-    uint8_t val;
-    esp_err_t ret = axp192_read_reg(AXP192_REG_GPIO2_STATE, &val);
+    uint8_t pwr_val = 0;
+
+    esp_err_t ret = axp192_read_reg(AXP192_REG_LDO_DCDC_EN, &pwr_val);
     if (ret != ESP_OK) return ret;
 
     if (enable) {
-        val |= GPIO_STATE_GPIO2;
+        pwr_val |= PWR_EN_LDO3;
     } else {
-        val &= ~GPIO_STATE_GPIO2;
+        pwr_val &= ~PWR_EN_LDO3;
     }
-    return axp192_write_reg(AXP192_REG_GPIO2_STATE, val);
+
+    return axp192_write_reg(AXP192_REG_LDO_DCDC_EN, pwr_val);
+}
+
+esp_err_t axp192_set_speaker_enable(bool enable)
+{
+    uint8_t gpio_val = 0;
+    esp_err_t ret = axp192_read_reg(AXP192_REG_GPIO2_STATE, &gpio_val);
+    if (ret != ESP_OK) return ret;
+
+    if (enable) {
+        gpio_val |= GPIO_STATE_GPIO2;
+    } else {
+        gpio_val &= ~GPIO_STATE_GPIO2;
+    }
+
+    return axp192_write_reg(AXP192_REG_GPIO2_STATE, gpio_val);
 }
 
 float axp192_get_battery_voltage(void)
