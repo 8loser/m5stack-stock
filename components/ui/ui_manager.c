@@ -18,6 +18,7 @@
 static const char *TAG = "ui_mgr";
 static uint32_t    s_last_touch_ms = 0;
 static uint32_t    s_last_auto_return_ms = 0;
+static bool        s_last_screen_on = true;
 
 /* LVGL 顯示 flush 回調 */
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
@@ -147,15 +148,34 @@ static void lvgl_task(void *arg)
     while (1) {
         if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             lv_task_handler();
-            uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
-            if (board_is_screen_on() &&
+            bool screen_on = board_is_screen_on();
+            if (s_last_screen_on != screen_on) {
+                uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+                if (s_last_screen_on && !screen_on) {
+                    s_last_touch_ms = now_ms;
+                    s_last_auto_return_ms = now_ms;
+                    if (s_cur_screen != SCREEN_DASHBOARD) {
+                        ESP_LOGI(TAG, "screen off, preload dashboard");
+                        ui_manager_switch_screen(SCREEN_DASHBOARD);
+                    }
+                } else if (!s_last_screen_on && screen_on) {
+                    /* 亮屏只重置基準，避免沿用熄屏前時間 */
+                    s_last_touch_ms = now_ms;
+                    s_last_auto_return_ms = now_ms;
+                }
+            }
+            s_last_screen_on = screen_on;
+
+            if (screen_on &&
                 s_cur_screen != SCREEN_DASHBOARD &&
-                s_cur_screen != SCREEN_PORTAL &&
-                (now_ms - s_last_touch_ms) >= UI_NON_HOME_IDLE_RETURN_MS &&
-                (now_ms - s_last_auto_return_ms) >= AUTO_RETURN_GUARD_MS) {
-                s_last_auto_return_ms = now_ms;
-                ESP_LOGI(TAG, "idle timeout, return to dashboard");
-                ui_manager_switch_screen(SCREEN_DASHBOARD);
+                s_cur_screen != SCREEN_PORTAL) {
+                uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+                if ((now_ms - s_last_touch_ms) >= UI_NON_HOME_IDLE_RETURN_MS &&
+                    (now_ms - s_last_auto_return_ms) >= AUTO_RETURN_GUARD_MS) {
+                    s_last_auto_return_ms = now_ms;
+                    ESP_LOGI(TAG, "idle timeout, return to dashboard");
+                    ui_manager_switch_screen(SCREEN_DASHBOARD);
+                }
             }
             xSemaphoreGiveRecursive(s_ui_mutex);
         }
@@ -172,6 +192,7 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     s_mid_btn_idx = 0;
     s_last_touch_ms = now_ms;
     s_last_auto_return_ms = now_ms;
+    s_last_screen_on = board_is_screen_on();
     taskENTER_CRITICAL(&s_heartbeat_lock);
     s_main_heartbeat_ms = now_ms;
     s_scheduler_heartbeat_ms = now_ms;
