@@ -17,8 +17,10 @@ def parse_args() -> argparse.Namespace:
     script_dir = Path(__file__).resolve().parent
     parser.add_argument(
         "--src",
-        default=str(script_dir.parent.parent / "components" / "ui"),
-        help="UI source directory (default: components/ui)",
+        action="append",
+        dest="srcs",
+        default=None,
+        help="Source directory to scan, repeatable (default: components/ui)",
     )
     parser.add_argument(
         "--out",
@@ -77,21 +79,22 @@ def iter_source_files(src_dir: Path):
         yield path
 
 
-def collect_symbols(src_dir: Path) -> str:
+def collect_symbols(src_dirs: list[Path]) -> str:
     chars: set[str] = set()
     found_file = False
 
-    for path in iter_source_files(src_dir):
-        found_file = True
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            raise RuntimeError(f"failed to read {path}: {exc}") from exc
+    for src_dir in src_dirs:
+        for path in iter_source_files(src_dir):
+            found_file = True
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                raise RuntimeError(f"failed to read {path}: {exc}") from exc
 
-        for s in extract_strings(text):
-            for ch in s:
-                if ord(ch) > 0x7F:
-                    chars.add(ch)
+            for s in extract_strings(text):
+                for ch in s:
+                    if ord(ch) > 0x7F:
+                        chars.add(ch)
 
     if not found_file:
         raise RuntimeError("no .c/.h source files found")
@@ -104,19 +107,22 @@ def collect_symbols(src_dir: Path) -> str:
 
 def main() -> int:
     args = parse_args()
-    src_dir = Path(args.src).resolve()
+    if args.srcs:
+        src_dirs = [Path(src).resolve() for src in args.srcs]
+    else:
+        src_dirs = [Path(__file__).resolve().parent.parent.parent / "components" / "ui"]
     out_path = Path(args.out).resolve()
 
-    if not src_dir.exists() or not src_dir.is_dir():
-        print(f"Error: source directory not found: {src_dir}", file=sys.stderr)
-        return 1
-
-    if not os.access(src_dir, os.R_OK | os.X_OK):
-        print(f"Error: source directory not readable: {src_dir}", file=sys.stderr)
-        return 1
+    for src_dir in src_dirs:
+        if not src_dir.exists() or not src_dir.is_dir():
+            print(f"Error: source directory not found: {src_dir}", file=sys.stderr)
+            return 1
+        if not os.access(src_dir, os.R_OK | os.X_OK):
+            print(f"Error: source directory not readable: {src_dir}", file=sys.stderr)
+            return 1
 
     try:
-        symbols = collect_symbols(src_dir)
+        symbols = collect_symbols(src_dirs)
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

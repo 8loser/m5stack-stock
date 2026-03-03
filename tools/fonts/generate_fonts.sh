@@ -9,13 +9,17 @@ OUT_14="${FONT_DIR}/lv_font_noto_tc_14.c"
 OUT_16="${FONT_DIR}/lv_font_noto_tc_16.c"
 FONT_PATH_DEFAULT="${SCRIPT_DIR}/NotoSansTC-Regular.ttf"
 TWSE_URL="https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
+TWSE_INDUSTRY_URL="https://openapi.twse.com.tw/v1/company/getStockInfo"
+TWSE_INDUSTRY_URL_FALLBACK="https://openapi.twse.com.tw/v1/opendata/t187ap03_L"
 
 FETCH_SCRIPT="${SCRIPT_DIR}/fetch_stock_chars.py"
 EXTRACT_SCRIPT="${SCRIPT_DIR}/extract_ui_symbols.py"
 UI_SYMBOLS_FILE="${SCRIPT_DIR}/ui_symbols.txt"
 TWSE_SYMBOLS_FILE="${SCRIPT_DIR}/twse_symbols.txt"
+INDUSTRY_SYMBOLS_FILE="${SCRIPT_DIR}/industry_symbols.txt"
 TMP_JSON="$(mktemp)"
-trap 'rm -f "${TMP_JSON}"' EXIT
+TMP_INDUSTRY_JSON="$(mktemp)"
+trap 'rm -f "${TMP_JSON}" "${TMP_INDUSTRY_JSON}"' EXIT
 
 print_usage() {
     cat <<'EOF'
@@ -24,7 +28,7 @@ Usage:
 
 Modes:
   --offline  Use existing twse_symbols.txt without network (default)
-  --online   Download TWSE JSON and refresh twse_symbols.txt before generating
+  --online   Download TWSE JSON and refresh stock-name + industry symbols before generating
 
 Options:
   --font <path>  Path to NotoSansTC-Regular.ttf
@@ -95,7 +99,10 @@ if [[ ! -f "${FONT_PATH}" ]]; then
     exit 1
 fi
 
-if ! python3 "${EXTRACT_SCRIPT}" --src "${PROJECT_ROOT}/components/ui" --out "${UI_SYMBOLS_FILE}"; then
+if ! python3 "${EXTRACT_SCRIPT}" \
+    --src "${PROJECT_ROOT}/components/ui" \
+    --src "${PROJECT_ROOT}/components/twse_client" \
+    --out "${UI_SYMBOLS_FILE}"; then
     echo "Error: failed to update UI symbols" >&2
     exit 1
 fi
@@ -140,6 +147,25 @@ if [[ "${MODE}" == "online" ]]; then
         echo "Error: generated TWSE symbols are empty: ${TWSE_SYMBOLS_FILE}" >&2
         exit 1
     fi
+
+    rm -f "${INDUSTRY_SYMBOLS_FILE}"
+    industry_url_used=""
+    for industry_url in "${TWSE_INDUSTRY_URL}" "${TWSE_INDUSTRY_URL_FALLBACK}"; do
+        if ! curl "${CURL_OPTS[@]}" "${industry_url}" -o "${TMP_INDUSTRY_JSON}" 2>/dev/null; then
+            continue
+        fi
+
+        python3 "${FETCH_SCRIPT}" --mode industry --input-json "${TMP_INDUSTRY_JSON}" > "${INDUSTRY_SYMBOLS_FILE}" || true
+        if [[ -s "${INDUSTRY_SYMBOLS_FILE}" ]]; then
+            industry_url_used="${industry_url}"
+            break
+        fi
+        rm -f "${INDUSTRY_SYMBOLS_FILE}"
+    done
+
+    if [[ -z "${industry_url_used}" ]]; then
+        echo "Warning: failed to download/parse industry JSON, skip dynamic industry symbols" >&2
+    fi
 else
     if [[ ! -s "${TWSE_SYMBOLS_FILE}" ]]; then
         echo "Error: offline mode requires non-empty ${TWSE_SYMBOLS_FILE}" >&2
@@ -147,7 +173,12 @@ else
     fi
 fi
 
-SYMBOLS="$(python3 - "${UI_SYMBOLS_FILE}" "${TWSE_SYMBOLS_FILE}" <<'PY'
+FILES_TO_MERGE=("${UI_SYMBOLS_FILE}" "${TWSE_SYMBOLS_FILE}")
+if [[ -s "${INDUSTRY_SYMBOLS_FILE}" ]]; then
+    FILES_TO_MERGE+=("${INDUSTRY_SYMBOLS_FILE}")
+fi
+
+SYMBOLS="$(python3 - "${FILES_TO_MERGE[@]}" <<'PY'
 import sys
 
 chars = set()
@@ -164,7 +195,7 @@ if [[ -z "${SYMBOLS}" ]]; then
     exit 1
 fi
 
-echo "使用擴充字符集（UI + TWSE 股票名稱），模式: ${MODE}"
+echo "使用擴充字符集（UI + TWSE 股票名稱 + 產業別），模式: ${MODE}"
 
 run_conv() {
     local size="$1"
@@ -191,3 +222,6 @@ echo "  ${OUT_14}"
 echo "  ${OUT_16}"
 echo "  ${UI_SYMBOLS_FILE}"
 echo "  ${TWSE_SYMBOLS_FILE}"
+if [[ -s "${INDUSTRY_SYMBOLS_FILE}" ]]; then
+    echo "  ${INDUSTRY_SYMBOLS_FILE}"
+fi
