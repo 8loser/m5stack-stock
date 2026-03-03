@@ -3,6 +3,7 @@
 #include "scheduler.h"
 #include "twse_models.h"
 #include "ui_compat.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -41,6 +42,8 @@ static int           s_next_stock_idx = 0;
 
 static void apply_card_widgets(int idx, const stock_quote_t *q);
 static void render_dashboard_slots(void);
+static bool is_limit_up_price(float price, const stock_quote_t *q);
+static bool is_limit_down_price(float price, const stock_quote_t *q);
 
 #define CARD_COL_COUNT    4
 #define CARD_LEFT_PAD     4
@@ -50,6 +53,21 @@ static void render_dashboard_slots(void);
 static lv_coord_t s_col_x[CARD_COL_COUNT] = {0};
 static lv_coord_t s_col_w[CARD_COL_COUNT] = {0};
 static bool s_layout_ready = false;
+
+static bool float_nearly_equal(float a, float b)
+{
+    return fabsf(a - b) <= 0.0005f;
+}
+
+static bool is_limit_up_price(float price, const stock_quote_t *q)
+{
+    return q && q->has_limit_bounds && float_nearly_equal(price, q->limit_up_price);
+}
+
+static bool is_limit_down_price(float price, const stock_quote_t *q)
+{
+    return q && q->has_limit_bounds && float_nearly_equal(price, q->limit_down_price);
+}
 
 static void compute_card_layout(void)
 {
@@ -118,13 +136,19 @@ static void ensure_card_widgets(int idx)
 
     if (!s_price_labels[idx]) {
         s_price_labels[idx] = lv_label_create(s_cards[idx]);
-        lv_obj_set_pos(s_price_labels[idx], s_col_x[1], 6);
-        lv_obj_set_size(s_price_labels[idx], s_col_w[1], 16);
+        lv_obj_set_pos(s_price_labels[idx], s_col_x[1] - 2, 4);
+        lv_obj_set_size(s_price_labels[idx], s_col_w[1] + 4, 22);
         lv_label_set_long_mode(s_price_labels[idx], LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(s_price_labels[idx], LV_TEXT_ALIGN_RIGHT, 0);
         lv_label_set_text(s_price_labels[idx], "---.--");
         lv_obj_set_style_text_color(s_price_labels[idx], lv_color_white(), 0);
         lv_obj_set_style_text_font(s_price_labels[idx], &lv_font_montserrat_14, 0);
+        lv_obj_set_style_bg_opa(s_price_labels[idx], LV_OPA_TRANSP, 0);
+        lv_obj_set_style_radius(s_price_labels[idx], 4, 0);
+        lv_obj_set_style_pad_left(s_price_labels[idx], 4, 0);
+        lv_obj_set_style_pad_right(s_price_labels[idx], 4, 0);
+        lv_obj_set_style_pad_top(s_price_labels[idx], 2, 0);
+        lv_obj_set_style_pad_bottom(s_price_labels[idx], 2, 0);
     }
 
     if (!s_change_labels[idx]) {
@@ -177,6 +201,8 @@ static void render_slot_with_stock(int slot, int stock_idx)
         lv_label_set_text(s_industry_labels[slot], "");
         lv_label_set_text(s_price_labels[slot], "---.--");
         lv_label_set_text(s_change_labels[slot], "+/-");
+        lv_obj_set_style_bg_opa(s_price_labels[slot], LV_OPA_TRANSP, 0);
+        lv_obj_set_style_text_color(s_price_labels[slot], lv_color_white(), 0);
         lv_obj_set_style_text_color(s_change_labels[slot], lv_color_white(), 0);
         lv_obj_set_style_border_color(s_cards[slot], COLOR_CARD, 0);
         lv_obj_set_style_bg_color(s_cards[slot], COLOR_CARD, 0);
@@ -279,15 +305,29 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
     lv_label_set_text(s_industry_labels[idx], q->industry);
 
     char price_str[16];
+    float display_price = 0.0f;
     lv_color_t accent = (q->change_percent > 0.01f) ? COLOR_UP :
                         (q->change_percent < -0.01f) ? COLOR_DOWN :
                         COLOR_FLAT;
     if (q->is_market_closed) {
-        snprintf(price_str, sizeof(price_str), "%.2f", q->yesterday_close);
+        display_price = q->yesterday_close;
     } else {
-        snprintf(price_str, sizeof(price_str), "%.2f", q->current_price);
+        display_price = q->current_price;
     }
-    lv_obj_set_style_text_color(s_price_labels[idx], accent, 0);
+    snprintf(price_str, sizeof(price_str), "%.2f", display_price);
+
+    if (is_limit_up_price(display_price, q)) {
+        lv_obj_set_style_bg_color(s_price_labels[idx], COLOR_UP, 0);
+        lv_obj_set_style_bg_opa(s_price_labels[idx], LV_OPA_40, 0);
+        lv_obj_set_style_text_color(s_price_labels[idx], lv_color_white(), 0);
+    } else if (is_limit_down_price(display_price, q)) {
+        lv_obj_set_style_bg_color(s_price_labels[idx], COLOR_DOWN, 0);
+        lv_obj_set_style_bg_opa(s_price_labels[idx], LV_OPA_40, 0);
+        lv_obj_set_style_text_color(s_price_labels[idx], lv_color_white(), 0);
+    } else {
+        lv_obj_set_style_bg_opa(s_price_labels[idx], LV_OPA_TRANSP, 0);
+        lv_obj_set_style_text_color(s_price_labels[idx], accent, 0);
+    }
     lv_label_set_text(s_price_labels[idx], price_str);
 
     char change_str[16];

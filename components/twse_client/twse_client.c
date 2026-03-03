@@ -201,10 +201,21 @@ static void parse_stock_item(cJSON *item, const char *symbol, stock_quote_t *q)
     strncpy(q->symbol, symbol, 7);
     q->is_valid = false;
     q->is_market_closed = false;
+    q->has_limit_bounds = false;
 
     cJSON *name = cJSON_GetObjectItem(item, "n");
     if (name && cJSON_IsString(name)) {
         strncpy(q->name, name->valuestring, 31);
+    }
+
+    /* 停板上下限（TWSE: u=漲停, w=跌停） */
+    cJSON *limit_up = cJSON_GetObjectItem(item, "u");
+    cJSON *limit_down = cJSON_GetObjectItem(item, "w");
+    if (limit_up && cJSON_IsString(limit_up) && strcmp(limit_up->valuestring, "-") != 0 &&
+        limit_down && cJSON_IsString(limit_down) && strcmp(limit_down->valuestring, "-") != 0) {
+        q->limit_up_price = strtof(limit_up->valuestring, NULL);
+        q->limit_down_price = strtof(limit_down->valuestring, NULL);
+        q->has_limit_bounds = true;
     }
 
     /* 現價 z */
