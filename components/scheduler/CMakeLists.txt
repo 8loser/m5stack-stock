@@ -7,6 +7,7 @@ idf_component_register(
         esp_timer
         esp_wifi
         esp_hw_support
+        app_core
         storage
         twse_client
         board

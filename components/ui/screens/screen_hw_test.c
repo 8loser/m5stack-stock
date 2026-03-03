@@ -1,3 +1,4 @@
+#include "screen_hw_test.h"
 #include "audio.h"
 #include "app_config.h"
 #include "ui_compat.h"

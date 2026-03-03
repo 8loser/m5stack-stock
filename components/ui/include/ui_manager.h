@@ -16,9 +16,6 @@ typedef enum {
     SCREEN_COUNT
 } screen_id_t;
 
-lv_obj_t *screen_settings_create(void);
-void      screen_settings_load(void);
-
 esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex);
 void      ui_manager_switch_screen(screen_id_t id);
 screen_id_t ui_manager_get_current_screen(void);

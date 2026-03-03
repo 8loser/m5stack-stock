@@ -132,7 +132,7 @@ Web Portal 分成 3 個分頁：
 
 - `WiFi`：掃描 AP、提交 SSID/密碼
 - `AI Provider`：設定 Gemini / Claude / OpenAI API Key 與 Prompt Template
-- `Stocks`：管理股票清單（TWSE only，最多 10 檔）
+- `Stocks`：管理股票清單（TWSE only，最多 15 檔）
 
 Stocks API 驗證規則：
 
@@ -150,6 +150,7 @@ Stocks API 驗證規則：
 ## 專案結構
 
 - `main/`：入口與全域設定
+- `components/app_core/`：應用層事件匯流排（跨模組解耦）
 - `components/board/`：硬體抽象層（LCD/Touch/AXP192/RTC/音效/震動）
 - `components/ui/`：LVGL UI（screens/widgets/ui manager）
 - `components/device_server/`：STA 連線、SoftAP、Portal HTTP 服務

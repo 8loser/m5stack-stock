@@ -1,4 +1,4 @@
-#include "ui_manager.h"
+#include "screen_settings.h"
 #include "app_config.h"
 #include "scheduler.h"
 #include "storage.h"

@@ -1,4 +1,4 @@
-#include "ui_manager.h"
+#include "status_bar.h"
 #include "axp192.h"
 #include "rtc_bm8563.h"
 #include "app_config.h"

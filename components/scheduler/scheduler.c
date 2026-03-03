@@ -1,5 +1,6 @@
 #include "scheduler.h"
 #include "sleep_manager.h"
+#include "app_event_bus.h"
 #include "storage.h"
 #include "twse_client.h"
 #include "rtc_bm8563.h"
@@ -15,9 +16,6 @@
 
 static const char *TAG = "scheduler";
 
-/* Avoid component circular dependency: scheduler only needs this symbol. */
-extern void ui_manager_heartbeat_feed_scheduler(void);
-
 /* Task notification bits */
 #define NOTIFY_QUOTE_BIT        (1 << 0)
 #define NOTIFY_FORCE_QUOTE_BIT  (1 << 1)
@@ -30,6 +28,18 @@ static bool              s_sntp_synced     = false;
 
 /* 儲存的股票清單（供排程使用）*/
 static stock_list_t      s_stock_list;
+
+static void publish_scheduler_tick(bool force_fetch)
+{
+    app_event_t evt = {
+        .type = APP_EVENT_SCHEDULER_TICK,
+        .timestamp_ms = 0,
+    };
+    evt.data.scheduler.force_fetch = force_fetch;
+    if (app_event_publish(&evt) != ESP_OK) {
+        ESP_LOGW(TAG, "publish scheduler tick failed");
+    }
+}
 
 static void enrich_quote_with_industry(stock_quote_t *quote)
 {
@@ -139,7 +149,7 @@ static void scheduler_task(void *arg)
 
     /* 等待 WiFi 連線後啟動 SNTP */
     while (!is_wifi_connected()) {
-        ui_manager_heartbeat_feed_scheduler();
+        publish_scheduler_tick(false);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
     init_sntp();
@@ -152,7 +162,7 @@ static void scheduler_task(void *arg)
         uint32_t bits = 0;
         /* 最多等 1 秒；timer 到期會提前喚醒 */
         xTaskNotifyWait(0, UINT32_MAX, &bits, pdMS_TO_TICKS(1000));
-        ui_manager_heartbeat_feed_scheduler();
+        publish_scheduler_tick((bits & NOTIFY_FORCE_QUOTE_BIT) != 0);
 
         if (bits & NOTIFY_FORCE_QUOTE_BIT) {
             do_fetch_quotes(true);

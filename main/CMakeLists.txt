@@ -3,6 +3,7 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES
         board
+        app_core
         storage
         device_server
         twse_client

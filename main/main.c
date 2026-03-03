@@ -9,6 +9,7 @@
 #include "nvs_flash.h"
 
 #include "app_config.h"
+#include "app_event_bus.h"
 #include "board.h"
 #include "storage.h"
 #include "device_server.h"
@@ -17,6 +18,13 @@
 #include "ui_manager.h"
 
 static const char *TAG = "main";
+
+static void on_scheduler_tick_event(const app_event_t *evt, void *ctx)
+{
+    (void)evt;
+    (void)ctx;
+    ui_manager_heartbeat_feed_scheduler();
+}
 
 /* WiFi 狀態回調：橋接 device_server → ui_manager */
 static void on_wifi_state(wifi_state_t state, const char *ip)
@@ -77,6 +85,8 @@ void app_main(void)
 
     /* 共用佇列 / mutex */
     init_global_resources();
+    ESP_ERROR_CHECK(app_event_bus_init());
+    ESP_ERROR_CHECK(app_event_subscribe(APP_EVENT_SCHEDULER_TICK, on_scheduler_tick_event, NULL));
 
     /* Phase 1: 硬體初始化 */
     ESP_LOGI(TAG, "初始化硬體...");

@@ -6,6 +6,13 @@
 #include "vibration.h"
 #include "ui_compat.h"
 #include "screen_log.h"
+#include "screen_dashboard.h"
+#include "screen_portal.h"
+#include "screen_info.h"
+#include "screen_settings.h"
+#include "screen_hw_test.h"
+#include "status_bar.h"
+#include "loading_spinner.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_lcd_panel_io.h"
@@ -152,16 +159,6 @@ static int s_mid_btn_idx = 0;
 
 /* 各頁面的 lv_obj */
 static lv_obj_t *s_screens[SCREEN_COUNT] = {NULL};
-
-/* 前向宣告各頁面初始化 */
-extern lv_obj_t *screen_dashboard_create(void);
-extern void screen_dashboard_on_enter(void);
-extern void screen_dashboard_on_leave(void);
-extern lv_obj_t *screen_portal_create(void);
-extern lv_obj_t *screen_info_create(void);
-extern lv_obj_t *screen_settings_create(void);
-extern lv_obj_t *screen_hw_test_create(void);
-extern void screen_settings_load(void);
 
 static void ui_manager_log_v(log_tag_t tag, log_level_t level, const char *fmt, va_list ap)
 {
@@ -312,9 +309,6 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     lv_scr_load(s_screens[SCREEN_DASHBOARD]);
 
     /* 在頂層建立共用 widgets（覆蓋所有頁面）*/
-    extern void status_bar_create_on(lv_obj_t *parent);
-    extern void status_bar_set_page(screen_id_t page);
-    extern void loading_spinner_create(lv_obj_t *parent);
     status_bar_create_on(lv_layer_top());
     status_bar_set_page(SCREEN_DASHBOARD);
     loading_spinner_create(lv_layer_top());
@@ -343,7 +337,6 @@ void ui_manager_switch_screen(screen_id_t id)
 
     /* 離開 Portal 頁面時關閉 provisioning portal（含 SoftAP） */
     if (prev == SCREEN_PORTAL && id != SCREEN_PORTAL) {
-        extern void screen_portal_close_portal(void);
         screen_portal_close_portal();
     }
     if (prev == SCREEN_DASHBOARD && id != SCREEN_DASHBOARD) {
@@ -354,7 +347,6 @@ void ui_manager_switch_screen(screen_id_t id)
         s_last_touch_ms = now_ms;
     }
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        extern void status_bar_set_page(screen_id_t page);
         status_bar_set_page(id);
         if (id == SCREEN_DASHBOARD) {
             screen_dashboard_on_enter();
@@ -363,7 +355,6 @@ void ui_manager_switch_screen(screen_id_t id)
             screen_log_refresh();
         }
         if (id == SCREEN_INFO) {
-            extern void screen_info_refresh(void);
             screen_info_refresh();
         }
         if (id == SCREEN_SETTINGS) {
@@ -380,7 +371,6 @@ void ui_manager_switch_screen(screen_id_t id)
 
     /* 進入 Portal 頁面時自動啟動 provisioning portal（含 SoftAP） */
     if (id == SCREEN_PORTAL && prev != SCREEN_PORTAL) {
-        extern void screen_portal_open_portal(void);
         screen_portal_open_portal();
     }
 
@@ -438,7 +428,6 @@ screen_id_t ui_manager_get_current_screen(void)
 
 void ui_manager_update_quote(const stock_quote_t *quote)
 {
-    extern void screen_dashboard_update(const stock_quote_t *q);
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         screen_dashboard_update(quote);
         xSemaphoreGiveRecursive(s_ui_mutex);
@@ -449,7 +438,6 @@ void ui_manager_update_quote(const stock_quote_t *quote)
 
 void ui_manager_set_dashboard_card_count(uint8_t n)
 {
-    extern void screen_dashboard_set_card_count(uint8_t n);
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         screen_dashboard_set_card_count(n);
         xSemaphoreGiveRecursive(s_ui_mutex);
@@ -460,7 +448,6 @@ void ui_manager_set_dashboard_card_count(uint8_t n)
 
 void ui_manager_set_dashboard_symbols(const char symbols[][8], uint8_t count)
 {
-    extern void screen_dashboard_set_symbols(const char symbols[][8], uint8_t count);
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         screen_dashboard_set_symbols(symbols, count);
         xSemaphoreGiveRecursive(s_ui_mutex);
@@ -471,8 +458,6 @@ void ui_manager_set_dashboard_symbols(const char symbols[][8], uint8_t count)
 
 void ui_manager_update_wifi_state(int state, const char *ip)
 {
-    extern void status_bar_update_wifi(int state, const char *ip);
-    extern void screen_portal_refresh_network_info(void);
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         status_bar_update_wifi(state, ip);
         if (s_cur_screen == SCREEN_PORTAL) {
@@ -484,7 +469,6 @@ void ui_manager_update_wifi_state(int state, const char *ip)
 
 void ui_manager_show_loading(bool show)
 {
-    extern void loading_spinner_set_visible(bool v);
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         loading_spinner_set_visible(show);
         xSemaphoreGiveRecursive(s_ui_mutex);

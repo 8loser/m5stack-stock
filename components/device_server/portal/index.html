@@ -1,0 +1,301 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Core2 Portal</title>
+  <style>
+    body { font-family: sans-serif; padding: 14px; max-width: 900px; margin: auto; }
+    h2 { margin: 8px 0 6px; }
+    h3 { margin: 18px 0 6px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 860px) { .grid { grid-template-columns: 1fr 1fr; } }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+    label { display: block; margin-top: 8px; font-size: 14px; color: #333; }
+    select, input, textarea, button { width: 100%; padding: 10px; margin-top: 6px; box-sizing: border-box; }
+    textarea { min-height: 180px; resize: vertical; }
+    button { background: #0b7; color: #fff; border: 0; border-radius: 6px; font-weight: 600; }
+    .hint { font-size: 12px; color: #666; margin-top: 4px; }
+    .ok { color: #0a6; font-size: 13px; }
+    .err { color: #b00020; font-size: 13px; }
+    .stock-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+      gap: 8px;
+    }
+    .stock-row:last-child { border-bottom: 0; }
+    .stock-symbol { font-weight: 700; }
+    .menu { display: flex; gap: 8px; margin: 8px 0 14px; }
+    .menu-btn {
+      flex: 1;
+      width: auto;
+      background: #e9eef2;
+      color: #233;
+      border: 1px solid #c8d2db;
+      border-radius: 8px;
+      padding: 10px 8px;
+      font-weight: 700;
+    }
+    .menu-btn.active { background: #0b7; color: #fff; border-color: #0b7; }
+    .section-card { display: none; }
+    .section-card.active { display: block; }
+  </style>
+</head>
+<body>
+  <h2>M5Stack Core2 Portal</h2>
+
+  <div class="menu">
+    <button type="button" id="tab_wifi" class="menu-btn" onclick="showTab('wifi')">WiFi</button>
+    <button type="button" id="tab_ai" class="menu-btn" onclick="showTab('ai')">AI Provider</button>
+    <button type="button" id="tab_stocks" class="menu-btn" onclick="showTab('stocks')">Stocks</button>
+  </div>
+
+  <div class="grid">
+    <div id="card_wifi" class="card section-card">
+      <h3>WiFi Setup</h3>
+      <form method="post" action="/wifi">
+        <label>SSID</label>
+        <select id="ss" name="ssid" onchange="chk(this)">
+          <option value="">Scanning...</option>
+        </select>
+
+        <div id="m" style="display:none">
+          <label>Manual SSID</label>
+          <input name="ssid_manual" maxlength="32">
+        </div>
+
+        <label>Password</label>
+        <input name="password" maxlength="64" type="password">
+        <button type="submit">Connect</button>
+        <div class="hint">Connect success will switch Core2 back to STA mode.</div>
+      </form>
+
+      <h3>Saved Networks</h3>
+      <div id="saved_aps_list">Loading...</div>
+    </div>
+
+    <div id="card_ai" class="card section-card">
+      <h3>AI Settings</h3>
+      <form method="post" action="/ai">
+        <label>Gemini API Key</label>
+        <input id="gemini_key" name="gemini_key" maxlength="127">
+
+        <label>Claude API Key</label>
+        <input id="claude_key" name="claude_key" maxlength="127">
+
+        <label>OpenAI API Key</label>
+        <input id="openai_key" name="openai_key" maxlength="127">
+
+        <div class="hint">Only providers with non-empty key will be used.</div>
+
+        <label>Prompt Template</label>
+        <textarea id="prompt_template" name="prompt_template" maxlength="1023" placeholder="例如：請保守評估，只在高信心時給 buy/sell，其他給 hold"></textarea>
+        <div class="hint">This prompt will be appended as AI instruction text.</div>
+        <button type="submit">Save AI Settings</button>
+      </form>
+      <div id="ai_msg" class="ok"></div>
+    </div>
+
+    <div id="card_stocks" class="card section-card">
+      <h3>Stocks (TWSE only, max 15)</h3>
+      <label>Symbol (4 digits)</label>
+      <input id="stock_symbol" maxlength="4" inputmode="numeric" placeholder="2330">
+      <button type="button" onclick="addStock()">Add</button>
+      <div id="stocks_msg" class="hint"></div>
+      <div id="stocks_list" class="hint">Loading...</div>
+    </div>
+  </div>
+
+  <script>
+    var s_saved_ssids = [];
+    var s_stock_items = {};
+
+    function showTab(tab) {
+      var ids = ["wifi", "ai", "stocks"];
+      ids.forEach(function (x) {
+        var card = document.getElementById("card_" + x);
+        var btn = document.getElementById("tab_" + x);
+        if (card) card.className = "card section-card" + (x === tab ? " active" : "");
+        if (btn) btn.className = "menu-btn" + (x === tab ? " active" : "");
+      });
+      if (tab === "stocks") loadStocks();
+      if (tab === "wifi") loadSavedAps();
+    }
+
+    function stockErr(code) {
+      var m = {
+        invalid_format: "Symbol 必須是 4 位數字",
+        duplicate_symbol: "已在清單中",
+        limit_exceeded: "最多 15 檔",
+        not_found_or_not_tse: "找不到代號或非 TWSE 上市",
+        validate_failed: "TWSE 驗證失敗，請稍後再試",
+        not_found: "清單內找不到此代號"
+      };
+      return m[code] || ("Error: " + (code || "unknown"));
+    }
+
+    function setStocksMsg(msg, ok) {
+      var el = document.getElementById("stocks_msg");
+      el.textContent = msg || "";
+      el.className = ok ? "ok" : "err";
+    }
+
+    function loadStocks() {
+      fetch("/stocks")
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var box = document.getElementById("stocks_list");
+          s_stock_items = {};
+          if (!d.items || !d.items.length) {
+            box.innerHTML = "<div class='hint'>No stocks configured</div>";
+            return;
+          }
+          var html = "";
+          d.items.forEach(function (it) {
+            s_stock_items[it.symbol] = { name: it.name || "", industry: it.industry || "" };
+            html += "<div class='stock-row'><div><span class='stock-symbol'>" +
+              it.symbol + "</span><br><span>" + (it.name || "") + "</span><br><span class='hint'>" +
+              (it.industry || "") + "</span></div><button type='button' style='width:auto;padding:6px 10px;background:#c33' " +
+              "onclick=\"removeStock('" + it.symbol + "')\">Remove</button></div>";
+          });
+          box.innerHTML = html;
+        })
+        .catch(function () {
+          document.getElementById("stocks_list").innerHTML = "<div class='err'>Load failed</div>";
+        });
+    }
+
+    function addStock() {
+      var sym = (document.getElementById("stock_symbol").value || "").trim();
+      fetch("/stocks/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: sym })
+      })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, body: b }; });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.body.ok) {
+            setStocksMsg(stockErr(x.body.error), false);
+            return;
+          }
+          setStocksMsg("新增成功：" + x.body.item.symbol + " " + (x.body.item.name || "") + " / " + (x.body.item.industry || ""), true);
+          document.getElementById("stock_symbol").value = "";
+          loadStocks();
+        })
+        .catch(function (e) {
+          setStocksMsg("Request failed: " + (e && e.message ? e.message : "network"), false);
+        });
+    }
+
+    function removeStock(sym) {
+      fetch("/stocks/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: sym })
+      })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, body: b }; });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.body.ok) {
+            setStocksMsg(stockErr(x.body.error), false);
+            return;
+          }
+          var it = s_stock_items[sym] || {};
+          setStocksMsg("已移除：" + sym + " " + (it.name || "") + " / " + (it.industry || ""), true);
+          loadStocks();
+        })
+        .catch(function (e) {
+          setStocksMsg("Request failed: " + (e && e.message ? e.message : "network"), false);
+        });
+    }
+
+    function loadSavedAps() {
+      fetch("/saved_aps")
+        .then(function (r) { return r.json(); })
+        .then(function (a) {
+          s_saved_ssids = (a || []).map(function (x) { return x.ssid || ""; }).filter(function (x) { return x.length > 0; });
+          var box = document.getElementById("saved_aps_list");
+          if (!box) return;
+          if (!s_saved_ssids.length) {
+            box.innerHTML = "<div class='hint'>No saved networks</div>";
+            return;
+          }
+          var h = "";
+          s_saved_ssids.forEach(function (ssid) {
+            var safe = ssid.replace(/'/g, "\\'");
+            h += "<div class='stock-row'><div><span class='stock-symbol'>" + ssid + "</span></div>" +
+              "<button type='button' style='width:auto;padding:6px 10px;background:#c33' onclick=\"removeSavedAp('" + safe + "')\">Remove</button></div>";
+          });
+          box.innerHTML = h;
+        })
+        .catch(function () {
+          var box = document.getElementById("saved_aps_list");
+          if (box) box.innerHTML = "<div class='err'>Load failed</div>";
+        });
+    }
+
+    function removeSavedAp(ssid) {
+      var body = "ssid=" + encodeURIComponent(ssid || "");
+      fetch("/saved_aps/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body
+      })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.body.ok) return;
+          loadSavedAps();
+        })
+        .catch(function () {});
+    }
+
+    function chk(s) {
+      document.getElementById("m").style.display = (s.value === "__manual__") ? "block" : "none";
+    }
+
+    fetch("/scan")
+      .then(function (r) { return r.json(); })
+      .then(function (a) {
+        var s = document.getElementById("ss");
+        s.options.length = 0;
+        s.add(new Option("-- Select AP --", ""));
+        a.forEach(function (x) {
+          var saved = s_saved_ssids.indexOf(x.ssid) >= 0;
+          var o = new Option();
+          o.textContent = x.ssid + (saved ? " [Saved]" : "") + "  (" + x.rssi + "dBm)";
+          o.value = x.ssid;
+          s.add(o);
+        });
+        s.add(new Option("Other (manual)", "__manual__"));
+      })
+      .catch(function () {
+        var s = document.getElementById("ss");
+        s.options.length = 0;
+        s.add(new Option("Scan failed", "__manual__"));
+        document.getElementById("m").style.display = "block";
+      });
+
+    fetch("/ai")
+      .then(function (r) { return r.json(); })
+      .then(function (c) {
+        document.getElementById("gemini_key").value = c.gemini_key || "";
+        document.getElementById("claude_key").value = c.claude_key || "";
+        document.getElementById("openai_key").value = c.openai_key || "";
+        document.getElementById("prompt_template").value = c.prompt_template || "";
+      })
+      .catch(function () {});
+
+    showTab("wifi");
+    loadSavedAps();
+    loadStocks();
+  </script>
+</body>
+</html>

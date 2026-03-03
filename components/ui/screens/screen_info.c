@@ -1,3 +1,4 @@
+#include "screen_info.h"
 #include "app_config.h"
 #include "esp_chip_info.h"
 #include "esp_system.h"

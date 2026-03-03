@@ -1,4 +1,4 @@
-#include "ui_compat.h"
+#include "loading_spinner.h"
 #include "app_config.h"
 
 static lv_obj_t *s_spinner = NULL;
