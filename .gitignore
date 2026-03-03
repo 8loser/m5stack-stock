@@ -11,3 +11,4 @@ tools/fonts/*.ttf
 __pycache__/
 
 tools/fonts/twse_symbols.txt
+tools/fonts/industry_symbols.txt
