@@ -160,20 +160,16 @@ void screen_log_push(log_tag_t tag, log_level_t level, const char *msg)
 
 lv_obj_t *screen_log_create(void)
 {
+    const lv_coord_t log_list_y = UI_CONTENT_TOP_Y + 2;
+
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, COLOR_BG, 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *title = lv_label_create(screen);
-    lv_label_set_text(title, "事件日誌");
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_set_style_text_font(title, &lv_font_noto_tc_16, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 8, 6);
-
     s_log_list = lv_obj_create(screen);
-    lv_obj_set_pos(s_log_list, 6, 28);
-    lv_obj_set_size(s_log_list, LCD_WIDTH - 12, LCD_HEIGHT - 34);
+    lv_obj_set_pos(s_log_list, 6, log_list_y);
+    lv_obj_set_size(s_log_list, LCD_WIDTH - 12, LCD_HEIGHT - log_list_y - 4);
     lv_obj_set_style_bg_opa(s_log_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_log_list, 0, 0);
     lv_obj_set_style_pad_all(s_log_list, 0, 0);

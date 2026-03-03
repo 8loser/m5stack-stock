@@ -166,6 +166,8 @@ void screen_settings_load(void)
 
 lv_obj_t *screen_settings_create(void)
 {
+    const lv_coord_t content_top = UI_CONTENT_TOP_Y + 40;
+
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_t *interval_label;
 
@@ -178,12 +180,12 @@ lv_obj_t *screen_settings_create(void)
     lv_obj_set_style_text_align(interval_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(interval_label, lv_color_white(), 0);
     lv_obj_set_style_text_font(interval_label, settings_title_font(), 0);
-    lv_obj_set_pos(interval_label, 0, 62);
+    lv_obj_set_pos(interval_label, 0, content_top);
 
     for (uint16_t i = 0; i < 3; i++) {
         s_interval_btns[i] = lv_btn_create(screen);
         lv_obj_set_size(s_interval_btns[i], 80, 32);
-        lv_obj_set_pos(s_interval_btns[i], 20 + 100 * i, 92);
+        lv_obj_set_pos(s_interval_btns[i], 20 + 100 * i, content_top + 30);
         lv_obj_set_style_bg_color(s_interval_btns[i], COLOR_TOGGLE_OFF, 0);
         lv_obj_set_style_border_width(s_interval_btns[i], 1, 0);
         lv_obj_set_style_border_color(s_interval_btns[i], lv_color_hex(0x78909C), 0);
@@ -202,17 +204,17 @@ lv_obj_t *screen_settings_create(void)
     lv_obj_set_style_text_align(s_feedback_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(s_feedback_lbl, settings_font(), 0);
     lv_obj_set_style_text_color(s_feedback_lbl, lv_color_hex(0xB0BEC5), 0);
-    lv_obj_set_pos(s_feedback_lbl, 20, 136);
+    lv_obj_set_pos(s_feedback_lbl, 20, content_top + 74);
 
     s_brightness_lbl = lv_label_create(screen);
     lv_label_set_text(s_brightness_lbl, "Brightness: 80%");
     lv_obj_set_style_text_color(s_brightness_lbl, lv_color_white(), 0);
     lv_obj_set_style_text_font(s_brightness_lbl, settings_font(), 0);
-    lv_obj_set_pos(s_brightness_lbl, 20, 168);
+    lv_obj_set_pos(s_brightness_lbl, 20, content_top + 106);
 
     s_brightness_slider = lv_slider_create(screen);
     lv_obj_set_size(s_brightness_slider, 280, 16);
-    lv_obj_set_pos(s_brightness_slider, 20, 192);
+    lv_obj_set_pos(s_brightness_slider, 20, content_top + 130);
     lv_slider_set_range(s_brightness_slider, 0, 100);
     lv_slider_set_value(s_brightness_slider, 80, LV_ANIM_OFF);
     lv_obj_add_event_cb(s_brightness_slider, on_brightness_value_changed, LV_EVENT_VALUE_CHANGED, NULL);

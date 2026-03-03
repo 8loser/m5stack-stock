@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "app_config.h"
 #include "ui_compat.h"
 #include "vibration.h"
 #include <stdint.h>
@@ -52,7 +53,7 @@ static void on_beep_clicked(lv_event_t *e)
 
 lv_obj_t *screen_hw_test_create(void)
 {
-    const int content_top = 72;
+    const int content_top = UI_CONTENT_TOP_Y + 50;
 
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, COLOR_BG, 0);

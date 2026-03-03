@@ -238,7 +238,7 @@ static void rotation_timer_cb(lv_timer_t *timer)
 lv_obj_t *screen_dashboard_create(void)
 {
     const lv_coord_t card_list_x = 4;
-    const lv_coord_t card_list_y = 22;
+    const lv_coord_t card_list_y = UI_CONTENT_TOP_Y;
     const lv_coord_t card_h = 39;
     const lv_coord_t card_pitch = 40;
     const lv_coord_t card_list_h = (DASHBOARD_VISIBLE_ROWS - 1) * card_pitch + card_h;
@@ -348,7 +348,7 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
     lv_obj_set_style_bg_color(s_cards[idx], COLOR_CARD, 0);
 
     char time_str[40];
-    snprintf(time_str, sizeof(time_str), "Upd %s", q->trade_time);
+    snprintf(time_str, sizeof(time_str), "Updated %s", q->trade_time);
     lv_label_set_text(s_update_label, time_str);
 
     uint32_t remaining_s = scheduler_get_seconds_to_next_quote();
@@ -357,10 +357,10 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
     struct tm next_tm;
     char next_str[24];
     if (next_time > 0 && localtime_r(&next_time, &next_tm) != NULL) {
-        snprintf(next_str, sizeof(next_str), "Next: %02d:%02d:%02d",
+        snprintf(next_str, sizeof(next_str), "Next Time: %02d:%02d:%02d",
                  next_tm.tm_hour, next_tm.tm_min, next_tm.tm_sec);
     } else {
-        snprintf(next_str, sizeof(next_str), "Next: --:--:--");
+        snprintf(next_str, sizeof(next_str), "Next Time: --:--:--");
     }
     lv_label_set_text(s_next_label, next_str);
 }

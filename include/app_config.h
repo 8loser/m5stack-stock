@@ -33,6 +33,9 @@
 /* --- LVGL --- */
 #define LVGL_TICK_PERIOD_MS     5
 #define LVGL_BUF_LINES          30
+#define UI_STATUS_BAR_HEIGHT    20
+#define UI_TOP_SAFE_GAP         2
+#define UI_CONTENT_TOP_Y        (UI_STATUS_BAR_HEIGHT + UI_TOP_SAFE_GAP)
 #define UI_NON_HOME_IDLE_RETURN_MS 10000  /* 非 dashboard/portal 觸控閒置返回（毫秒） */
 
 /* --- FreeRTOS 任務優先級 --- */

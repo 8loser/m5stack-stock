@@ -226,7 +226,7 @@ void status_bar_create_on(lv_obj_t *parent)
 {
     lv_obj_t *bar = lv_obj_create(parent);
     s_bar = bar;
-    lv_obj_set_size(bar, LCD_WIDTH, 20);
+    lv_obj_set_size(bar, LCD_WIDTH, UI_STATUS_BAR_HEIGHT);
     lv_obj_set_pos(bar, 0, 0);
     lv_obj_set_style_radius(bar, 0, 0);
     lv_obj_set_style_border_width(bar, 0, 0);

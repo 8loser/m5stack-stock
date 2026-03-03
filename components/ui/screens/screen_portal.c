@@ -145,13 +145,15 @@ void screen_portal_close_portal(void)
 
 lv_obj_t *screen_portal_create(void)
 {
+    const lv_coord_t content_top = UI_CONTENT_TOP_Y + 16;
+
     s_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x1A1A2E), 0);
 
     /* 主要內容區：固定顯示，避免底部空白 */
     s_qr_area = lv_obj_create(s_screen);
-    lv_obj_set_size(s_qr_area, LCD_WIDTH, LCD_HEIGHT - 38);
-    lv_obj_set_pos(s_qr_area, 0, 38);
+    lv_obj_set_size(s_qr_area, LCD_WIDTH, LCD_HEIGHT - content_top);
+    lv_obj_set_pos(s_qr_area, 0, content_top);
     lv_obj_set_style_bg_opa(s_qr_area, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_qr_area, 0, 0);
     lv_obj_set_style_pad_all(s_qr_area, 0, 0);

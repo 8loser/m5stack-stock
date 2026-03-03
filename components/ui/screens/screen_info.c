@@ -201,7 +201,7 @@ lv_obj_t *screen_info_create(void)
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *container = lv_obj_create(screen);
-    lv_obj_set_pos(container, 0, 30);
+    lv_obj_set_pos(container, 0, UI_CONTENT_TOP_Y + 8);
     lv_obj_set_size(container, LCD_WIDTH, 190);
     lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(container, 0, 0);
