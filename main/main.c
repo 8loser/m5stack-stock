@@ -73,6 +73,20 @@ void app_main(void)
     ESP_LOGI(TAG, "初始化硬體...");
     ESP_ERROR_CHECK(board_init());
 
+    /* 開機套用 LCD 亮度（在 UI 初始化前） */
+    {
+        uint8_t brightness = 80;
+        ret = storage_display_load(&brightness);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "讀取亮度設定失敗，使用預設 80%%: %s", esp_err_to_name(ret));
+            brightness = 80;
+        }
+        ret = board_set_lcd_brightness(brightness);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "套用亮度失敗: %s", esp_err_to_name(ret));
+        }
+    }
+
     /* Phase 2: LVGL UI 初始化 */
     ESP_LOGI(TAG, "初始化 LVGL UI...");
     ESP_ERROR_CHECK(ui_manager_init(g_ui_mutex));

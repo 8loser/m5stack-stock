@@ -56,6 +56,10 @@ typedef struct {
 esp_err_t storage_schedule_save(const schedule_config_t *cfg);
 esp_err_t storage_schedule_load(schedule_config_t *cfg);
 
+/* ====== 顯示設定 ====== */
+esp_err_t storage_display_save(uint8_t brightness);
+esp_err_t storage_display_load(uint8_t *out);
+
 /* ====== 通用 ====== */
 esp_err_t storage_init(void);
 esp_err_t storage_erase_all(void);

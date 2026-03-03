@@ -147,6 +147,17 @@ bool board_is_screen_on(void)
     return s_screen_on;
 }
 
+esp_err_t board_set_lcd_brightness(uint8_t level)
+{
+    uint8_t clamped = level;
+    uint8_t scaled;
+
+    if (clamped > 100) clamped = 100;
+
+    scaled = (uint8_t)(((uint32_t)clamped * 255U) / 100U);
+    return axp192_set_lcd_backlight(scaled);
+}
+
 void board_poll_power_key(void)
 {
     if (!axp192_consume_pek_short_press_event()) return;

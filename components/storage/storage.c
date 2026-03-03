@@ -7,6 +7,8 @@
 #include <stdio.h>
 
 static const char *TAG = "storage";
+static const char *NVS_NS_DISPLAY = "display";
+static const uint8_t DEFAULT_DISPLAY_BRIGHTNESS = 80;
 
 static const char *provider_key_name(uint8_t provider_type)
 {
@@ -580,6 +582,49 @@ esp_err_t storage_schedule_load(schedule_config_t *cfg)
     nvs_get_u8(h,  "mkt_only",  &mkt);
     cfg->market_only = (mkt != 0);
     nvs_close(h);
+    return ESP_OK;
+}
+
+/* -------- 顯示設定 -------- */
+
+esp_err_t storage_display_save(uint8_t brightness)
+{
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_DISPLAY, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    if (brightness > 100) brightness = 100;
+    ret = nvs_set_u8(h, "brightness", brightness);
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "顯示亮度已儲存：%u%%", (unsigned)brightness);
+    }
+    return ret;
+}
+
+esp_err_t storage_display_load(uint8_t *out)
+{
+    if (out == NULL) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_DISPLAY, NVS_READONLY, &h);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        *out = DEFAULT_DISPLAY_BRIGHTNESS;
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) return ret;
+
+    ret = nvs_get_u8(h, "brightness", out);
+    nvs_close(h);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        *out = DEFAULT_DISPLAY_BRIGHTNESS;
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) return ret;
+    if (*out > 100) *out = 100;
     return ESP_OK;
 }
 

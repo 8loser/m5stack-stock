@@ -37,6 +37,11 @@ esp_err_t board_set_screen_on(bool on);
 bool board_is_screen_on(void);
 
 /**
+ * @brief 設定 LCD 亮度百分比（0-100）
+ */
+esp_err_t board_set_lcd_brightness(uint8_t level);
+
+/**
  * @brief 輪詢 Power 鍵短按事件並切換螢幕狀態
  */
 void board_poll_power_key(void);
