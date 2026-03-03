@@ -28,6 +28,7 @@
     }
     .stock-row:last-child { border-bottom: 0; }
     .stock-symbol { font-weight: 700; }
+    .stock-quote { margin-top: 4px; font-size: 12px; color: #34495e; }
     .menu { display: flex; gap: 8px; margin: 8px 0 14px; }
     .menu-btn {
       flex: 1;
@@ -143,6 +144,26 @@
       el.className = ok ? "ok" : "err";
     }
 
+    function formatPrice(v) {
+      return (typeof v === "number" && isFinite(v)) ? v.toFixed(2) : "N/A";
+    }
+
+    function formatPercent(v) {
+      if (typeof v !== "number" || !isFinite(v)) return "N/A";
+      var s = v > 0 ? "+" : "";
+      return s + v.toFixed(2) + "%";
+    }
+
+    function quoteSummary(q) {
+      if (!q || !q.available) {
+        return "最新: N/A | 漲幅: N/A";
+      }
+      var s = "最新: " + formatPrice(q.price) + " | 漲幅: " + formatPercent(q.change_percent);
+      if (q.limit_status === "up") s += " | 漲停";
+      if (q.limit_status === "down") s += " | 跌停";
+      return s;
+    }
+
     function loadStocks() {
       fetch("/stocks")
         .then(function (r) { return r.json(); })
@@ -155,10 +176,15 @@
           }
           var html = "";
           d.items.forEach(function (it) {
-            s_stock_items[it.symbol] = { name: it.name || "", industry: it.industry || "" };
+            s_stock_items[it.symbol] = {
+              name: it.name || "",
+              industry: it.industry || "",
+              quote: it.quote || null
+            };
             html += "<div class='stock-row'><div><span class='stock-symbol'>" +
               it.symbol + "</span><br><span>" + (it.name || "") + "</span><br><span class='hint'>" +
-              (it.industry || "") + "</span></div><button type='button' style='width:auto;padding:6px 10px;background:#c33' " +
+              (it.industry || "") + "</span><div class='stock-quote'>" + quoteSummary(it.quote) + "</div></div>" +
+              "<button type='button' style='width:auto;padding:6px 10px;background:#c33' " +
               "onclick=\"removeStock('" + it.symbol + "')\">Remove</button></div>";
           });
           box.innerHTML = html;
@@ -183,7 +209,8 @@
             setStocksMsg(stockErr(x.body.error), false);
             return;
           }
-          setStocksMsg("新增成功：" + x.body.item.symbol + " " + (x.body.item.name || "") + " / " + (x.body.item.industry || ""), true);
+          setStocksMsg("新增成功：" + x.body.item.symbol + " " + (x.body.item.name || "") +
+            " / " + (x.body.item.industry || "") + " | " + quoteSummary(x.body.item.quote), true);
           document.getElementById("stock_symbol").value = "";
           loadStocks();
         })

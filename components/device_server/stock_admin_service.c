@@ -7,12 +7,12 @@
 #include "esp_log.h"
 #include "cJSON.h"
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define PORTAL_BODY_MAX_LEN 4096
-#define PORTAL_JSON_MAX_LEN 2048
 
 #define ERR_INVALID_FORMAT       "invalid_format"
 #define ERR_DUPLICATE_SYMBOL     "duplicate_symbol"
@@ -31,6 +31,11 @@ typedef struct {
 static const char *TAG = "stock_admin";
 static stock_list_changed_cb_t s_stock_list_changed_cb = NULL;
 static stock_meta_cache_t s_stock_meta_cache[MAX_STOCK_COUNT];
+
+static bool float_nearly_equal(float a, float b)
+{
+    return fabsf(a - b) <= 0.0005f;
+}
 
 static void url_decode(char *dst, size_t dst_len, const char *src)
 {
@@ -309,6 +314,75 @@ static void ensure_stock_meta_cached(const char *symbol)
     }
 }
 
+static const stock_quote_t *find_quote_by_symbol(const stock_quote_t *quotes, int count, const char *symbol)
+{
+    if (!quotes || !symbol || symbol[0] == '\0' || count <= 0) {
+        return NULL;
+    }
+
+    for (int i = 0; i < count; i++) {
+        if (strcmp(quotes[i].symbol, symbol) == 0) {
+            return &quotes[i];
+        }
+    }
+    return NULL;
+}
+
+static bool quote_is_available(const stock_quote_t *quote)
+{
+    return quote && (quote->is_valid || quote->is_market_closed);
+}
+
+static float quote_display_price(const stock_quote_t *quote)
+{
+    if (!quote) {
+        return 0.0f;
+    }
+    return quote->is_market_closed ? quote->yesterday_close : quote->current_price;
+}
+
+static const char *quote_limit_status(const stock_quote_t *quote)
+{
+    if (!quote_is_available(quote)) {
+        return "unknown";
+    }
+    if (!quote->has_limit_bounds) {
+        return "unknown";
+    }
+
+    float price = quote_display_price(quote);
+    if (float_nearly_equal(price, quote->limit_up_price)) {
+        return "up";
+    }
+    if (float_nearly_equal(price, quote->limit_down_price)) {
+        return "down";
+    }
+    return "none";
+}
+
+static void add_quote_to_stock_item(cJSON *item, const stock_quote_t *quote)
+{
+    if (!item) {
+        return;
+    }
+
+    cJSON *quote_obj = cJSON_CreateObject();
+    if (!quote_obj) {
+        return;
+    }
+
+    bool available = quote_is_available(quote);
+    cJSON_AddBoolToObject(quote_obj, "available", available);
+    cJSON_AddStringToObject(quote_obj, "limit_status", quote_limit_status(quote));
+    cJSON_AddBoolToObject(quote_obj, "is_market_closed", quote ? quote->is_market_closed : false);
+    if (available) {
+        cJSON_AddNumberToObject(quote_obj, "price", quote_display_price(quote));
+        cJSON_AddNumberToObject(quote_obj, "change_percent", quote->change_percent);
+    }
+
+    cJSON_AddItemToObject(item, "quote", quote_obj);
+}
+
 static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
 {
     stock_list_t list = {0};
@@ -328,6 +402,16 @@ static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "count", list.count);
     cJSON_AddBoolToObject(root, "ok", true);
     cJSON_AddItemToObject(root, "items", items);
+
+    stock_quote_t quotes[MAX_STOCK_COUNT] = {0};
+    bool has_quote_data = false;
+    if (list.count > 0 && is_sta_connected()) {
+        if (twse_client_fetch(list.symbols, list.count, quotes) == ESP_OK) {
+            has_quote_data = true;
+        } else {
+            ESP_LOGW(TAG, "stocks_get quote fetch failed");
+        }
+    }
 
     for (int i = 0; i < list.count; i++) {
         ensure_stock_meta_cached(list.symbols[i]);
@@ -350,6 +434,7 @@ static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
         cJSON_AddStringToObject(item, "name", name ? name : "");
         cJSON_AddStringToObject(item, "abbr", abbr ? abbr : "");
         cJSON_AddStringToObject(item, "industry", industry ? industry : "");
+        add_quote_to_stock_item(item, has_quote_data ? find_quote_by_symbol(quotes, list.count, list.symbols[i]) : NULL);
         cJSON_AddItemToArray(items, item);
     }
 
@@ -428,18 +513,44 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
         s_stock_list_changed_cb(list.count);
     }
 
-    char esc_name[160] = {0};
-    char esc_abbr[96] = {0};
-    char esc_industry[96] = {0};
-    json_escape(esc_name, sizeof(esc_name), info.name);
-    json_escape(esc_abbr, sizeof(esc_abbr), info.short_name);
-    json_escape(esc_industry, sizeof(esc_industry), info.industry);
+    stock_quote_t quote = {0};
+    const stock_quote_t *quote_ptr = NULL;
+    if (is_sta_connected()) {
+        char single_symbol[1][8] = {{0}};
+        strlcpy(single_symbol[0], symbol, sizeof(single_symbol[0]));
+        if (twse_client_fetch(single_symbol, 1, &quote) == ESP_OK) {
+            quote_ptr = &quote;
+        } else {
+            ESP_LOGW(TAG, "stocks_add quote fetch failed symbol=%s", symbol);
+        }
+    }
 
-    char resp[PORTAL_JSON_MAX_LEN];
-    snprintf(resp, sizeof(resp),
-             "{\"ok\":true,\"item\":{\"symbol\":\"%s\",\"name\":\"%s\",\"abbr\":\"%s\",\"industry\":\"%s\",\"market\":\"tse\"}}",
-             symbol, esc_name, esc_abbr, esc_industry);
-    return send_json_response(req, 200, resp);
+    cJSON *resp = cJSON_CreateObject();
+    cJSON *item = cJSON_CreateObject();
+    if (!resp || !item) {
+        cJSON_Delete(resp);
+        cJSON_Delete(item);
+        return send_json_error(req, 500, "no_memory");
+    }
+
+    cJSON_AddBoolToObject(resp, "ok", true);
+    cJSON_AddItemToObject(resp, "item", item);
+    cJSON_AddStringToObject(item, "symbol", symbol);
+    cJSON_AddStringToObject(item, "name", info.name);
+    cJSON_AddStringToObject(item, "abbr", info.short_name);
+    cJSON_AddStringToObject(item, "industry", info.industry);
+    cJSON_AddStringToObject(item, "market", "tse");
+    add_quote_to_stock_item(item, quote_ptr);
+
+    char *resp_json = cJSON_PrintUnformatted(resp);
+    cJSON_Delete(resp);
+    if (!resp_json) {
+        return send_json_error(req, 500, "encode_failed");
+    }
+
+    esp_err_t send_ret = send_json_response(req, 200, resp_json);
+    free(resp_json);
+    return send_ret;
 }
 
 static esp_err_t portal_stocks_remove_post_handler(httpd_req_t *req)
