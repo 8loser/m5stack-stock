@@ -440,6 +440,7 @@ void ui_manager_set_dashboard_card_count(uint8_t n)
 {
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         screen_dashboard_set_card_count(n);
+        status_bar_set_dashboard_watch_count(n);
         xSemaphoreGiveRecursive(s_ui_mutex);
     } else {
         ESP_LOGW(TAG, "set_dashboard_card_count timeout, n=%u", (unsigned)n);
@@ -449,7 +450,9 @@ void ui_manager_set_dashboard_card_count(uint8_t n)
 void ui_manager_set_dashboard_symbols(const char symbols[][8], uint8_t count)
 {
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        uint8_t watch_count = (count <= MAX_STOCK_COUNT) ? count : MAX_STOCK_COUNT;
         screen_dashboard_set_symbols(symbols, count);
+        status_bar_set_dashboard_watch_count(watch_count);
         xSemaphoreGiveRecursive(s_ui_mutex);
     } else {
         ESP_LOGW(TAG, "set_dashboard_symbols timeout, count=%u", (unsigned)count);

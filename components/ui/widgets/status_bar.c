@@ -25,6 +25,7 @@ static lv_timer_t *s_update_timer = NULL;
 static lv_timer_t *s_heartbeat_timer = NULL;
 static screen_id_t s_page = SCREEN_DASHBOARD;
 static int s_wifi_state = 0;
+static uint8_t s_dashboard_watch_count = 0;
 static const int EDGE_PADDING = 4;
 static const int ITEM_GAP = 6;
 static const int HEARTBEAT_LABEL_W = 18;
@@ -105,8 +106,10 @@ static void refresh_page_message(void)
     const char *page_name = "儀表板";
     switch (s_page) {
     case SCREEN_DASHBOARD:
-        page_name = "儀表板";
-        break;
+        snprintf(buf, sizeof(buf), "儀表板|觀測%u檔", (unsigned)s_dashboard_watch_count);
+        lv_label_set_text(s_msg_lbl, buf);
+        update_message_scroll_mode();
+        return;
     case SCREEN_LOG:
         page_name = "日誌";
         break;
@@ -307,4 +310,12 @@ void status_bar_set_page(screen_id_t page)
 {
     s_page = page;
     refresh_page_message();
+}
+
+void status_bar_set_dashboard_watch_count(uint8_t count)
+{
+    s_dashboard_watch_count = count;
+    if (s_page == SCREEN_DASHBOARD) {
+        refresh_page_message();
+    }
 }
