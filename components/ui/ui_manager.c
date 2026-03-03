@@ -8,9 +8,11 @@
 #include "screen_log.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_lcd_panel_io.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/portmacro.h"
+#include "freertos/semphr.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,14 +21,43 @@ static const char *TAG = "ui_mgr";
 static uint32_t    s_last_touch_ms = 0;
 static uint32_t    s_last_auto_return_ms = 0;
 static bool        s_last_screen_on = true;
+static bool        s_lcd_flush_async_ready = false;
+static SemaphoreHandle_t s_lcd_flush_done_sem = NULL;
+
+static bool lvgl_flush_ready_cb(esp_lcd_panel_io_handle_t panel_io,
+                                esp_lcd_panel_io_event_data_t *edata,
+                                void *user_ctx)
+{
+    (void)panel_io;
+    (void)edata;
+    BaseType_t high_task_wakeup = pdFALSE;
+    SemaphoreHandle_t done_sem = (SemaphoreHandle_t)user_ctx;
+    if (done_sem != NULL) {
+        xSemaphoreGiveFromISR(done_sem, &high_task_wakeup);
+    }
+    return high_task_wakeup == pdTRUE;
+}
 
 /* LVGL 顯示 flush 回調 */
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
                            lv_color_t *color_map)
 {
-    ili9342c_flush(board_get_panel(),
-                   area->x1, area->y1, area->x2, area->y2,
-                   color_map);
+    esp_err_t ret = ili9342c_flush(board_get_panel(),
+                                   area->x1, area->y1, area->x2, area->y2,
+                                   color_map);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "LCD flush failed: %s", esp_err_to_name(ret));
+        lv_disp_flush_ready(drv);
+        return;
+    }
+
+    if (s_lcd_flush_async_ready && s_lcd_flush_done_sem != NULL) {
+        /* Drain stale signal before waiting current flush completion. */
+        (void)xSemaphoreTake(s_lcd_flush_done_sem, 0);
+        if (xSemaphoreTake(s_lcd_flush_done_sem, pdMS_TO_TICKS(100)) != pdTRUE) {
+            ESP_LOGW(TAG, "LCD flush done wait timeout");
+        }
+    }
     lv_disp_flush_ready(drv);
 }
 
@@ -229,6 +260,21 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     disp_drv.flush_cb   = lvgl_flush_cb;
     disp_drv.draw_buf   = &draw_buf;
     s_disp = lv_disp_drv_register(&disp_drv);
+    s_lcd_flush_done_sem = xSemaphoreCreateBinary();
+    if (s_lcd_flush_done_sem == NULL) {
+        s_lcd_flush_async_ready = false;
+        ESP_LOGW(TAG, "create LCD flush done semaphore failed, fallback to sync ready");
+    } else {
+        esp_err_t flush_cb_ret =
+            ili9342c_register_flush_done_callback(lvgl_flush_ready_cb, s_lcd_flush_done_sem);
+        if (flush_cb_ret == ESP_OK) {
+            s_lcd_flush_async_ready = true;
+        } else {
+            s_lcd_flush_async_ready = false;
+            ESP_LOGW(TAG, "register flush done callback failed, fallback to sync ready: %s",
+                     esp_err_to_name(flush_cb_ret));
+        }
+    }
 
     /* 觸控輸入 */
     static lv_indev_drv_t indev_drv;
@@ -316,7 +362,12 @@ void ui_manager_switch_screen(screen_id_t id)
         if (id == SCREEN_SETTINGS) {
             screen_settings_load();
         }
-        lv_scr_load_anim(s_screens[id], LV_SCR_LOAD_ANIM_SLIDE_LEFT, 200, 0, false);
+        if (id == SCREEN_SETTINGS) {
+            /* Settings + slider redraw is sensitive; avoid transition animation re-entry. */
+            lv_scr_load(s_screens[id]);
+        } else {
+            lv_scr_load_anim(s_screens[id], LV_SCR_LOAD_ANIM_SLIDE_LEFT, 200, 0, false);
+        }
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
 

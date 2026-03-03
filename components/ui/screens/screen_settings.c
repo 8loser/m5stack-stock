@@ -21,6 +21,7 @@ static lv_obj_t *s_feedback_lbl = NULL;
 static lv_obj_t *s_brightness_slider = NULL;
 static lv_obj_t *s_brightness_lbl = NULL;
 static uint16_t s_selected_interval_idx = 0;
+static bool s_loading = false;
 
 static const lv_font_t *settings_font(void)
 {
@@ -105,6 +106,9 @@ static void on_brightness_value_changed(lv_event_t *e)
 {
     lv_obj_t *slider = lv_event_get_target(e);
     uint8_t level = slider_value_to_u8(slider);
+    if (s_loading) {
+        return;
+    }
     esp_err_t ret = board_set_lcd_brightness(level);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "brightness apply failed: %s", esp_err_to_name(ret));
@@ -156,7 +160,9 @@ void screen_settings_load(void)
     }
     if (brightness > 100) brightness = 100;
     if (s_brightness_slider != NULL) {
+        s_loading = true;
         lv_slider_set_value(s_brightness_slider, brightness, LV_ANIM_OFF);
+        s_loading = false;
     }
     update_brightness_label(brightness);
 

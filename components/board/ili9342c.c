@@ -114,6 +114,19 @@ esp_err_t ili9342c_init(esp_lcd_panel_handle_t *panel_out,
     return ESP_OK;
 }
 
+esp_err_t ili9342c_register_flush_done_callback(esp_lcd_panel_io_color_trans_done_cb_t cb,
+                                                void *user_ctx)
+{
+    if (s_io == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_lcd_panel_io_callbacks_t cbs = {
+        .on_color_trans_done = cb,
+    };
+    return esp_lcd_panel_io_register_event_callbacks(s_io, &cbs, user_ctx);
+}
+
 esp_err_t ili9342c_flush(esp_lcd_panel_handle_t panel,
                           int x1, int y1, int x2, int y2,
                           const void *color_data)
