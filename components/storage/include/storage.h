@@ -1,4 +1,5 @@
 #pragma once
+#include "app_config.h"
 #include "esp_err.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -28,7 +29,7 @@ esp_err_t storage_ai_load_prompt_template(char *prompt_template, size_t size);
 
 /* ====== 股票清單 ====== */
 typedef struct {
-    char symbols[10][8];  /* 最多 10 支，每個代號 ≤7 字元 */
+    char symbols[MAX_STOCK_COUNT][8];  /* 最多 MAX_STOCK_COUNT 支，每個代號 ≤7 字元 */
     uint8_t count;
 } stock_list_t;
 

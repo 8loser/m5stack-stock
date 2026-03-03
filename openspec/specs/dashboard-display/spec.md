@@ -75,7 +75,7 @@ Dashboard SHALL 只顯示已設定的股票數量所對應資料，並在超過�
 - **THEN** 提示文字 SHALL 不顯示（hidden）
 
 #### Scenario: Count exceeds visible area uses fixed-slot rotation
-- **WHEN** 設定的股票數量超過 5（最多 10）
+- **WHEN** 設定的股票數量超過 5（最多 15）
 - **THEN** Dashboard SHALL 維持固定 5 列位置，並在固定 UI 節拍下每次只替換 1 列內容為下一檔股票，循環回第一檔
 
 #### Scenario: No page-level flip animation

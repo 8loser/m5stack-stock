@@ -54,7 +54,7 @@
 #define NVS_NS_SCHEDULE         "schedule"
 
 /* --- 股票 --- */
-#define MAX_STOCK_COUNT         10
+#define MAX_STOCK_COUNT         15
 #define DEFAULT_STOCKS          {"2330", "2317", "2409", "6770", "1802", "2367"}
 
 /* --- 排程預設值 --- */

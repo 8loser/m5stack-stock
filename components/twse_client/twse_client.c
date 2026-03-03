@@ -15,7 +15,6 @@ static const char *TAG = "twse";
 
 #define HTTP_BUF_INIT_SIZE  4096
 #define HTTP_BUF_MAX_SIZE   32768
-#define MAX_SYMBOLS     10
 
 static QueueHandle_t s_queue        = NULL;
 static TaskHandle_t  s_task_handle  = NULL;
@@ -257,6 +256,10 @@ static void parse_stock_item(cJSON *item, const char *symbol, stock_quote_t *q)
 esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
                              stock_quote_t *results)
 {
+    if (!symbols || !results || count == 0 || count > MAX_STOCK_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     /* 組合 ex_ch 參數：tse_2330.tw|tse_2317.tw|... */
     char ex_ch[256] = {0};
     for (int i = 0; i < count; i++) {
@@ -430,7 +433,7 @@ esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *o
 }
 
 typedef struct {
-    char    symbols[MAX_SYMBOLS][8];
+    char    symbols[MAX_STOCK_COUNT][8];
     uint8_t count;
     uint32_t interval_s;
 } fetch_task_args_t;
@@ -438,7 +441,7 @@ typedef struct {
 static void twse_fetch_task(void *arg)
 {
     fetch_task_args_t *args = (fetch_task_args_t *)arg;
-    stock_quote_t results[MAX_SYMBOLS];
+    stock_quote_t results[MAX_STOCK_COUNT];
 
     while (s_task_running) {
         memset(results, 0, sizeof(results));
@@ -465,6 +468,10 @@ esp_err_t twse_client_init(QueueHandle_t quote_queue)
 esp_err_t twse_client_start_task(const char symbols[][8], uint8_t count,
                                   uint32_t interval_s)
 {
+    if (!symbols || count == 0 || count > MAX_STOCK_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     if (s_task_running) twse_client_stop_task();
 
     fetch_task_args_t *args = malloc(sizeof(fetch_task_args_t));
