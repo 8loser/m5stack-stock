@@ -176,6 +176,7 @@ static void ui_manager_log_v(log_tag_t tag, log_level_t level, const char *fmt, 
 
 static void lvgl_task(void *arg)
 {
+    uint32_t last_diag_ms = 0;
     while (1) {
         if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             lv_task_handler();
@@ -209,6 +210,12 @@ static void lvgl_task(void *arg)
                 }
             }
             xSemaphoreGiveRecursive(s_ui_mutex);
+        }
+        uint32_t now_ms = (uint32_t)esp_log_timestamp();
+        if (now_ms - last_diag_ms >= 30000U) {
+            UBaseType_t wm = uxTaskGetStackHighWaterMark(NULL);
+            ESP_LOGI(TAG, "diag stack_hwm lvgl=%u", (unsigned)wm);
+            last_diag_ms = now_ms;
         }
         vTaskDelay(pdMS_TO_TICKS(LVGL_TICK_PERIOD_MS));
     }
@@ -432,9 +439,11 @@ screen_id_t ui_manager_get_current_screen(void)
 void ui_manager_update_quote(const stock_quote_t *quote)
 {
     extern void screen_dashboard_update(const stock_quote_t *q);
-    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         screen_dashboard_update(quote);
         xSemaphoreGiveRecursive(s_ui_mutex);
+    } else {
+        ESP_LOGW(TAG, "update_quote timeout symbol=%s", quote ? quote->symbol : "");
     }
 }
 
@@ -446,6 +455,17 @@ void ui_manager_set_dashboard_card_count(uint8_t n)
         xSemaphoreGiveRecursive(s_ui_mutex);
     } else {
         ESP_LOGW(TAG, "set_dashboard_card_count timeout, n=%u", (unsigned)n);
+    }
+}
+
+void ui_manager_set_dashboard_symbols(const char symbols[][8], uint8_t count)
+{
+    extern void screen_dashboard_set_symbols(const char symbols[][8], uint8_t count);
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        screen_dashboard_set_symbols(symbols, count);
+        xSemaphoreGiveRecursive(s_ui_mutex);
+    } else {
+        ESP_LOGW(TAG, "set_dashboard_symbols timeout, count=%u", (unsigned)count);
     }
 }
 

@@ -335,21 +335,58 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
         return ESP_FAIL;
     }
 
+    for (int i = 0; i < count; i++) {
+        memset(&results[i], 0, sizeof(results[i]));
+        strlcpy(results[i].symbol, symbols[i], sizeof(results[i].symbol));
+    }
+
+    bool matched[MAX_STOCK_COUNT] = {false};
     int n = cJSON_GetArraySize(msg_array);
-    for (int i = 0; i < n && i < count; i++) {
+    for (int i = 0; i < n; i++) {
         cJSON *item = cJSON_GetArrayItem(msg_array, i);
         cJSON *sym = cJSON_GetObjectItem(item, "c");
-        const char *sym_str = (sym && cJSON_IsString(sym))
-                              ? sym->valuestring : symbols[i];
-        parse_stock_item(item, sym_str, &results[i]);
+        const char *sym_str = NULL;
+        if (sym && cJSON_IsString(sym) && sym->valuestring && sym->valuestring[0] != '\0') {
+            sym_str = sym->valuestring;
+        } else if (i < count) {
+            /* 某些回傳可能缺 c，退回請求順序對位 */
+            sym_str = symbols[i];
+        } else {
+            continue;
+        }
 
-        if (results[i].is_valid) {
+        int target_idx = -1;
+        for (int j = 0; j < count; j++) {
+            if (strcmp(symbols[j], sym_str) == 0) {
+                target_idx = j;
+                break;
+            }
+        }
+        if (target_idx < 0 && i < count) {
+            /* 若 c 異常但順序仍一致，最後退回索引對位 */
+            target_idx = i;
+            sym_str = symbols[i];
+        }
+        if (target_idx < 0 || target_idx >= count) {
+            continue;
+        }
+
+        parse_stock_item(item, sym_str, &results[target_idx]);
+        matched[target_idx] = true;
+
+        if (results[target_idx].is_valid) {
             ESP_LOGI(TAG, "%s %s %.2f (%.2f%%)",
-                     results[i].symbol, results[i].name,
-                     results[i].current_price, results[i].change_percent);
-        } else if (results[i].is_market_closed) {
+                     results[target_idx].symbol, results[target_idx].name,
+                     results[target_idx].current_price, results[target_idx].change_percent);
+        } else if (results[target_idx].is_market_closed) {
             ESP_LOGI(TAG, "%s 休市，昨收 %.2f",
-                     results[i].symbol, results[i].yesterday_close);
+                     results[target_idx].symbol, results[target_idx].yesterday_close);
+        }
+    }
+
+    for (int i = 0; i < count; i++) {
+        if (!matched[i]) {
+            ESP_LOGW(TAG, "TWSE 本輪未回傳 symbol=%s", symbols[i]);
         }
     }
 

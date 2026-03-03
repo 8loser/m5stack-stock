@@ -3,6 +3,7 @@
 #include "scheduler.h"
 #include "twse_models.h"
 #include "ui_compat.h"
+#include "esp_log.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,12 +31,16 @@ static lv_obj_t *s_empty_label = NULL;
 static lv_obj_t *s_update_label = NULL;
 static lv_obj_t *s_next_label = NULL;
 static lv_timer_t *s_rotation_timer = NULL;
+static const char *TAG = "screen_dashboard";
 
 /* 快取最新報價，供非 active 狀態下累積，切回 dashboard 時重新套用 */
 static char          s_symbols_order[MAX_STOCK_COUNT][8] = {0};
 static int           s_card_count = 0;
 static stock_quote_t s_cached_quotes[MAX_STOCK_COUNT];
 static bool          s_cached_valid[MAX_STOCK_COUNT] = {false};
+static stock_quote_t s_reordered_quotes[MAX_STOCK_COUNT];
+static bool          s_reordered_valid[MAX_STOCK_COUNT] = {false};
+static uint32_t      s_last_missing_log_ms[MAX_STOCK_COUNT] = {0};
 static int           s_slot_stock_idx[DASHBOARD_VISIBLE_ROWS] = {0};
 static int           s_next_slot_idx = 0;
 static int           s_next_stock_idx = 0;
@@ -197,10 +202,21 @@ static void render_slot_with_stock(int slot, int stock_idx)
     if (s_cached_valid[stock_idx]) {
         apply_card_widgets(slot, &s_cached_quotes[stock_idx]);
     } else {
-        lv_label_set_text(s_name_labels[slot], "---");
+        uint32_t now_ms = (uint32_t)esp_log_timestamp();
+        if (stock_idx >= 0 && stock_idx < MAX_STOCK_COUNT &&
+            now_ms - s_last_missing_log_ms[stock_idx] >= 30000U) {
+            ESP_LOGW(TAG, "missing quote symbol=%s slot=%d idx=%d",
+                     s_symbols_order[stock_idx], slot, stock_idx);
+            s_last_missing_log_ms[stock_idx] = now_ms;
+        }
+        if (s_symbols_order[stock_idx][0] != '\0') {
+            lv_label_set_text_fmt(s_name_labels[slot], "%s\n--", s_symbols_order[stock_idx]);
+        } else {
+            lv_label_set_text(s_name_labels[slot], "---");
+        }
         lv_label_set_text(s_industry_labels[slot], "");
-        lv_label_set_text(s_price_labels[slot], "---.--");
-        lv_label_set_text(s_change_labels[slot], "+/-");
+        lv_label_set_text(s_price_labels[slot], "N/A");
+        lv_label_set_text(s_change_labels[slot], "--");
         lv_obj_set_style_bg_opa(s_price_labels[slot], LV_OPA_TRANSP, 0);
         lv_obj_set_style_text_color(s_price_labels[slot], lv_color_white(), 0);
         lv_obj_set_style_text_color(s_change_labels[slot], lv_color_white(), 0);
@@ -392,6 +408,51 @@ void screen_dashboard_set_card_count(uint8_t n)
     if (s_rotation_timer) {
         lv_timer_reset(s_rotation_timer);
     }
+}
+
+void screen_dashboard_set_symbols(const char symbols[][8], uint8_t count)
+{
+    int next_count = (count <= MAX_STOCK_COUNT) ? (int)count : MAX_STOCK_COUNT;
+    char old_symbols[MAX_STOCK_COUNT][8] = {0};
+    int old_to_new[MAX_STOCK_COUNT];
+
+    memcpy(old_symbols, s_symbols_order, sizeof(old_symbols));
+    for (int i = 0; i < MAX_STOCK_COUNT; i++) {
+        old_to_new[i] = -1;
+    }
+    memset(s_reordered_quotes, 0, sizeof(s_reordered_quotes));
+    memset(s_reordered_valid, 0, sizeof(s_reordered_valid));
+
+    for (int i = 0; i < next_count; i++) {
+        s_symbols_order[i][0] = '\0';
+        if (symbols && symbols[i][0] != '\0') {
+            strlcpy(s_symbols_order[i], symbols[i], sizeof(s_symbols_order[i]));
+        }
+
+        for (int j = 0; j < MAX_STOCK_COUNT; j++) {
+            if (s_cached_valid[j] && strcmp(old_symbols[j], s_symbols_order[i]) == 0) {
+                old_to_new[j] = i;
+                break;
+            }
+        }
+    }
+
+    for (int i = next_count; i < MAX_STOCK_COUNT; i++) {
+        s_symbols_order[i][0] = '\0';
+    }
+
+    for (int old_idx = 0; old_idx < MAX_STOCK_COUNT; old_idx++) {
+        int new_idx = old_to_new[old_idx];
+        if (new_idx >= 0 && new_idx < MAX_STOCK_COUNT) {
+            s_reordered_quotes[new_idx] = s_cached_quotes[old_idx];
+            s_reordered_valid[new_idx] = true;
+        }
+    }
+
+    memcpy(s_cached_quotes, s_reordered_quotes, sizeof(s_cached_quotes));
+    memcpy(s_cached_valid, s_reordered_valid, sizeof(s_cached_valid));
+
+    screen_dashboard_set_card_count((uint8_t)next_count);
 }
 
 void screen_dashboard_update(const stock_quote_t *q)

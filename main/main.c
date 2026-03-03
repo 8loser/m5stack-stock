@@ -5,6 +5,7 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_system.h"
 #include "nvs_flash.h"
 
 #include "app_config.h"
@@ -33,8 +34,15 @@ static void on_wifi_state(wifi_state_t state, const char *ip)
 
 static void on_stock_list_changed(uint8_t count)
 {
+    stock_list_t stocks = {0};
+    if (storage_stocks_load(&stocks) == ESP_OK) {
+        ui_manager_set_dashboard_symbols((const char (*)[8])stocks.symbols, stocks.count);
+        ui_manager_log_stock(LOG_LEVEL_INFO, "Stock list changed, count=%u", (unsigned)stocks.count);
+        return;
+    }
+
     ui_manager_set_dashboard_card_count(count);
-    ui_manager_log_stock(LOG_LEVEL_INFO, "Stock list changed, count=%u", (unsigned)count);
+    ui_manager_log_stock(LOG_LEVEL_WARN, "Stock list changed, but load failed. use count=%u", (unsigned)count);
 }
 
 /* 全域共用資源 */
@@ -56,6 +64,7 @@ static void init_global_resources(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "=== M5Stack Core2 台股監測 啟動 ===");
+    ESP_LOGI(TAG, "reset reason=%d", (int)esp_reset_reason());
 
     /* NVS 初始化 */
     esp_err_t ret = nvs_flash_init();
@@ -97,7 +106,7 @@ void app_main(void)
     ESP_ERROR_CHECK(storage_wifi_migrate_legacy());
     stock_list_t stocks = {0};
     if (storage_stocks_load(&stocks) == ESP_OK) {
-        ui_manager_set_dashboard_card_count(stocks.count);
+        ui_manager_set_dashboard_symbols((const char (*)[8])stocks.symbols, stocks.count);
     }
 
     ESP_LOGI(TAG, "初始化 WiFi...");
@@ -128,6 +137,7 @@ void app_main(void)
 
     while (1) {
         int quote_updates = 0;
+        static uint32_t s_last_diag_ms = 0;
 
         /* 只處理 Power 鍵短按：切換螢幕開/關 */
         board_poll_power_key();
@@ -148,6 +158,16 @@ void app_main(void)
         }
 
         ui_manager_heartbeat_feed_main();
+
+        uint32_t now_ms = (uint32_t)esp_log_timestamp();
+        if (now_ms - s_last_diag_ms >= 30000U) {
+            UBaseType_t wm = uxTaskGetStackHighWaterMark(NULL);
+            ESP_LOGI(TAG, "diag stack_hwm main=%u words free_heap=%u",
+                     (unsigned)wm,
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
+            s_last_diag_ms = now_ms;
+        }
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

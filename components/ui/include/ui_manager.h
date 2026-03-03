@@ -28,6 +28,7 @@ void ui_manager_update_quote(const stock_quote_t *quote);
 void ui_manager_update_wifi_state(int state, const char *ip);
 void ui_manager_show_loading(bool show);
 void ui_manager_set_dashboard_card_count(uint8_t n);
+void ui_manager_set_dashboard_symbols(const char symbols[][8], uint8_t count);
 void ui_manager_heartbeat_feed_main(void);
 void ui_manager_heartbeat_feed_scheduler(void);
 bool ui_manager_is_main_flow_alive(uint32_t *age_main_ms, uint32_t *age_sched_ms);

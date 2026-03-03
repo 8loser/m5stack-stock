@@ -112,6 +112,14 @@ static void do_fetch_quotes(bool force_fetch)
                         quotes);
     if (ret == ESP_OK && s_quote_queue) {
         for (int i = 0; i < s_stock_list.count; i++) {
+            if (quotes[i].symbol[0] == '\0') {
+                ESP_LOGW(TAG, "跳過空 symbol 報價: idx=%d", i);
+                continue;
+            }
+            if (!quotes[i].is_valid && !quotes[i].is_market_closed) {
+                ESP_LOGW(TAG, "股票 %s 本輪無有效報價，保留前次顯示", quotes[i].symbol);
+                continue;
+            }
             enrich_quote_with_industry(&quotes[i]);
             xQueueSend(s_quote_queue, &quotes[i], 0);
         }
@@ -127,6 +135,8 @@ static void quote_timer_cb(TimerHandle_t xTimer)
 
 static void scheduler_task(void *arg)
 {
+    uint32_t last_diag_ms = 0;
+
     /* 等待 WiFi 連線後啟動 SNTP */
     while (!is_wifi_connected()) {
         ui_manager_heartbeat_feed_scheduler();
@@ -155,6 +165,13 @@ static void scheduler_task(void *arg)
             scheduler_stop();
             sleep_manager_enter(MARKET_OPEN_HOUR, MARKET_OPEN_MIN > 5
                                 ? MARKET_OPEN_MIN - 5 : 0);
+        }
+
+        uint32_t now_ms = (uint32_t)esp_log_timestamp();
+        if (now_ms - last_diag_ms >= 30000U) {
+            UBaseType_t wm = uxTaskGetStackHighWaterMark(NULL);
+            ESP_LOGI(TAG, "diag stack_hwm scheduler=%u", (unsigned)wm);
+            last_diag_ms = now_ms;
         }
     }
 }
