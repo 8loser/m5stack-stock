@@ -91,5 +91,6 @@
 
 /* --- M5Core2 FT6336U 底部虛擬按鍵感應區域 --- */
 #define TOUCH_BTN_Y_MIN         LCD_HEIGHT  /* y >= 240 才視為底部按鍵區域，避免攔截正常觸控 */
-#define TOUCH_BTN_A_X_MAX       (LCD_WIDTH / 3)         /* 左 1/3 */
-#define TOUCH_BTN_B_X_MAX       ((LCD_WIDTH * 2) / 3)   /* 中 1/3；其餘為右 1/3 */
+/* 依實測按鍵中心中點分界（A≈95、B≈190、C≈281），非 LCD 等分 */
+#define TOUCH_BTN_A_X_MAX       142         /* 左/中分界：約 (95 + 190) / 2 */
+#define TOUCH_BTN_B_X_MAX       235         /* 中/右分界：約 (190 + 281) / 2 */
