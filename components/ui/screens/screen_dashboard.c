@@ -333,7 +333,14 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
     lv_label_set_text(s_price_labels[idx], price_str);
 
     char change_str[16];
-    snprintf(change_str, sizeof(change_str), "%+.2f%%", q->change_percent);
+    float change_abs = fabsf(q->change_percent);
+    if (q->change_percent > 0.01f) {
+        snprintf(change_str, sizeof(change_str), "↗%.2f%%", change_abs);
+    } else if (q->change_percent < -0.01f) {
+        snprintf(change_str, sizeof(change_str), "↘%.2f%%", change_abs);
+    } else {
+        snprintf(change_str, sizeof(change_str), "－0.00%%");
+    }
     lv_label_set_text(s_change_labels[idx], change_str);
 
     lv_obj_set_style_text_color(s_change_labels[idx], accent, 0);
