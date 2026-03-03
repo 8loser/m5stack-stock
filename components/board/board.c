@@ -11,6 +11,14 @@ static esp_lcd_panel_handle_t    s_panel = NULL;
 static esp_lcd_panel_io_handle_t s_io    = NULL;
 static bool s_screen_on = true;
 static int64_t s_power_key_arm_us = 0;
+static uint8_t s_lcd_brightness_percent = 100;
+
+static uint8_t brightness_percent_to_raw(uint8_t level)
+{
+    uint8_t clamped = level;
+    if (clamped > 100) clamped = 100;
+    return (uint8_t)(((uint32_t)clamped * 255U) / 100U);
+}
 
 /* 共用 I2C 匯流排初始化 */
 static esp_err_t init_i2c(void)
@@ -56,7 +64,8 @@ esp_err_t board_init(void)
     if (axp192_set_lcd_power(true) != ESP_OK) {
         ESP_LOGW(TAG, "LCD 供電開啟失敗");
     }
-    if (axp192_set_lcd_backlight(255) != ESP_OK) {
+    s_lcd_brightness_percent = 100;
+    if (axp192_set_lcd_backlight(brightness_percent_to_raw(s_lcd_brightness_percent)) != ESP_OK) {
         ESP_LOGW(TAG, "LCD 背光設定失敗");
     }
     s_screen_on = true;
@@ -121,13 +130,15 @@ esp_err_t board_set_screen_on(bool on)
     esp_err_t ret;
 
     if (on) {
+        uint8_t raw = brightness_percent_to_raw(s_lcd_brightness_percent);
+
         ret = axp192_set_lcd_power(true);
         if (ret != ESP_OK) return ret;
 
         ret = axp192_set_lcd_backlight_power(true);
         if (ret != ESP_OK) return ret;
 
-        ret = axp192_set_lcd_backlight(255);
+        ret = axp192_set_lcd_backlight(raw);
         if (ret != ESP_OK) return ret;
     } else {
         ret = axp192_set_lcd_backlight(0);
@@ -150,12 +161,10 @@ bool board_is_screen_on(void)
 esp_err_t board_set_lcd_brightness(uint8_t level)
 {
     uint8_t clamped = level;
-    uint8_t scaled;
 
     if (clamped > 100) clamped = 100;
-
-    scaled = (uint8_t)(((uint32_t)clamped * 255U) / 100U);
-    return axp192_set_lcd_backlight(scaled);
+    s_lcd_brightness_percent = clamped;
+    return axp192_set_lcd_backlight(brightness_percent_to_raw(clamped));
 }
 
 void board_poll_power_key(void)
