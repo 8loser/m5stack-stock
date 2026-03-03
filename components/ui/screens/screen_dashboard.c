@@ -14,7 +14,7 @@
  * 若後續更動 LCD color order / swap 設定，需重新校正這三個值。 */
 #define COLOR_UP    lv_color_hex(0x00C4CF)   /* 漲：紅（實機校正） */
 #define COLOR_DOWN  lv_color_hex(0x8864B0)   /* 跌：綠（實機校正） */
-#define COLOR_FLAT  lv_color_hex(0xA84890)   /* 平：灰（實機校正） */
+#define COLOR_FLAT  lv_color_hex(0x7A7A7A)   /* 平：灰（實機校正，避免偏綠） */
 #define COLOR_BG    lv_color_hex(0x1A1A2E)   /* 深藍背景 */
 #define COLOR_CARD  lv_color_hex(0x1C2A4A)   /* 卡片背景 */
 #define DASHBOARD_VISIBLE_ROWS 5
@@ -315,12 +315,14 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
         display_price = q->current_price;
     }
     snprintf(price_str, sizeof(price_str), "%.2f", display_price);
+    bool limit_up = is_limit_up_price(display_price, q);
+    bool limit_down = is_limit_down_price(display_price, q);
 
-    if (is_limit_up_price(display_price, q)) {
+    if (limit_up) {
         lv_obj_set_style_bg_color(s_price_labels[idx], COLOR_UP, 0);
         lv_obj_set_style_bg_opa(s_price_labels[idx], LV_OPA_40, 0);
         lv_obj_set_style_text_color(s_price_labels[idx], lv_color_white(), 0);
-    } else if (is_limit_down_price(display_price, q)) {
+    } else if (limit_down) {
         lv_obj_set_style_bg_color(s_price_labels[idx], COLOR_DOWN, 0);
         lv_obj_set_style_bg_opa(s_price_labels[idx], LV_OPA_40, 0);
         lv_obj_set_style_text_color(s_price_labels[idx], lv_color_white(), 0);
