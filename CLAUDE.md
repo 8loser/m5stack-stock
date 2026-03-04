@@ -36,7 +36,9 @@ docs/twse_api_fields.md  # TWSE getStockInfo.jsp 回傳欄位對照與本專案�
 components/
   app_core/              # 應用層事件匯流排（跨模組解耦）
   board/                 # HAL 層，所有硬體抽象
-  device_server/         # WiFi + Portal + Stocks 管理（已拆分 service）
+  network_portal/        # 對外 façade（統一 network API）
+  wifi_manager/          # STA 連線管理、狀態機、AP 掃描
+  portal_backend/        # SoftAP + Portal HTTP + Stocks 管理 API
   storage/               # NVS 讀寫，唯一持久化介面
   twse_client/           # TWSE API → cJSON → stock_quote_t
   ai_provider/           # vtable 模式三 Provider（Gemini/Claude/OpenAI）
@@ -60,7 +62,7 @@ scheduler Timer（ai_ivl）
 
 ## 開機初始化順序
 
-`nvs_flash_init` → `app_event_bus_init` → `board_init` → `ui_manager_init` → `storage_init` → `device_server_init` → `twse_client_init` → `scheduler_init`
+`nvs_flash_init` → `app_event_bus_init` → `board_init` → `ui_manager_init` → `storage_init` → `network_portal_init` → `twse_client_init` → `scheduler_init`
 
 ## Gotchas
 
@@ -77,7 +79,7 @@ scheduler Timer（ai_ivl）
 | Core2 色彩校正 | 此面板在目前驅動下標準 RGB hex 可能偏色；UI 新增/調整顏色請先用 `components/ui/screens/screen_dashboard.c` 的 `COLOR_UP/DOWN/FLAT` 實機校正值做基準，再上板確認 |
 | LVGL event callback 重用 | 不可傳 dummy `lv_event_t{}`（code=0 = `LV_EVENT_ALL`，CLICKED check 失敗）；改抽 helper function 直接呼叫 |
 | FT6336U 底部虛擬按鍵 | FT6336U 韌體固定回報值；實測 y=270–279（x: A≈95, B≈190, C≈272–290）；`TOUCH_BTN_Y_MIN=LCD_HEIGHT`（240）攔截，不傳給 LVGL |
-| Portal 前端維護位置 | 改 `components/device_server/portal/index.html`；C 端透過 `EMBED_TXTFILES` 內嵌，不再手寫長 HTML 字串 |
+| Portal 前端維護位置 | 改 `components/portal_backend/portal/index.html`；C 端透過 `EMBED_TXTFILES` 內嵌，不再手寫長 HTML 字串 |
 
 ## NVS 命名空間
 

@@ -1,7 +1,7 @@
-#include "portal_service.h"
+#include "portal_backend.h"
 #include "stock_admin_service.h"
-#include "wifi_service.h"
-#include "device_server.h"
+#include "wifi_manager.h"
+
 #include "storage.h"
 #include "app_config.h"
 #include "ai_provider.h"
@@ -65,7 +65,7 @@ typedef struct {
     char password[65];
 } wifi_connect_req_t;
 
-static const char *TAG = "portal_service";
+static const char *TAG = "portal_backend";
 static esp_netif_t *s_ap_netif = NULL;
 static httpd_handle_t s_httpd = NULL;
 static bool s_portal_active = false;
@@ -449,11 +449,11 @@ static void wifi_connect_task(void *arg)
     }
 
     ESP_LOGI(TAG, "Portal 提交配網，嘗試連線 SSID=%s", req->ssid);
-    esp_err_t ret = device_server_connect(req->ssid, req->password);
+    esp_err_t ret = wifi_manager_connect(req->ssid, req->password);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Portal 配網成功");
         if (s_portal_active) {
-            esp_err_t stop_ret = portal_service_stop();
+            esp_err_t stop_ret = portal_backend_stop();
             if (stop_ret != ESP_OK) {
                 ESP_LOGW(TAG, "Portal 停止失敗: %s", esp_err_to_name(stop_ret));
             }
@@ -472,7 +472,7 @@ static esp_err_t portal_scan_get_handler(httpd_req_t *req)
     wifi_ap_info_t ap_infos[PORTAL_SCAN_MAX_APS] = {0};
     uint16_t count = PORTAL_SCAN_MAX_APS;
 
-    esp_err_t ret = wifi_service_scan(ap_infos, &count, PORTAL_SCAN_MAX_APS);
+    esp_err_t ret = wifi_manager_scan(ap_infos, &count, PORTAL_SCAN_MAX_APS);
     if (ret != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "scan failed");
         return ret;
@@ -1224,9 +1224,9 @@ static void stop_portal_http_server(void)
     s_httpd = NULL;
 }
 
-esp_err_t portal_service_start(void)
+esp_err_t portal_backend_start(void)
 {
-    if (!wifi_service_is_initialized()) {
+    if (!wifi_manager_is_initialized()) {
         return ESP_ERR_INVALID_STATE;
     }
     if (s_portal_active) {
@@ -1273,7 +1273,7 @@ esp_err_t portal_service_start(void)
     return ESP_OK;
 }
 
-esp_err_t portal_service_stop(void)
+esp_err_t portal_backend_stop(void)
 {
     if (!s_portal_active) {
         return ESP_OK;
@@ -1291,27 +1291,27 @@ esp_err_t portal_service_stop(void)
     return ESP_OK;
 }
 
-bool portal_service_is_active(void)
+bool portal_backend_is_active(void)
 {
     return s_portal_active;
 }
 
-const char *portal_service_get_ap_ssid(void)
+const char *portal_backend_get_ap_ssid(void)
 {
     return s_portal_ap_ssid;
 }
 
-const char *portal_service_get_ap_password(void)
+const char *portal_backend_get_ap_password(void)
 {
     return s_portal_ap_password;
 }
 
-const char *portal_service_get_url(void)
+const char *portal_backend_get_url(void)
 {
     return s_portal_url;
 }
 
-const char *portal_service_get_ap_ip(void)
+const char *portal_backend_get_ap_ip(void)
 {
     static char ap_ip_str[20] = "0.0.0.0";
     esp_netif_ip_info_t ip_info = {0};
@@ -1326,4 +1326,9 @@ const char *portal_service_get_ap_ip(void)
 
     snprintf(ap_ip_str, sizeof(ap_ip_str), IPSTR, IP2STR(&ip_info.ip));
     return ap_ip_str;
+}
+
+void portal_backend_set_stock_list_changed_callback(stock_list_changed_cb_t cb)
+{
+    stock_admin_service_set_stock_list_changed_callback(cb);
 }

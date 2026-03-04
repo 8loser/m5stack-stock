@@ -4,7 +4,7 @@
 本專案是 M5Stack Core2 的 ESP-IDF（`v5.1.x`）韌體專案。
 
 - `main/`：程式入口與共用設定（`main.c`、`app_config.h`）
-- `components/`：功能模組（board HAL、app_core event bus、device_server、storage、TWSE client、AI provider、scheduler、UI）
+- `components/`：功能模組（board HAL、app_core event bus、network_portal façade、wifi_manager、portal_backend、storage、TWSE client、AI provider、scheduler、UI）
 - `docs/hardware_quick_ref.md`：低 token 硬體速查（AI 開發預設先讀）
 - `docs/hardware_core2_reference.md`：Core2 官方規格、PinMap 與完整對照（需要細節時再查）
 - `docs/twse_api_fields.md`：TWSE `getStockInfo.jsp` 回傳欄位對照與本專案解析規則
@@ -71,7 +71,7 @@
 | Core2 色彩校正 | 此面板在目前驅動下標準 RGB hex 可能偏色；UI 新增/調整顏色請先用 `components/ui/screens/screen_dashboard.c` 的 `COLOR_UP/DOWN/FLAT` 實機校正值做基準，再上板確認 |
 | LVGL event callback 重用 | 不可傳 dummy `lv_event_t{}`（code=0 = `LV_EVENT_ALL`，CLICKED check 失敗）；改抽 helper function 直接呼叫 |
 | FT6336U 底部虛擬按鍵 | FT6336U 韌體固定回報值；實測 y=270–279（x: A≈95, B≈190, C≈272–290）；`TOUCH_BTN_Y_MIN=LCD_HEIGHT`（240）攔截，不傳給 LVGL |
-| Portal 前端維護位置 | 改 `components/device_server/portal/index.html`；C 端由 `EMBED_TXTFILES` 內嵌回傳，避免在 `*.c` 內維護長 HTML 字串 |
+| Portal 前端維護位置 | 改 `components/portal_backend/portal/index.html`；C 端由 `EMBED_TXTFILES` 內嵌回傳，避免在 `*.c` 內維護長 HTML 字串 |
 
 ## AI 開發上下文最小化
 - 本專案以 AI 協作為主，預設先讀 `docs/hardware_quick_ref.md`，避免每次載入完整硬體文件。

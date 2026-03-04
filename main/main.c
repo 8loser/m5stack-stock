@@ -12,7 +12,7 @@
 #include "app_event_bus.h"
 #include "board.h"
 #include "storage.h"
-#include "device_server.h"
+#include "network_portal.h"
 #include "telegram_bot.h"
 #include "twse_client.h"
 #include "scheduler.h"
@@ -63,12 +63,12 @@ static void on_quote_fetch_round_event(const app_event_t *evt, void *ctx)
     }
 }
 
-/* WiFi 狀態回調：橋接 device_server → ui_manager */
+/* WiFi 狀態回調：橋接 network_portal → ui_manager */
 static void on_wifi_state(wifi_state_t state, const char *ip)
 {
     ui_manager_update_wifi_state((int)state, ip);
     if (state == WIFI_STATE_CONNECTED) {
-        const char *ssid = device_server_get_connected_ssid();
+        const char *ssid = network_portal_get_connected_ssid();
         ui_manager_log_wifi(LOG_LEVEL_INFO, "Connected: %s (%s)",
                             (ssid && ssid[0] != '\0') ? ssid : "unknown",
                             (ip != NULL) ? ip : "");
@@ -158,14 +158,14 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "初始化 WiFi...");
-    ESP_ERROR_CHECK(device_server_init());
-    device_server_set_callback(on_wifi_state);
-    device_server_set_stock_list_changed_callback(on_stock_list_changed);
+    ESP_ERROR_CHECK(network_portal_init());
+    network_portal_set_callback(on_wifi_state);
+    network_portal_set_stock_list_changed_callback(on_stock_list_changed);
     ESP_ERROR_CHECK(telegram_bot_init());
     telegram_bot_start();
 
     /* 嘗試自動連線；若無設定則導向 Portal 頁面，由使用者手動啟動配網入口 */
-    ret = device_server_connect_saved();
+    ret = network_portal_connect_saved();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "未連上既有 WiFi，請至 Portal 頁面手動啟動");
         ui_manager_switch_screen(SCREEN_PORTAL);

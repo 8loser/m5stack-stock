@@ -1,7 +1,7 @@
 #include "telegram_bot.h"
 #include "app_config.h"
 #include "storage.h"
-#include "device_server.h"
+#include "network_portal.h"
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
@@ -360,9 +360,9 @@ esp_err_t telegram_bot_cache_quote(const stock_quote_t *quote)
 static void build_info_message(char *out, size_t out_size)
 {
     size_t used = 0;
-    bool connected = device_server_is_connected();
-    const char *ssid = device_server_get_connected_ssid();
-    const char *ip = device_server_get_ip();
+    bool connected = network_portal_is_connected();
+    const char *ssid = network_portal_get_connected_ssid();
+    const char *ip = network_portal_get_ip();
     stock_list_t stocks = {0};
     int64_t last_quote_update_s = 0;
     char last_trade_time[16] = {0};
