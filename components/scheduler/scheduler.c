@@ -41,6 +41,31 @@ static void publish_scheduler_tick(bool force_fetch)
     }
 }
 
+static void publish_quote_fetch_round(bool force_fetch,
+                                      app_quote_fetch_reason_t reason,
+                                      uint8_t total,
+                                      uint8_t pushed,
+                                      uint8_t skipped_empty,
+                                      uint8_t skipped_invalid,
+                                      esp_err_t fetch_err)
+{
+    app_event_t evt = {
+        .type = APP_EVENT_QUOTE_FETCH_ROUND,
+        .timestamp_ms = 0,
+    };
+    evt.data.quote_fetch_round.force_fetch = force_fetch;
+    evt.data.quote_fetch_round.total = total;
+    evt.data.quote_fetch_round.pushed = pushed;
+    evt.data.quote_fetch_round.skipped_empty = skipped_empty;
+    evt.data.quote_fetch_round.skipped_invalid = skipped_invalid;
+    evt.data.quote_fetch_round.fetch_err = fetch_err;
+    evt.data.quote_fetch_round.reason = reason;
+
+    if (app_event_publish(&evt) != ESP_OK) {
+        ESP_LOGW(TAG, "publish quote fetch round failed");
+    }
+}
+
 static void enrich_quote_with_industry(stock_quote_t *quote)
 {
     if (!quote || quote->symbol[0] == '\0') return;
@@ -100,17 +125,26 @@ static void do_fetch_quotes(bool force_fetch)
 {
     if (!is_wifi_connected()) {
         ESP_LOGW(TAG, "WiFi 未連線，跳過報價抓取");
+        publish_quote_fetch_round(force_fetch,
+                                  APP_QUOTE_FETCH_REASON_WIFI_DISCONNECTED,
+                                  0, 0, 0, 0, ESP_OK);
         return;
     }
 
     if (s_stock_list.count == 0) {
         ESP_LOGW(TAG, "股票清單為空，跳過報價抓取");
+        publish_quote_fetch_round(force_fetch,
+                                  APP_QUOTE_FETCH_REASON_EMPTY_LIST,
+                                  0, 0, 0, 0, ESP_OK);
         return;
     }
 
     /* SNTP 未同步時跳過市場時段限制，避免 RTC 未校時誤判 */
     if (!force_fetch && s_sntp_synced && s_config.market_only && !rtc_bm8563_is_market_open()) {
         ESP_LOGI(TAG, "非市場時段，跳過報價抓取");
+        publish_quote_fetch_round(force_fetch,
+                                  APP_QUOTE_FETCH_REASON_MARKET_CLOSED,
+                                  s_stock_list.count, 0, 0, 0, ESP_OK);
         return;
     }
 
@@ -142,9 +176,19 @@ static void do_fetch_quotes(bool force_fetch)
         }
         ESP_LOGI(TAG, "quote_round total=%d pushed=%d skip_empty=%d skip_invalid=%d",
                  total, pushed, skipped_empty_symbol, skipped_invalid);
+        publish_quote_fetch_round(force_fetch,
+                                  APP_QUOTE_FETCH_REASON_FETCH_DONE,
+                                  s_stock_list.count,
+                                  (uint8_t)pushed,
+                                  (uint8_t)skipped_empty_symbol,
+                                  (uint8_t)skipped_invalid,
+                                  ESP_OK);
     } else {
         ESP_LOGW(TAG, "quote_round fetch_failed err=%s total=%d",
                  esp_err_to_name(ret), total);
+        publish_quote_fetch_round(force_fetch,
+                                  APP_QUOTE_FETCH_REASON_FETCH_FAILED,
+                                  s_stock_list.count, 0, 0, 0, ret);
     }
 }
 

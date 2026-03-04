@@ -26,6 +26,42 @@ static void on_scheduler_tick_event(const app_event_t *evt, void *ctx)
     ui_manager_heartbeat_feed_scheduler();
 }
 
+static void on_quote_fetch_round_event(const app_event_t *evt, void *ctx)
+{
+    (void)ctx;
+    const bool force_fetch = evt->data.quote_fetch_round.force_fetch;
+
+    switch (evt->data.quote_fetch_round.reason) {
+    case APP_QUOTE_FETCH_REASON_FETCH_DONE:
+        ui_manager_log_stock(LOG_LEVEL_INFO,
+                             "Fetch done f=%d t=%u p=%u e=%u i=%u",
+                             force_fetch ? 1 : 0,
+                             (unsigned)evt->data.quote_fetch_round.total,
+                             (unsigned)evt->data.quote_fetch_round.pushed,
+                             (unsigned)evt->data.quote_fetch_round.skipped_empty,
+                             (unsigned)evt->data.quote_fetch_round.skipped_invalid);
+        break;
+    case APP_QUOTE_FETCH_REASON_FETCH_FAILED:
+        ui_manager_log_stock(LOG_LEVEL_WARN,
+                             "Fetch fail f=%d err=%s t=%u",
+                             force_fetch ? 1 : 0,
+                             esp_err_to_name(evt->data.quote_fetch_round.fetch_err),
+                             (unsigned)evt->data.quote_fetch_round.total);
+        break;
+    case APP_QUOTE_FETCH_REASON_WIFI_DISCONNECTED:
+        ui_manager_log_stock(LOG_LEVEL_WARN, "Fetch skip no-wifi");
+        break;
+    case APP_QUOTE_FETCH_REASON_EMPTY_LIST:
+        ui_manager_log_stock(LOG_LEVEL_WARN, "Fetch skip empty-list");
+        break;
+    case APP_QUOTE_FETCH_REASON_MARKET_CLOSED:
+        ui_manager_log_stock(LOG_LEVEL_INFO, "Fetch skip market-closed");
+        break;
+    default:
+        break;
+    }
+}
+
 /* WiFi 狀態回調：橋接 device_server → ui_manager */
 static void on_wifi_state(wifi_state_t state, const char *ip)
 {
@@ -87,6 +123,7 @@ void app_main(void)
     init_global_resources();
     ESP_ERROR_CHECK(app_event_bus_init());
     ESP_ERROR_CHECK(app_event_subscribe(APP_EVENT_SCHEDULER_TICK, on_scheduler_tick_event, NULL));
+    ESP_ERROR_CHECK(app_event_subscribe(APP_EVENT_QUOTE_FETCH_ROUND, on_quote_fetch_round_event, NULL));
 
     /* Phase 1: 硬體初始化 */
     ESP_LOGI(TAG, "初始化硬體...");
@@ -146,7 +183,6 @@ void app_main(void)
     stock_quote_t      quote;
 
     while (1) {
-        int quote_updates = 0;
         static uint32_t s_last_diag_ms = 0;
 
         /* 只處理 Power 鍵短按：切換螢幕開/關 */
@@ -155,10 +191,6 @@ void app_main(void)
         /* 每個 tick 最多處理一筆報價，避免一次鎖 mutex 多次與 LVGL 競爭 */
         if (xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
             ui_manager_update_quote(&quote);
-            quote_updates++;
-        }
-        if (quote_updates > 0) {
-            ui_manager_log_stock(LOG_LEVEL_INFO, "Updated %d stock(s)", quote_updates);
         }
 
         /* 每 100ms 輪詢一次，同時監控堆疊健康度 */

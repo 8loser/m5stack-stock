@@ -13,10 +13,19 @@ typedef enum {
     APP_EVENT_STOCK_LIST_CHANGED,
     APP_EVENT_QUOTE_UPDATED,
     APP_EVENT_SCHEDULER_TICK,
+    APP_EVENT_QUOTE_FETCH_ROUND,
     APP_EVENT_AI_RESULT_READY,
     APP_EVENT_UI_NAV_REQUEST,
     APP_EVENT_COUNT,
 } app_event_type_t;
+
+typedef enum {
+    APP_QUOTE_FETCH_REASON_FETCH_DONE = 0,
+    APP_QUOTE_FETCH_REASON_FETCH_FAILED,
+    APP_QUOTE_FETCH_REASON_WIFI_DISCONNECTED,
+    APP_QUOTE_FETCH_REASON_EMPTY_LIST,
+    APP_QUOTE_FETCH_REASON_MARKET_CLOSED,
+} app_quote_fetch_reason_t;
 
 typedef struct {
     app_event_type_t type;
@@ -35,6 +44,15 @@ typedef struct {
         struct {
             bool force_fetch;
         } scheduler;
+        struct {
+            bool force_fetch;
+            uint8_t total;
+            uint8_t pushed;
+            uint8_t skipped_empty;
+            uint8_t skipped_invalid;
+            esp_err_t fetch_err;
+            app_quote_fetch_reason_t reason;
+        } quote_fetch_round;
         struct {
             int signal;
         } ai;
