@@ -510,6 +510,7 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
     char gemini_key[128] = {0};
     char claude_key[128] = {0};
     char openai_key[128] = {0};
+    char global_prompt[513] = {0};
     uint8_t provider = (uint8_t)AI_PROVIDER_GEMINI;
     char gemini_masked[24] = {0};
     char claude_masked[24] = {0};
@@ -517,6 +518,7 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
     char e_gemini_masked[64] = {0};
     char e_claude_masked[64] = {0};
     char e_openai_masked[64] = {0};
+    char e_global_prompt[1100] = {0};
 
     storage_ai_load_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key, sizeof(gemini_key));
     if (gemini_key[0] == '\0') {
@@ -524,6 +526,7 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
     }
     storage_ai_load_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key, sizeof(claude_key));
     storage_ai_load_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key, sizeof(openai_key));
+    storage_ai_load_global_prompt(global_prompt, sizeof(global_prompt));
     storage_ai_load_provider(&provider);
     if (provider > (uint8_t)AI_PROVIDER_OPENAI) {
         provider = (uint8_t)AI_PROVIDER_GEMINI;
@@ -535,22 +538,24 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
     json_escape(e_gemini_masked, sizeof(e_gemini_masked), gemini_masked);
     json_escape(e_claude_masked, sizeof(e_claude_masked), claude_masked);
     json_escape(e_openai_masked, sizeof(e_openai_masked), openai_masked);
+    json_escape(e_global_prompt, sizeof(e_global_prompt), global_prompt);
 
-    char *json = malloc(512);
+    char *json = malloc(1800);
     if (!json) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
         return ESP_ERR_NO_MEM;
     }
 
-    int n = snprintf(json, 512,
+    int n = snprintf(json, 1800,
                      "{\"gemini_configured\":%s,\"claude_configured\":%s,\"openai_configured\":%s,"
                      "\"gemini_key_masked\":\"%s\",\"claude_key_masked\":\"%s\",\"openai_key_masked\":\"%s\","
-                     "\"provider\":\"%s\"}",
+                     "\"provider\":\"%s\",\"global_prompt\":\"%s\"}",
                      gemini_key[0] != '\0' ? "true" : "false",
                      claude_key[0] != '\0' ? "true" : "false",
                      openai_key[0] != '\0' ? "true" : "false",
                      e_gemini_masked, e_claude_masked, e_openai_masked,
-                     ai_provider_name_from_id((int)provider));
+                     ai_provider_name_from_id((int)provider),
+                     e_global_prompt);
 
     httpd_resp_set_type(req, "application/json");
     esp_err_t ret = httpd_resp_send(req, json, n);
@@ -569,6 +574,7 @@ static esp_err_t portal_ai_post_handler(httpd_req_t *req)
     char gemini_key[128] = {0};
     char claude_key[128] = {0};
     char openai_key[128] = {0};
+    char global_prompt[1025] = {0};
     char provider_name[16] = {0};
     int selected_provider = -1;
 
@@ -576,6 +582,7 @@ static esp_err_t portal_ai_post_handler(httpd_req_t *req)
     bool has_gemini = get_form_value(body, "gemini_key", gemini_key, sizeof(gemini_key));
     bool has_claude = get_form_value(body, "claude_key", claude_key, sizeof(claude_key));
     bool has_openai = get_form_value(body, "openai_key", openai_key, sizeof(openai_key));
+    bool has_global_prompt = get_form_value(body, "global_prompt", global_prompt, sizeof(global_prompt));
     bool clear_gemini = form_flag_enabled(body, "clear_gemini");
     bool clear_claude = form_flag_enabled(body, "clear_claude");
     bool clear_openai = form_flag_enabled(body, "clear_openai");
@@ -587,6 +594,10 @@ static esp_err_t portal_ai_post_handler(httpd_req_t *req)
     if (!parse_ai_provider(provider_name, &selected_provider)) {
         free(body);
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"invalid_provider\"}");
+    }
+    if (has_global_prompt && strlen(global_prompt) > 300) {
+        free(body);
+        return send_json_response(req, 400, "{\"ok\":false,\"error\":\"prompt_too_long\"}");
     }
     free(body);
 
@@ -628,11 +639,16 @@ static esp_err_t portal_ai_post_handler(httpd_req_t *req)
     if (storage_ai_save_provider((uint8_t)selected_provider) != ESP_OK) {
         return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed_provider\"}");
     }
+    if (has_global_prompt && storage_ai_save_global_prompt(global_prompt) != ESP_OK) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed_prompt\"}");
+    }
 
-    char json[192] = {0};
+    char json[224] = {0};
     snprintf(json, sizeof(json),
-             "{\"ok\":true,\"provider\":\"%s\",\"cleared\":{\"gemini\":%s,\"claude\":%s,\"openai\":%s}}",
+             "{\"ok\":true,\"provider\":\"%s\",\"global_prompt_updated\":%s,"
+             "\"cleared\":{\"gemini\":%s,\"claude\":%s,\"openai\":%s}}",
              ai_provider_name_from_id(selected_provider),
+             has_global_prompt ? "true" : "false",
              clear_gemini ? "true" : "false",
              clear_claude ? "true" : "false",
              clear_openai ? "true" : "false");

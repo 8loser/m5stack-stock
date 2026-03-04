@@ -481,6 +481,40 @@ esp_err_t storage_ai_clear_legacy_key(void)
     return ret;
 }
 
+esp_err_t storage_ai_save_global_prompt(const char *prompt)
+{
+    if (!prompt) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    ret = nvs_set_str(h, "global_prompt", prompt);
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_ai_load_global_prompt(char *prompt, size_t size)
+{
+    if (!prompt || size == 0) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READONLY, &h);
+    if (ret != ESP_OK) {
+        prompt[0] = '\0';
+        return ESP_OK;
+    }
+
+    ret = nvs_get_str(h, "global_prompt", prompt, &size);
+    if (ret != ESP_OK) {
+        prompt[0] = '\0';
+        ret = ESP_OK;
+    }
+    nvs_close(h);
+    return ret;
+}
+
 /* -------- Telegram -------- */
 
 esp_err_t storage_tg_save_enabled(bool enabled)

@@ -220,6 +220,10 @@
           <button type="button" class="secondary" onclick="clearAiProvider('openai')">Clear OpenAI Key</button>
         </div>
 
+        <label>Global Prompt</label>
+        <textarea id="ai_global_prompt" maxlength="100" placeholder="輸入通用分析 prompt（約 100 中文字，最多 300 bytes）"></textarea>
+        <div class="hint">通用 prompt 會儲存在裝置中，供後續分析流程使用。</div>
+
         <div class="hint">Leave blank to keep existing key. Only providers with non-empty key will be used.</div>
         <button type="submit">Save AI Settings</button>
         <div class="hint">修改後需按 Save AI Settings 才會記錄到裝置。</div>
@@ -351,6 +355,17 @@
         not_found: "清單內找不到此代號",
         invalid_threshold: "門檻需為 0..99.99 的數字",
         prompt_too_long: "AI prompt 最多 512 bytes"
+      };
+      return m[code] || ("Error: " + (code || "unknown"));
+    }
+
+    function aiErr(code) {
+      var m = {
+        prompt_too_long: "Global prompt 最多 300 bytes（約 100 中文字）",
+        missing_provider: "缺少 provider",
+        invalid_provider: "provider 無效",
+        conflict_clear_and_set: "不可同時清除與設定同一 provider key",
+        save_failed_prompt: "儲存 global prompt 失敗"
       };
       return m[code] || ("Error: " + (code || "unknown"));
     }
@@ -820,6 +835,7 @@
           gemini.placeholder = c.gemini_key_masked || "";
           claude.placeholder = c.claude_key_masked || "";
           openai.placeholder = c.openai_key_masked || "";
+          document.getElementById("ai_global_prompt").value = c.global_prompt || "";
           setAiProviderSelection((c && c.provider) ? c.provider : "gemini");
         })
         .catch(function () {});
@@ -905,10 +921,12 @@
       var gemini = document.getElementById("gemini_key").value || "";
       var claude = document.getElementById("claude_key").value || "";
       var openai = document.getElementById("openai_key").value || "";
+      var globalPrompt = document.getElementById("ai_global_prompt").value || "";
       var body = "provider=" + encodeURIComponent(provider) +
                  "&gemini_key=" + encodeURIComponent(gemini) +
                  "&claude_key=" + encodeURIComponent(claude) +
-                 "&openai_key=" + encodeURIComponent(openai);
+                 "&openai_key=" + encodeURIComponent(openai) +
+                 "&global_prompt=" + encodeURIComponent(globalPrompt);
       fetch("/ai", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -919,7 +937,7 @@
         })
         .then(function (x) {
           if (!x.ok || !x.body.ok) {
-            setAiMsg("Save failed: " + ((x.body && x.body.error) || "unknown"), false);
+            setAiMsg("Save failed: " + aiErr((x.body && x.body.error) || "unknown"), false);
             return;
           }
           setAiMsg("AI settings saved", true);
