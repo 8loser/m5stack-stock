@@ -11,8 +11,8 @@
 #define HEARTBEAT_COLOR_ON lv_color_hex(0x00C4CF)
 #define HEARTBEAT_COLOR_OFF lv_color_hex(0x00C4CF)
 #define HEARTBEAT_COLOR_ALERT lv_color_hex(0x00C4CF)
-#define HEARTBEAT_EMOJI "♡"
-#define HEARTBEAT_EMOJI_CODEPOINT 0x2661U
+#define HEARTBEAT_EMOJI_HOLLOW "♡"
+#define HEARTBEAT_EMOJI_SOLID "♥"
 
 /* 狀態列共用（所有頁面皆可見）*/
 static lv_obj_t *s_bar        = NULL;
@@ -193,16 +193,20 @@ static void heartbeat_update_cb(lv_timer_t *t)
         return;
     }
 
-    lv_label_set_text(s_heartbeat_lbl, HEARTBEAT_EMOJI);
-
     uint32_t phase_ms = lv_tick_get() % 1000U;
     bool beat_on = (phase_ms >= 180U);
+
+    lv_label_set_text(
+        s_heartbeat_lbl,
+        beat_on ? HEARTBEAT_EMOJI_SOLID : HEARTBEAT_EMOJI_HOLLOW
+    );
+
     lv_obj_set_style_text_color(
         s_heartbeat_lbl,
         beat_on ? HEARTBEAT_COLOR_ON : HEARTBEAT_COLOR_OFF,
         0
     );
-    lv_obj_set_style_text_opa(s_heartbeat_lbl, beat_on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_text_opa(s_heartbeat_lbl, LV_OPA_COVER, 0);
 }
 
 static void status_update_cb(lv_timer_t *t)
@@ -242,7 +246,7 @@ void status_bar_create_on(lv_obj_t *parent)
     lv_obj_align(s_heartbeat_lbl, LV_ALIGN_LEFT_MID, EDGE_PADDING, 0);
     lv_obj_set_size(s_heartbeat_lbl, HEARTBEAT_LABEL_W, HEARTBEAT_LABEL_H);
     lv_label_set_long_mode(s_heartbeat_lbl, LV_LABEL_LONG_CLIP);
-    lv_label_set_text(s_heartbeat_lbl, HEARTBEAT_EMOJI);
+    lv_label_set_text(s_heartbeat_lbl, HEARTBEAT_EMOJI_HOLLOW);
     lv_obj_set_style_text_color(s_heartbeat_lbl, HEARTBEAT_COLOR_ON, 0);
     lv_obj_set_style_text_font(s_heartbeat_lbl, &lv_font_noto_tc_14, 0);
     lv_obj_set_style_text_align(s_heartbeat_lbl, LV_TEXT_ALIGN_CENTER, 0);
