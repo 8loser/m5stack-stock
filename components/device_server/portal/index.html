@@ -68,9 +68,65 @@
     .menu-btn.active { background: #0b7; color: #fff; border-color: #0b7; }
     .section-card { display: none; }
     .section-card.active { display: block; }
+    .init-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.94);
+      padding: 16px;
+    }
+    .init-overlay.loading,
+    .init-overlay.timeout_error { display: flex; }
+    .init-loading,
+    .init-timeout-panel {
+      width: min(420px, 100%);
+      border-radius: 12px;
+      border: 1px solid #d6dde5;
+      background: #fff;
+      padding: 16px;
+      text-align: center;
+      box-shadow: 0 6px 22px rgba(0, 0, 0, 0.1);
+    }
+    .init-timeout-panel { display: none; border-color: #e2b5bd; }
+    .init-overlay.timeout_error .init-timeout-panel { display: block; }
+    .init-overlay.timeout_error .init-loading { display: none; }
+    .init-loading-title,
+    .init-timeout-title { margin: 0 0 6px; font-size: 18px; font-weight: 700; color: #233; }
+    .init-loading-text,
+    .init-timeout-text { margin: 0; color: #4a5968; font-size: 14px; }
+    .init-spinner {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 3px solid #d6dde5;
+      border-top-color: #0b7;
+      margin: 0 auto 10px;
+      animation: spin 0.9s linear infinite;
+    }
+    .init-timeout-panel button { margin-top: 12px; background: #1f78d1; }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
+  <div id="init_overlay" class="init-overlay hidden" aria-live="polite">
+    <div class="init-loading">
+      <div class="init-spinner"></div>
+      <p class="init-loading-title">Initializing Portal</p>
+      <p class="init-loading-text">Loading WiFi, AI, Telegram, and stock settings...</p>
+    </div>
+    <div class="init-timeout-panel">
+      <p class="init-timeout-title">Initialization Timed Out</p>
+      <p class="init-timeout-text">Network may be slow or unavailable. Please retry.</p>
+      <button type="button" id="init_retry_btn">Retry</button>
+    </div>
+  </div>
+
   <h2>M5Stack Core2 Portal</h2>
 
   <div class="menu">
@@ -159,11 +215,70 @@
   </div>
 
   <script>
+    var PORTAL_INIT_TIMEOUT_MS = 10000;
+    var s_init_generation = 0;
+    var s_init_timeout_timer = 0;
+
     var s_saved_ssids = [];
     var s_stock_items = {};
     var s_stock_editing_symbol = "";
 
-    function showTab(tab) {
+    function setInitOverlayState(state) {
+      var overlay = document.getElementById("init_overlay");
+      if (!overlay) return;
+      if (state !== "loading" && state !== "timeout_error") {
+        overlay.className = "init-overlay hidden";
+        return;
+      }
+      overlay.className = "init-overlay " + state;
+    }
+
+    function is_stale_generation(generation) {
+      return typeof generation === "number" && generation !== s_init_generation;
+    }
+
+    function beginBootstrapInit() {
+      var generation = ++s_init_generation;
+      var pending = 0;
+      var timed_out = false;
+      var tasks = [
+        function () { return loadScan(generation); },
+        function () { return loadAiConfig(generation); },
+        function () { return loadTelegram(generation); },
+        function () { return loadSavedAps(generation); },
+        function () { return loadStocks(generation); }
+      ];
+
+      if (s_init_timeout_timer) {
+        clearTimeout(s_init_timeout_timer);
+        s_init_timeout_timer = 0;
+      }
+
+      setInitOverlayState("loading");
+      showTab("wifi", true);
+      pending = tasks.length;
+      s_init_timeout_timer = setTimeout(function () {
+        if (generation !== s_init_generation) return;
+        timed_out = true;
+        setInitOverlayState("timeout_error");
+      }, PORTAL_INIT_TIMEOUT_MS);
+
+      tasks.forEach(function (task) {
+        Promise.resolve()
+          .then(task)
+          .catch(function () {})
+          .finally(function () {
+            if (generation !== s_init_generation) return;
+            pending -= 1;
+            if (pending > 0 || timed_out) return;
+            clearTimeout(s_init_timeout_timer);
+            s_init_timeout_timer = 0;
+            setInitOverlayState("hidden");
+          });
+      });
+    }
+
+    function showTab(tab, skip_auto_load) {
       var ids = ["wifi", "ai", "telegram", "stocks"];
       ids.forEach(function (x) {
         var card = document.getElementById("card_" + x);
@@ -171,6 +286,7 @@
         if (card) card.className = "card section-card" + (x === tab ? " active" : "");
         if (btn) btn.className = "menu-btn" + (x === tab ? " active" : "");
       });
+      if (skip_auto_load) return;
       if (tab === "stocks") loadStocks();
       if (tab === "wifi") loadSavedAps();
       if (tab === "telegram") loadTelegram();
@@ -203,10 +319,11 @@
       el.className = ok ? "ok" : "err";
     }
 
-    function loadTelegram() {
-      fetch("/telegram")
+    function loadTelegram(generation) {
+      return fetch("/telegram")
         .then(function (r) { return r.json(); })
         .then(function (c) {
+          if (is_stale_generation(generation)) return;
           var enabled = !!c.enabled;
           var chat = c.chat_id || "";
           var masked = c.token_masked || "";
@@ -216,6 +333,7 @@
           document.getElementById("tg_bot_token").placeholder = masked || "123456789:AA...";
         })
         .catch(function () {
+          if (is_stale_generation(generation)) return;
           setTelegramMsg("Load telegram config failed", false);
         });
     }
@@ -486,10 +604,11 @@
         });
     }
 
-    function loadStocks() {
-      fetch("/stocks")
+    function loadStocks(generation) {
+      return fetch("/stocks")
         .then(function (r) { return r.json(); })
         .then(function (d) {
+          if (is_stale_generation(generation)) return;
           s_stock_items = {};
           if (!d.items || !d.items.length) {
             document.getElementById("stocks_list").innerHTML = "<div class='hint'>No stocks configured</div>";
@@ -509,6 +628,7 @@
           renderStocksList();
         })
         .catch(function () {
+          if (is_stale_generation(generation)) return;
           document.getElementById("stocks_list").innerHTML = "<div class='err'>Load failed</div>";
         });
     }
@@ -568,10 +688,11 @@
         });
     }
 
-    function loadSavedAps() {
-      fetch("/saved_aps")
+    function loadSavedAps(generation) {
+      return fetch("/saved_aps")
         .then(function (r) { return r.json(); })
         .then(function (a) {
+          if (is_stale_generation(generation)) return;
           s_saved_ssids = (a || []).map(function (x) { return x.ssid || ""; }).filter(function (x) { return x.length > 0; });
           var box = document.getElementById("saved_aps_list");
           if (!box) return;
@@ -588,9 +709,48 @@
           box.innerHTML = h;
         })
         .catch(function () {
+          if (is_stale_generation(generation)) return;
           var box = document.getElementById("saved_aps_list");
           if (box) box.innerHTML = "<div class='err'>Load failed</div>";
         });
+    }
+
+    function loadScan(generation) {
+      return fetch("/scan")
+        .then(function (r) { return r.json(); })
+        .then(function (a) {
+          if (is_stale_generation(generation)) return;
+          var s = document.getElementById("ss");
+          s.options.length = 0;
+          s.add(new Option("-- Select AP --", ""));
+          a.forEach(function (x) {
+            var saved = s_saved_ssids.indexOf(x.ssid) >= 0;
+            var o = new Option();
+            o.textContent = x.ssid + (saved ? " [Saved]" : "") + "  (" + x.rssi + "dBm)";
+            o.value = x.ssid;
+            s.add(o);
+          });
+          s.add(new Option("Other (manual)", "__manual__"));
+        })
+        .catch(function () {
+          if (is_stale_generation(generation)) return;
+          var s = document.getElementById("ss");
+          s.options.length = 0;
+          s.add(new Option("Scan failed", "__manual__"));
+          document.getElementById("m").style.display = "block";
+        });
+    }
+
+    function loadAiConfig(generation) {
+      return fetch("/ai")
+        .then(function (r) { return r.json(); })
+        .then(function (c) {
+          if (is_stale_generation(generation)) return;
+          document.getElementById("gemini_key").value = c.gemini_key || "";
+          document.getElementById("claude_key").value = c.claude_key || "";
+          document.getElementById("openai_key").value = c.openai_key || "";
+        })
+        .catch(function () {});
     }
 
     function removeSavedAp(ssid) {
@@ -614,42 +774,8 @@
       document.getElementById("m").style.display = (s.value === "__manual__") ? "block" : "none";
     }
 
-    fetch("/scan")
-      .then(function (r) { return r.json(); })
-      .then(function (a) {
-        var s = document.getElementById("ss");
-        s.options.length = 0;
-        s.add(new Option("-- Select AP --", ""));
-        a.forEach(function (x) {
-          var saved = s_saved_ssids.indexOf(x.ssid) >= 0;
-          var o = new Option();
-          o.textContent = x.ssid + (saved ? " [Saved]" : "") + "  (" + x.rssi + "dBm)";
-          o.value = x.ssid;
-          s.add(o);
-        });
-        s.add(new Option("Other (manual)", "__manual__"));
-      })
-      .catch(function () {
-        var s = document.getElementById("ss");
-        s.options.length = 0;
-        s.add(new Option("Scan failed", "__manual__"));
-        document.getElementById("m").style.display = "block";
-      });
-
-    fetch("/ai")
-      .then(function (r) { return r.json(); })
-      .then(function (c) {
-        document.getElementById("gemini_key").value = c.gemini_key || "";
-        document.getElementById("claude_key").value = c.claude_key || "";
-        document.getElementById("openai_key").value = c.openai_key || "";
-      })
-      .catch(function () {});
-
-    loadTelegram();
-
-    showTab("wifi");
-    loadSavedAps();
-    loadStocks();
+    document.getElementById("init_retry_btn").addEventListener("click", beginBootstrapInit);
+    beginBootstrapInit();
   </script>
 </body>
 </html>
