@@ -5,7 +5,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
-#include <stdio.h>
 
 static const char *TAG = "ai_provider";
 
@@ -22,26 +21,6 @@ static const ai_provider_ops_t *s_providers[] = {
 
 static ai_provider_type_t s_current_type = AI_PROVIDER_GEMINI;
 static QueueHandle_t      s_result_queue = NULL;
-
-/* 預設 Prompt 模板 */
-static const char *DEFAULT_PROMPT_TEMPLATE =
-    "你是台灣股市分析師。請分析以下股票資訊，給出買入/賣出/觀望建議：\n"
-    "股票：%s (%s)\n"
-    "現價：%.2f 元，漲跌：%.2f%%\n"
-    "今日區間：%.2f - %.2f 元，成交量：%ld 張\n"
-    "\n請以 JSON 格式回應：\n"
-    "{\"signal\": \"buy|sell|hold\", \"confidence\": 0-100, "
-    "\"analysis\": \"說明（繁體中文，100字以內）\"}";
-
-static void ai_provider_build_prompt(const stock_context_t *ctx,
-                                     char *out, size_t out_size)
-{
-    snprintf(out, out_size, DEFAULT_PROMPT_TEMPLATE,
-             ctx->name, ctx->symbol,
-             ctx->current_price, ctx->change_percent,
-             ctx->low_price, ctx->high_price,
-             ctx->volume);
-}
 
 static stock_context_t quote_to_context(const stock_quote_t *q)
 {
@@ -143,11 +122,9 @@ static void analyze_task(void *arg)
 {
     analyze_task_args_t *args = (analyze_task_args_t *)arg;
     ai_analysis_result_t result = {0};
+    const char *prompt = "";
 
     stock_context_t ctx = quote_to_context(&args->quote);
-
-    char prompt[1536];
-    ai_provider_build_prompt(&ctx, prompt, sizeof(prompt));
 
     char active_key[128] = {0};
     strncpy(active_key, args->api_key, sizeof(active_key) - 1);
@@ -185,10 +162,8 @@ esp_err_t ai_provider_analyze_sync(const stock_quote_t *quote,
                                     const char *api_key,
                                     ai_analysis_result_t *result)
 {
+    const char *prompt = "";
     stock_context_t ctx = quote_to_context(quote);
-
-    char prompt[1536];
-    ai_provider_build_prompt(&ctx, prompt, sizeof(prompt));
 
     char active_key[128] = {0};
     if (api_key && strlen(api_key) > 0) {
