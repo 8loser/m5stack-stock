@@ -91,6 +91,8 @@ extern const uint8_t tab_stocks_js_start[] asm("_binary_tab_stocks_js_start");
 extern const uint8_t tab_stocks_js_end[] asm("_binary_tab_stocks_js_end");
 extern const uint8_t tab_at_time_js_start[] asm("_binary_tab_at_time_js_start");
 extern const uint8_t tab_at_time_js_end[] asm("_binary_tab_at_time_js_end");
+extern const uint8_t tab_interval_js_start[] asm("_binary_tab_interval_js_start");
+extern const uint8_t tab_interval_js_end[] asm("_binary_tab_interval_js_end");
 
 static void url_decode(char *dst, size_t dst_len, const char *src)
 {
@@ -1133,6 +1135,12 @@ static esp_err_t portal_tab_at_time_js_get_handler(httpd_req_t *req)
                                "application/javascript; charset=utf-8");
 }
 
+static esp_err_t portal_tab_interval_js_get_handler(httpd_req_t *req)
+{
+    return send_embedded_asset(req, tab_interval_js_start, tab_interval_js_end,
+                               "application/javascript; charset=utf-8");
+}
+
 static esp_err_t portal_wifi_post_handler(httpd_req_t *req)
 {
     if (!req || req->content_len <= 0 || req->content_len > PORTAL_BODY_MAX_LEN) {
@@ -1284,6 +1292,13 @@ static esp_err_t start_portal_http_server(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t tab_interval_js_uri = {
+        .uri = "/assets/tab_interval.js",
+        .method = HTTP_GET,
+        .handler = portal_tab_interval_js_get_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_uri_t scan_uri = {
         .uri = "/scan",
         .method = HTTP_GET,
@@ -1349,6 +1364,7 @@ static esp_err_t start_portal_http_server(void)
     httpd_register_uri_handler(s_httpd, &tab_telegram_js_uri);
     httpd_register_uri_handler(s_httpd, &tab_stocks_js_uri);
     httpd_register_uri_handler(s_httpd, &tab_at_time_js_uri);
+    httpd_register_uri_handler(s_httpd, &tab_interval_js_uri);
     httpd_register_uri_handler(s_httpd, &scan_uri);
     httpd_register_uri_handler(s_httpd, &ai_get_uri);
     httpd_register_uri_handler(s_httpd, &ai_post_uri);

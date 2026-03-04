@@ -28,6 +28,7 @@
     <button type="button" id="tab_telegram" class="menu-btn" onclick="showTab('telegram')">Telegram</button>
     <button type="button" id="tab_stocks" class="menu-btn" onclick="showTab('stocks')">Stocks</button>
     <button type="button" id="tab_at_time" class="menu-btn" onclick="showTab('at_time')">At Time</button>
+    <button type="button" id="tab_interval" class="menu-btn" onclick="showTab('interval')">Interval</button>
   </div>
 
   <div class="grid">
@@ -136,12 +137,24 @@
 
     <div id="card_at_time" class="card section-card">
       <h3>At Time AI Trigger</h3>
-      <div class="at-time-warning">Backend not implemented yet. This page is UI-only for now.</div>
+      <div class="at-time-warning">在指定時間觸發 AI：系統會組合「通用 Prompt + 這筆自定 Prompt」，並透過 Telegram 發送給目標使用者。</div>
       <button type="button" onclick="addAtTimeRow()">Add Time</button>
       <div id="at_time_list" class="at-time-list"></div>
       <button type="button" class="btn-disabled" disabled>Save At Time Settings</button>
+      <div class="hint">流程：到點觸發 AI 產生內容 -> 合併通用/自定 Prompt -> Telegram 推送給使用者。</div>
       <div class="hint">目前僅前端示意，尚未寫入裝置。</div>
       <div id="at_time_msg" class="hint"></div>
+    </div>
+
+    <div id="card_interval" class="card section-card">
+      <h3>Interval AI Trigger</h3>
+      <div class="at-time-warning">每隔固定時間觸發 AI：系統會組合「通用 Prompt + 這筆自定 Prompt」，並透過 Telegram 發送給使用者。</div>
+      <button type="button" onclick="addIntervalRow()">Add Interval</button>
+      <div id="interval_list" class="at-time-list"></div>
+      <button type="button" class="btn-disabled" disabled>Save Interval Settings</button>
+      <div class="hint">流程：間隔到期觸發 AI 產生內容 -> 合併通用/自定 Prompt -> Telegram 推送給使用者。</div>
+      <div class="hint">目前僅前端示意，後端尚未實作。</div>
+      <div id="interval_msg" class="hint"></div>
     </div>
   </div>
 
@@ -151,5 +164,6 @@
   <script src="/assets/tab_telegram.js"></script>
   <script src="/assets/tab_stocks.js"></script>
   <script src="/assets/tab_at_time.js"></script>
+  <script src="/assets/tab_interval.js"></script>
 </body>
 </html>

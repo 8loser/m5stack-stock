@@ -7,13 +7,16 @@ var s_stock_items = {};
 var s_stock_editing_symbol = "";
 var s_at_time_items = [];
 var s_at_time_next_id = 1;
+var s_interval_items = [];
+var s_interval_next_id = 1;
 
 var s_tab_loaded = {
   wifi: false,
   ai: false,
   telegram: false,
   stocks: false,
-  at_time: false
+  at_time: false,
+  interval: false
 };
 
 var s_tab_loading_promise = {
@@ -21,7 +24,8 @@ var s_tab_loading_promise = {
   ai: null,
   telegram: null,
   stocks: null,
-  at_time: null
+  at_time: null,
+  interval: null
 };
 
 function setInitOverlayState(state) {
@@ -100,6 +104,13 @@ function setAtTimeMsg(msg, ok) {
   el.className = ok ? "ok" : "err";
 }
 
+function setIntervalMsg(msg, ok) {
+  var el = document.getElementById("interval_msg");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.className = ok ? "ok" : "err";
+}
+
 function escHtml(v) {
   return String(v || "")
     .replace(/&/g, "&amp;")
@@ -116,6 +127,10 @@ function loadTabData(tab, generation) {
   if (tab === "stocks") return loadStocks(generation);
   if (tab === "at_time") {
     initAtTimePage();
+    return Promise.resolve();
+  }
+  if (tab === "interval") {
+    initIntervalPage();
     return Promise.resolve();
   }
   return Promise.reject(new Error("unknown tab"));
@@ -145,7 +160,7 @@ function ensureTabLoaded(tab, generation, force_reload) {
 }
 
 function showTab(tab, skip_auto_load) {
-  var ids = ["wifi", "ai", "telegram", "stocks", "at_time"];
+  var ids = ["wifi", "ai", "telegram", "stocks", "at_time", "interval"];
   ids.forEach(function (x) {
     var card = document.getElementById("card_" + x);
     var btn = document.getElementById("tab_" + x);
