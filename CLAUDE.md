@@ -79,7 +79,7 @@ scheduler Timer（ai_ivl）
 | Core2 色彩校正 | 此面板在目前驅動下標準 RGB hex 可能偏色；UI 新增/調整顏色請先用 `components/ui/screens/screen_dashboard.c` 的 `COLOR_UP/DOWN/FLAT` 實機校正值做基準，再上板確認 |
 | LVGL event callback 重用 | 不可傳 dummy `lv_event_t{}`（code=0 = `LV_EVENT_ALL`，CLICKED check 失敗）；改抽 helper function 直接呼叫 |
 | FT6336U 底部虛擬按鍵 | FT6336U 韌體固定回報值；實測 y=270–279（x: A≈95, B≈190, C≈272–290）；`TOUCH_BTN_Y_MIN=LCD_HEIGHT`（240）攔截，不傳給 LVGL |
-| Portal 前端維護位置 | 改 `components/portal_backend/portal/index.html`；C 端透過 `EMBED_TXTFILES` 內嵌，不再手寫長 HTML 字串 |
+| Portal 前端維護位置 | Portal 前端已拆為多檔：`components/portal_backend/portal/index.html` + `portal.css` + `portal_bootstrap.js` + `tab_*.js`；C 端透過 `EMBED_TXTFILES` 內嵌，不再手寫長 HTML/JS 字串 |
 
 ## NVS 命名空間
 

@@ -128,11 +128,20 @@ Portal 啟動後會提供：
 - 密碼：`core2wifi`
 - URL：`http://192.168.4.1`
 
-Web Portal 分成 3 個分頁：
+Web Portal 分成 5 個分頁：
 
 - `WiFi`：掃描 AP、提交 SSID/密碼
 - `AI Provider`：設定 Gemini / Claude / OpenAI API Key 與 Prompt Template
+- `Telegram`：設定 Bot Token / Chat ID，並可送測試訊息
 - `Stocks`：管理股票清單（TWSE only，最多 15 檔）
+- `At Time`：定時 AI 觸發 UI（目前為前端示意，尚未寫入裝置）
+
+Portal 前端檔案位置：
+
+- `components/portal_backend/portal/index.html`：頁面結構
+- `components/portal_backend/portal/portal.css`：樣式
+- `components/portal_backend/portal/portal_bootstrap.js`：初始化與 tab lazy-load
+- `components/portal_backend/portal/tab_*.js`：各分頁邏輯（WiFi/AI/Telegram/Stocks/At Time）
 
 Stocks API 驗證規則：
 
