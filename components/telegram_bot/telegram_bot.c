@@ -2,12 +2,13 @@
 #include "app_config.h"
 #include "storage.h"
 #include "device_server.h"
-#include "twse_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "cJSON.h"
 #include <ctype.h>
@@ -22,6 +23,7 @@
 #define TG_HTTP_BUF_INIT_SIZE 512
 #define TG_TOKEN_MAX_LEN 160
 #define TG_CHAT_ID_MAX_LEN 40
+#define TG_INFO_STALE_SEC 1800
 
 static const char *TAG = "telegram_bot";
 
@@ -35,6 +37,17 @@ typedef struct {
 static TaskHandle_t s_task_handle = NULL;
 static bool s_running = false;
 static int64_t s_next_update_id = 0;
+
+typedef struct {
+    bool has_quote;
+    stock_quote_t quote;
+    int64_t updated_at_s;
+} tg_quote_cache_entry_t;
+
+static tg_quote_cache_entry_t s_quote_cache[MAX_STOCK_COUNT];
+static char s_last_quote_trade_time[sizeof(((stock_quote_t *)0)->trade_time)];
+static int64_t s_last_quote_update_s = 0;
+static SemaphoreHandle_t s_cache_mutex = NULL;
 
 static size_t url_encode_component(const char *src, char *dst, size_t dst_size)
 {
@@ -167,30 +180,49 @@ static esp_err_t tg_send_message(const char *token, const char *chat_id, const c
     }
 
     char encoded_chat[96] = {0};
-    char encoded_text[384] = {0};
-    char post_data[560] = {0};
     char url[320] = {0};
+    char *encoded_text = NULL;
+    char *post_data = NULL;
     char *resp = NULL;
     int status_code = 0;
+    esp_err_t ret = ESP_FAIL;
 
     url_encode_component(chat_id, encoded_chat, sizeof(encoded_chat));
-    url_encode_component(text, encoded_text, sizeof(encoded_text));
-    snprintf(post_data, sizeof(post_data), "chat_id=%s&text=%s", encoded_chat, encoded_text);
+    size_t text_len = strlen(text);
+    size_t encoded_text_cap = (text_len * 3U) + 1U;
+    encoded_text = malloc(encoded_text_cap);
+    if (!encoded_text) {
+        return ESP_ERR_NO_MEM;
+    }
+    url_encode_component(text, encoded_text, encoded_text_cap);
+
+    size_t post_data_len = strlen("chat_id=&text=") + strlen(encoded_chat) + strlen(encoded_text) + 1U;
+    post_data = malloc(post_data_len);
+    if (!post_data) {
+        ret = ESP_ERR_NO_MEM;
+        goto cleanup;
+    }
+    snprintf(post_data, post_data_len, "chat_id=%s&text=%s", encoded_chat, encoded_text);
     snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/sendMessage", token);
 
-    esp_err_t ret = tg_http_call(url,
-                                 HTTP_METHOD_POST,
-                                 "application/x-www-form-urlencoded",
-                                 post_data,
-                                 &resp,
-                                 &status_code);
+    ret = tg_http_call(url,
+                       HTTP_METHOD_POST,
+                       "application/x-www-form-urlencoded",
+                       post_data,
+                       &resp,
+                       &status_code);
     if (ret != ESP_OK) {
-        return ret;
+        goto cleanup;
     }
 
     bool ok = (status_code == 200 && strstr(resp, "\"ok\":true") != NULL);
+    ret = ok ? ESP_OK : ESP_FAIL;
+
+cleanup:
     free(resp);
-    return ok ? ESP_OK : ESP_FAIL;
+    free(post_data);
+    free(encoded_text);
+    return ret;
 }
 
 static void append_fmt(char *buf, size_t buf_size, size_t *used, const char *fmt, ...)
@@ -224,6 +256,107 @@ static bool is_command(const char *text, const char *cmd)
     return text[n] == '\0' || isspace((unsigned char)text[n]) || text[n] == '@';
 }
 
+static int64_t now_sec(void)
+{
+    return esp_timer_get_time() / 1000000LL;
+}
+
+static tg_quote_cache_entry_t *find_cache_entry_locked(const char *symbol, bool create)
+{
+    tg_quote_cache_entry_t *empty = NULL;
+
+    for (int i = 0; i < MAX_STOCK_COUNT; i++) {
+        if (!s_quote_cache[i].has_quote) {
+            if (!empty) {
+                empty = &s_quote_cache[i];
+            }
+            continue;
+        }
+        if (strncmp(s_quote_cache[i].quote.symbol, symbol, sizeof(s_quote_cache[i].quote.symbol)) == 0) {
+            return &s_quote_cache[i];
+        }
+    }
+
+    if (!create || !empty) {
+        return NULL;
+    }
+    memset(empty, 0, sizeof(*empty));
+    return empty;
+}
+
+static bool cache_get_quote_snapshot(const char *symbol, stock_quote_t *out_quote, int64_t *out_updated_at_s)
+{
+    bool found = false;
+
+    if (!symbol || !out_quote || !out_updated_at_s || !s_cache_mutex) {
+        return false;
+    }
+
+    if (xSemaphoreTake(s_cache_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return false;
+    }
+    tg_quote_cache_entry_t *entry = find_cache_entry_locked(symbol, false);
+    if (entry) {
+        *out_quote = entry->quote;
+        *out_updated_at_s = entry->updated_at_s;
+        found = true;
+    }
+    xSemaphoreGive(s_cache_mutex);
+    return found;
+}
+
+static bool cache_get_last_update(char *trade_time, size_t trade_time_size, int64_t *out_last_update_s)
+{
+    bool available = false;
+
+    if (!trade_time || trade_time_size == 0 || !out_last_update_s || !s_cache_mutex) {
+        return false;
+    }
+
+    if (xSemaphoreTake(s_cache_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return false;
+    }
+    *out_last_update_s = s_last_quote_update_s;
+    strlcpy(trade_time, s_last_quote_trade_time, trade_time_size);
+    available = (s_last_quote_update_s > 0);
+    xSemaphoreGive(s_cache_mutex);
+    return available;
+}
+
+esp_err_t telegram_bot_cache_quote(const stock_quote_t *quote)
+{
+    if (!quote || quote->symbol[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_cache_mutex) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_cache_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    tg_quote_cache_entry_t *entry = find_cache_entry_locked(quote->symbol, true);
+    if (!entry) {
+        xSemaphoreGive(s_cache_mutex);
+        return ESP_ERR_NO_MEM;
+    }
+
+    entry->quote = *quote;
+    entry->updated_at_s = now_sec();
+    entry->has_quote = true;
+
+    s_last_quote_update_s = entry->updated_at_s;
+    if (quote->trade_time[0] != '\0') {
+        strlcpy(s_last_quote_trade_time, quote->trade_time, sizeof(s_last_quote_trade_time));
+    } else {
+        s_last_quote_trade_time[0] = '\0';
+    }
+
+    xSemaphoreGive(s_cache_mutex);
+    return ESP_OK;
+}
+
 static void build_info_message(char *out, size_t out_size)
 {
     size_t used = 0;
@@ -231,6 +364,9 @@ static void build_info_message(char *out, size_t out_size)
     const char *ssid = device_server_get_connected_ssid();
     const char *ip = device_server_get_ip();
     stock_list_t stocks = {0};
+    int64_t last_quote_update_s = 0;
+    char last_trade_time[16] = {0};
+    bool has_last_update = false;
 
     if (!out || out_size < 64) {
         return;
@@ -243,6 +379,16 @@ static void build_info_message(char *out, size_t out_size)
     append_fmt(out, out_size, &used, "IP: %s\n\n",
                (ip && ip[0] != '\0') ? ip : "N/A");
 
+    has_last_update = cache_get_last_update(last_trade_time, sizeof(last_trade_time), &last_quote_update_s);
+    if (has_last_update && last_trade_time[0] != '\0') {
+        append_fmt(out, out_size, &used, "Last quote update: %s\n\n", last_trade_time);
+    } else if (has_last_update) {
+        append_fmt(out, out_size, &used, "Last quote update: %llds ago\n\n",
+                   (long long)(now_sec() - last_quote_update_s));
+    } else {
+        append_fmt(out, out_size, &used, "Last quote update: N/A\n\n");
+    }
+
     if (storage_stocks_load(&stocks) != ESP_OK || stocks.count == 0) {
         append_fmt(out, out_size, &used, "Stocks: none");
         return;
@@ -250,49 +396,38 @@ static void build_info_message(char *out, size_t out_size)
 
     append_fmt(out, out_size, &used, "Stocks (%u):\n", (unsigned)stocks.count);
 
-    if (!connected) {
-        for (uint8_t i = 0; i < stocks.count; i++) {
-            append_fmt(out, out_size, &used, "%s: N/A (wifi disconnected)\n", stocks.symbols[i]);
-        }
-        return;
-    }
-
-    stock_quote_t *quotes = calloc(stocks.count, sizeof(stock_quote_t));
-    if (!quotes) {
-        append_fmt(out, out_size, &used, "quote fetch failed: OOM\n");
-        for (uint8_t i = 0; i < stocks.count; i++) {
-            append_fmt(out, out_size, &used, "%s: N/A\n", stocks.symbols[i]);
-        }
-        return;
-    }
-
-    esp_err_t ret = twse_client_fetch((const char (*)[8])stocks.symbols, stocks.count, quotes);
-    if (ret != ESP_OK) {
-        append_fmt(out, out_size, &used, "quote fetch failed: %s\n", esp_err_to_name(ret));
-        for (uint8_t i = 0; i < stocks.count; i++) {
-            append_fmt(out, out_size, &used, "%s: N/A\n", stocks.symbols[i]);
-        }
-        free(quotes);
-        return;
-    }
-
     for (uint8_t i = 0; i < stocks.count; i++) {
         const char *sym = stocks.symbols[i];
-        if (quotes[i].is_valid) {
-            append_fmt(out, out_size, &used, "%s %.2f (%+.2f%%)\n",
-                       sym,
-                       quotes[i].current_price,
-                       quotes[i].change_percent);
-        } else if (quotes[i].is_market_closed) {
-            append_fmt(out, out_size, &used, "%s %.2f (market closed)\n",
-                       sym,
-                       quotes[i].current_price);
-        } else {
-            append_fmt(out, out_size, &used, "%s N/A\n", sym);
+        stock_meta_t meta = {0};
+        const char *name = "N/A";
+        stock_quote_t quote = {0};
+        int64_t updated_at_s = 0;
+        bool stale = false;
+        bool has_quote = cache_get_quote_snapshot(sym, &quote, &updated_at_s);
+        if (storage_stock_meta_load(sym, &meta) == ESP_OK && meta.name[0] != '\0') {
+            name = meta.name;
         }
-    }
 
-    free(quotes);
+        if (!has_quote || (!quote.is_valid && !quote.is_market_closed)) {
+            append_fmt(out, out_size, &used, "%s %s: N/A | updated N/A\n", sym, name);
+            continue;
+        }
+
+        stale = ((now_sec() - updated_at_s) > TG_INFO_STALE_SEC);
+
+        if (quote.is_market_closed) {
+            append_fmt(out, out_size, &used, "%s %s: %.2f (market closed) | updated %s%s\n",
+                       sym, name, quote.current_price,
+                       (quote.trade_time[0] != '\0') ? quote.trade_time : "N/A",
+                       stale ? " (stale)" : "");
+            continue;
+        }
+
+        append_fmt(out, out_size, &used, "%s %s: %.2f (%+.2f%%) | updated %s%s\n",
+                   sym, name, quote.current_price, quote.change_percent,
+                   (quote.trade_time[0] != '\0') ? quote.trade_time : "N/A",
+                   stale ? " (stale)" : "");
+    }
 }
 
 static const char *response_for_command(const char *text, char *scratch, size_t scratch_size)
@@ -398,10 +533,107 @@ static void process_updates(const char *token, const char *allowed_chat_id, cons
     cJSON_Delete(root);
 }
 
+static esp_err_t tg_parse_update_window(const char *json, int64_t *out_max_id, int *out_count)
+{
+    if (!json || !out_max_id || !out_count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *out_max_id = -1;
+    *out_count = 0;
+    cJSON *root = cJSON_Parse(json);
+    if (!root) {
+        return ESP_FAIL;
+    }
+
+    cJSON *ok = cJSON_GetObjectItem(root, "ok");
+    cJSON *result = cJSON_GetObjectItem(root, "result");
+    if (!cJSON_IsTrue(ok) || !cJSON_IsArray(result)) {
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+
+    int n = cJSON_GetArraySize(result);
+    *out_count = n;
+    for (int i = 0; i < n; i++) {
+        cJSON *item = cJSON_GetArrayItem(result, i);
+        if (!cJSON_IsObject(item)) {
+            continue;
+        }
+        cJSON *update_id = cJSON_GetObjectItem(item, "update_id");
+        if (!cJSON_IsNumber(update_id)) {
+            continue;
+        }
+        int64_t id = (int64_t)update_id->valuedouble;
+        if (id > *out_max_id) {
+            *out_max_id = id;
+        }
+    }
+
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+static esp_err_t tg_bootstrap_sync_next_update_id(const char *token)
+{
+    if (!token || token[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int64_t max_update_id = -1;
+    int64_t offset = 0;
+    esp_err_t ret = ESP_OK;
+
+    while (1) {
+        char url[384] = {0};
+        char *resp = NULL;
+        int status_code = 0;
+        int count = 0;
+        int64_t batch_max_update_id = -1;
+
+        snprintf(url, sizeof(url),
+                 "https://api.telegram.org/bot%s/getUpdates?offset=%lld&timeout=0&limit=100",
+                 token,
+                 (long long)offset);
+
+        ret = tg_http_call(url, HTTP_METHOD_GET, NULL, NULL, &resp, &status_code);
+        if (ret != ESP_OK || !resp || status_code != 200) {
+            free(resp);
+            return ESP_FAIL;
+        }
+
+        ret = tg_parse_update_window(resp, &batch_max_update_id, &count);
+        free(resp);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+
+        if (count <= 0) {
+            break;
+        }
+        if (batch_max_update_id > max_update_id) {
+            max_update_id = batch_max_update_id;
+        }
+        if (batch_max_update_id < 0) {
+            break;
+        }
+
+        offset = batch_max_update_id + 1;
+        if (count < 100) {
+            break;
+        }
+    }
+
+    s_next_update_id = (max_update_id >= 0) ? (max_update_id + 1) : offset;
+    ESP_LOGI(TAG, "bootstrap sync done next_update_id=%lld", (long long)s_next_update_id);
+    return ESP_OK;
+}
+
 static void telegram_task(void *arg)
 {
     (void)arg;
     ESP_LOGI(TAG, "telegram bot task started");
+    bool bootstrap_done = false;
 
     while (s_running) {
         bool enabled = false;
@@ -409,31 +641,40 @@ static void telegram_task(void *arg)
         char chat_id[TG_CHAT_ID_MAX_LEN] = {0};
 
         if (storage_tg_load_enabled(&enabled) != ESP_OK || !enabled) {
+            bootstrap_done = false;
+            s_next_update_id = 0;
             vTaskDelay(pdMS_TO_TICKS(3000));
             continue;
         }
         storage_tg_load_bot_token(token, sizeof(token));
         storage_tg_load_chat_id(chat_id, sizeof(chat_id));
         if (token[0] == '\0' || chat_id[0] == '\0') {
+            bootstrap_done = false;
+            s_next_update_id = 0;
             vTaskDelay(pdMS_TO_TICKS(3000));
             continue;
         }
 
         if (!is_wifi_connected()) {
+            bootstrap_done = false;
             vTaskDelay(pdMS_TO_TICKS(2000));
             continue;
         }
 
-        char url[384] = {0};
-        if (s_next_update_id > 0) {
-            snprintf(url, sizeof(url),
-                     "https://api.telegram.org/bot%s/getUpdates?offset=%lld&timeout=20&limit=10",
-                     token, (long long)s_next_update_id);
-        } else {
-            snprintf(url, sizeof(url),
-                     "https://api.telegram.org/bot%s/getUpdates?timeout=20&limit=10",
-                     token);
+        if (!bootstrap_done) {
+            esp_err_t bootstrap_ret = tg_bootstrap_sync_next_update_id(token);
+            if (bootstrap_ret != ESP_OK) {
+                ESP_LOGW(TAG, "bootstrap sync failed: %s", esp_err_to_name(bootstrap_ret));
+                vTaskDelay(pdMS_TO_TICKS(3000));
+                continue;
+            }
+            bootstrap_done = true;
         }
+
+        char url[384] = {0};
+        snprintf(url, sizeof(url),
+                 "https://api.telegram.org/bot%s/getUpdates?offset=%lld&timeout=20&limit=10",
+                 token, (long long)s_next_update_id);
 
         char *resp = NULL;
         int status_code = 0;
@@ -455,6 +696,16 @@ static void telegram_task(void *arg)
 
 esp_err_t telegram_bot_init(void)
 {
+    if (s_cache_mutex == NULL) {
+        s_cache_mutex = xSemaphoreCreateMutex();
+        if (s_cache_mutex == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    memset(s_quote_cache, 0, sizeof(s_quote_cache));
+    memset(s_last_quote_trade_time, 0, sizeof(s_last_quote_trade_time));
+    s_last_quote_update_s = 0;
+    s_next_update_id = 0;
     return ESP_OK;
 }
 

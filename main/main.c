@@ -194,6 +194,10 @@ void app_main(void)
         /* 每個 tick 最多處理一筆報價，避免一次鎖 mutex 多次與 LVGL 競爭 */
         if (xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
             ui_manager_update_quote(&quote);
+            ret = telegram_bot_cache_quote(&quote);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "telegram cache quote failed: %s", esp_err_to_name(ret));
+            }
         }
 
         /* 每 100ms 輪詢一次，同時監控堆疊健康度 */
