@@ -20,6 +20,75 @@ static QueueHandle_t s_queue        = NULL;
 static TaskHandle_t  s_task_handle  = NULL;
 static bool          s_task_running = false;
 
+static const char *extract_symbol_from_ch(const char *ch)
+{
+    static char symbol[8];
+    if (!ch || ch[0] == '\0') return NULL;
+
+    const char *underscore = strchr(ch, '_');
+    if (!underscore || underscore[1] == '\0') return NULL;
+
+    const char *start = underscore + 1;
+    const char *end = strchr(start, '.');
+    if (!end || end <= start) return NULL;
+
+    size_t len = (size_t)(end - start);
+    if (len == 0 || len >= sizeof(symbol)) return NULL;
+
+    memcpy(symbol, start, len);
+    symbol[len] = '\0';
+    return symbol;
+}
+
+static bool parse_first_book_price(cJSON *item, const char *key, float *out_price)
+{
+    if (!item || !key || !out_price) return false;
+    cJSON *j = cJSON_GetObjectItem(item, key);
+    if (!j || !cJSON_IsString(j) || !j->valuestring) return false;
+    if (strcmp(j->valuestring, "-") == 0 || j->valuestring[0] == '\0') return false;
+
+    /* TWSE orderbook format: "64.0000_63.9000_..." */
+    char buf[32] = {0};
+    size_t i = 0;
+    while (j->valuestring[i] != '\0' &&
+           j->valuestring[i] != '_' &&
+           i < sizeof(buf) - 1) {
+        buf[i] = j->valuestring[i];
+        i++;
+    }
+    buf[i] = '\0';
+    if (buf[0] == '\0' || strcmp(buf, "-") == 0) return false;
+
+    *out_price = strtof(buf, NULL);
+    return (*out_price > 0.0f);
+}
+
+static bool has_numeric_string(cJSON *item, const char *key)
+{
+    cJSON *j = cJSON_GetObjectItem(item, key);
+    return (j && cJSON_IsString(j) && j->valuestring &&
+            strcmp(j->valuestring, "-") != 0 && j->valuestring[0] != '\0');
+}
+
+static bool volume_is_zero(cJSON *item, long *out_volume)
+{
+    cJSON *vol = cJSON_GetObjectItem(item, "v");
+    long parsed = 0;
+    bool has_volume = false;
+
+    if (vol && cJSON_IsString(vol) && vol->valuestring &&
+        strcmp(vol->valuestring, "-") != 0 && vol->valuestring[0] != '\0') {
+        parsed = strtol(vol->valuestring, NULL, 10);
+        has_volume = true;
+    } else if (vol && cJSON_IsNumber(vol)) {
+        parsed = (long)vol->valuedouble;
+        has_volume = true;
+    }
+
+    if (out_volume) *out_volume = parsed;
+    return has_volume && (parsed <= 0);
+}
+
 typedef struct {
     const char *code;
     const char *name;
@@ -199,6 +268,7 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 static void parse_stock_item(cJSON *item, const char *symbol, stock_quote_t *q)
 {
     strncpy(q->symbol, symbol, 7);
+    q->symbol[7] = '\0';
     q->is_valid = false;
     q->is_market_closed = false;
     q->has_limit_bounds = false;
@@ -220,21 +290,43 @@ static void parse_stock_item(cJSON *item, const char *symbol, stock_quote_t *q)
 
     /* 現價 z */
     cJSON *price = cJSON_GetObjectItem(item, "z");
-    if (!price || !cJSON_IsString(price) ||
-        strcmp(price->valuestring, "-") == 0) {
-        /* 休市 */
-        q->is_market_closed = true;
-        /* 嘗試讀昨收 */
-        cJSON *yday = cJSON_GetObjectItem(item, "y");
-        if (yday && cJSON_IsString(yday) &&
-            strcmp(yday->valuestring, "-") != 0) {
-            q->current_price = strtof(yday->valuestring, NULL);
-            q->yesterday_close = q->current_price;
-        }
-        return;
+    cJSON *yday_raw = cJSON_GetObjectItem(item, "y");
+    const char *z_raw = (price && cJSON_IsString(price) && price->valuestring) ? price->valuestring : "<null>";
+    const char *y_raw = (yday_raw && cJSON_IsString(yday_raw) && yday_raw->valuestring) ? yday_raw->valuestring : "<null>";
+    bool has_yday = false;
+    if (yday_raw && cJSON_IsString(yday_raw) &&
+        strcmp(yday_raw->valuestring, "-") != 0) {
+        q->yesterday_close = strtof(yday_raw->valuestring, NULL);
+        has_yday = (q->yesterday_close > 0.0f);
     }
 
-    q->current_price = strtof(price->valuestring, NULL);
+    bool has_trade_price = (price && cJSON_IsString(price) &&
+                            strcmp(price->valuestring, "-") != 0);
+    bool has_open = has_numeric_string(item, "o");
+    bool has_high = has_numeric_string(item, "h");
+    bool has_low = has_numeric_string(item, "l");
+    float bid_price = 0.0f;
+    float ask_price = 0.0f;
+    bool has_bid_price = parse_first_book_price(item, "b", &bid_price);
+    bool has_ask_price = parse_first_book_price(item, "a", &ask_price);
+    const char *price_source = "none";
+    long parsed_volume = 0;
+    bool is_zero_volume = volume_is_zero(item, &parsed_volume);
+
+    if (has_trade_price) {
+        q->current_price = strtof(price->valuestring, NULL);
+        price_source = "z";
+    } else if (has_bid_price) {
+        q->current_price = bid_price;
+        price_source = "b";
+    } else if (has_ask_price) {
+        q->current_price = ask_price;
+        price_source = "a";
+    } else if (has_yday) {
+        /* 僅在完全沒有可用價格時才回退昨收。 */
+        q->current_price = q->yesterday_close;
+        price_source = "y";
+    }
 
 #define PARSE_FLOAT(key, field) do { \
     cJSON *_j = cJSON_GetObjectItem(item, key); \
@@ -247,21 +339,47 @@ static void parse_stock_item(cJSON *item, const char *symbol, stock_quote_t *q)
     PARSE_FLOAT("l", low_price);
     PARSE_FLOAT("y", yesterday_close);
 
-    cJSON *vol = cJSON_GetObjectItem(item, "v");
-    if (vol && cJSON_IsString(vol) && strcmp(vol->valuestring, "-") != 0) {
-        q->volume = strtol(vol->valuestring, NULL, 10);
-    }
+    q->volume = parsed_volume;
 
     cJSON *t = cJSON_GetObjectItem(item, "t");
     if (t && cJSON_IsString(t)) {
         strncpy(q->trade_time, t->valuestring, 15);
     }
 
+    bool market_closed_snapshot =
+        is_zero_volume &&
+        !has_trade_price &&
+        !has_open &&
+        !has_high &&
+        !has_low &&
+        !has_bid_price &&
+        !has_ask_price;
+
+    /* 只要有成交價或買/賣盤價，就視為盤中可更新資料。 */
+    if (has_trade_price || has_bid_price || has_ask_price) {
+        q->is_valid = true;
+        q->is_market_closed = false;
+    } else if (market_closed_snapshot && has_yday) {
+        q->is_valid = false;
+        q->is_market_closed = true;
+    } else {
+        q->is_valid = false;
+        q->is_market_closed = false;
+    }
+
     q->change_amount  = q->current_price - q->yesterday_close;
     q->change_percent = (q->yesterday_close > 0.0f)
                         ? (q->change_amount / q->yesterday_close * 100.0f)
                         : 0.0f;
-    q->is_valid = true;
+    ESP_LOGI(TAG,
+             "parse symbol=%s z=%s y=%s src=%s vol=%ld zero_vol=%d ohl=%d%d%d ab=%d%d closed_rule=%d -> valid=%d market_closed=%d price=%.2f chg=%.2f%%",
+             q->symbol, z_raw, y_raw, price_source,
+             q->volume, is_zero_volume ? 1 : 0,
+             has_open ? 1 : 0, has_high ? 1 : 0, has_low ? 1 : 0,
+             has_ask_price ? 1 : 0, has_bid_price ? 1 : 0,
+             market_closed_snapshot ? 1 : 0,
+             q->is_valid ? 1 : 0, q->is_market_closed ? 1 : 0,
+             q->current_price, q->change_percent);
 }
 
 esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
@@ -345,13 +463,24 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
     for (int i = 0; i < n; i++) {
         cJSON *item = cJSON_GetArrayItem(msg_array, i);
         cJSON *sym = cJSON_GetObjectItem(item, "c");
+        cJSON *ch = cJSON_GetObjectItem(item, "ch");
+        const char *raw_c = (sym && cJSON_IsString(sym) && sym->valuestring) ? sym->valuestring : NULL;
+        const char *raw_ch = (ch && cJSON_IsString(ch) && ch->valuestring) ? ch->valuestring : NULL;
+        const char *sym_from_ch = extract_symbol_from_ch(raw_ch);
         const char *sym_str = NULL;
-        if (sym && cJSON_IsString(sym) && sym->valuestring && sym->valuestring[0] != '\0') {
-            sym_str = sym->valuestring;
+        const char *fallback_source = "none";
+        if (raw_c && raw_c[0] != '\0') {
+            sym_str = raw_c;
+        } else if (sym_from_ch && sym_from_ch[0] != '\0') {
+            sym_str = sym_from_ch;
+            fallback_source = "ch";
         } else if (i < count) {
             /* 某些回傳可能缺 c，退回請求順序對位 */
             sym_str = symbols[i];
+            fallback_source = "index";
         } else {
+            ESP_LOGW(TAG, "map i=%d raw_c=<null> raw_ch=%s -> skip(no_symbol)",
+                     i, raw_ch ? raw_ch : "<null>");
             continue;
         }
 
@@ -366,10 +495,25 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
             /* 若 c 異常但順序仍一致，最後退回索引對位 */
             target_idx = i;
             sym_str = symbols[i];
+            fallback_source = "index_last";
         }
         if (target_idx < 0 || target_idx >= count) {
+            ESP_LOGW(TAG, "map i=%d raw_c=%s raw_ch=%s sym=%s fallback=%s -> skip(unmatched)",
+                     i,
+                     raw_c ? raw_c : "<null>",
+                     raw_ch ? raw_ch : "<null>",
+                     sym_str ? sym_str : "<null>",
+                     fallback_source);
             continue;
         }
+        ESP_LOGI(TAG, "map i=%d raw_c=%s raw_ch=%s sym=%s fallback=%s -> idx=%d req=%s",
+                 i,
+                 raw_c ? raw_c : "<null>",
+                 raw_ch ? raw_ch : "<null>",
+                 sym_str ? sym_str : "<null>",
+                 fallback_source,
+                 target_idx,
+                 symbols[target_idx]);
 
         parse_stock_item(item, sym_str, &results[target_idx]);
         matched[target_idx] = true;

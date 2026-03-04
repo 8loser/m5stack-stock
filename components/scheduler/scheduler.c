@@ -115,6 +115,10 @@ static void do_fetch_quotes(bool force_fetch)
     }
 
     stock_quote_t quotes[MAX_STOCK_COUNT] = {0};
+    int total = s_stock_list.count;
+    int pushed = 0;
+    int skipped_empty_symbol = 0;
+    int skipped_invalid = 0;
 
     esp_err_t ret = twse_client_fetch(
                         (const char(*)[8])s_stock_list.symbols,
@@ -124,15 +128,23 @@ static void do_fetch_quotes(bool force_fetch)
         for (int i = 0; i < s_stock_list.count; i++) {
             if (quotes[i].symbol[0] == '\0') {
                 ESP_LOGW(TAG, "跳過空 symbol 報價: idx=%d", i);
+                skipped_empty_symbol++;
                 continue;
             }
             if (!quotes[i].is_valid && !quotes[i].is_market_closed) {
                 ESP_LOGW(TAG, "股票 %s 本輪無有效報價，保留前次顯示", quotes[i].symbol);
+                skipped_invalid++;
                 continue;
             }
             enrich_quote_with_industry(&quotes[i]);
             xQueueSend(s_quote_queue, &quotes[i], 0);
+            pushed++;
         }
+        ESP_LOGI(TAG, "quote_round total=%d pushed=%d skip_empty=%d skip_invalid=%d",
+                 total, pushed, skipped_empty_symbol, skipped_invalid);
+    } else {
+        ESP_LOGW(TAG, "quote_round fetch_failed err=%s total=%d",
+                 esp_err_to_name(ret), total);
     }
 }
 

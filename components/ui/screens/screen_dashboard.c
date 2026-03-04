@@ -460,6 +460,7 @@ void screen_dashboard_update(const stock_quote_t *q)
     if (s_card_count == 0) {
         screen_dashboard_set_card_count(1);
     }
+    const char *mapping_action = "match";
 
     /* 找對應的卡片 index */
     int idx = -1;
@@ -475,6 +476,7 @@ void screen_dashboard_update(const stock_quote_t *q)
                 idx = i;
                 strncpy(s_symbols_order[i], q->symbol, 7);
                 s_symbols_order[i][7] = '\0';
+                mapping_action = "assign_empty";
                 break;
             }
         }
@@ -484,8 +486,19 @@ void screen_dashboard_update(const stock_quote_t *q)
         idx = s_card_count - 1;
         strncpy(s_symbols_order[idx], q->symbol, 7);
         s_symbols_order[idx][7] = '\0';
+        mapping_action = "expand";
     }
-    if (idx < 0 || idx >= MAX_STOCK_COUNT) return;
+    if (idx < 0 || idx >= MAX_STOCK_COUNT) {
+        ESP_LOGW(TAG, "ui_quote symbol=%s -> drop idx=%d action=%s",
+                 q->symbol, idx, mapping_action);
+        return;
+    }
+
+    ESP_LOGI(TAG,
+             "ui_quote symbol=%s idx=%d action=%s price=%.2f chg=%.2f%% valid=%d closed=%d",
+             q->symbol, idx, mapping_action,
+             q->current_price, q->change_percent,
+             q->is_valid ? 1 : 0, q->is_market_closed ? 1 : 0);
 
     /* 永遠快取最新資料 */
     s_cached_quotes[idx] = *q;
