@@ -452,6 +452,35 @@ esp_err_t storage_ai_load_provider_key(uint8_t provider_type, char *api_key, siz
     return ESP_OK;
 }
 
+esp_err_t storage_ai_clear_provider_key(uint8_t provider_type)
+{
+    const char *key_name = provider_key_name(provider_type);
+    if (!key_name) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    ret = nvs_erase_key(h, key_name);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) ret = ESP_OK;
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_ai_clear_legacy_key(void)
+{
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    ret = nvs_erase_key(h, "api_key");
+    if (ret == ESP_ERR_NVS_NOT_FOUND) ret = ESP_OK;
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
 /* -------- Telegram -------- */
 
 esp_err_t storage_tg_save_enabled(bool enabled)

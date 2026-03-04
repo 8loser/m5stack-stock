@@ -24,6 +24,8 @@ esp_err_t storage_ai_save_key(const char *api_key);
 esp_err_t storage_ai_load_key(char *api_key, size_t size);
 esp_err_t storage_ai_save_provider_key(uint8_t provider_type, const char *api_key);
 esp_err_t storage_ai_load_provider_key(uint8_t provider_type, char *api_key, size_t size);
+esp_err_t storage_ai_clear_provider_key(uint8_t provider_type);
+esp_err_t storage_ai_clear_legacy_key(void);
 
 /* ====== Telegram 設定 ====== */
 esp_err_t storage_tg_save_enabled(bool enabled);

@@ -54,6 +54,32 @@
     @media (max-width: 640px) { .stock-edit-grid { grid-template-columns: 1fr; } }
     .stock-edit-actions { display: flex; gap: 8px; margin-top: 8px; }
     .stock-edit-actions button { margin-top: 0; }
+    .ai-provider-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .ai-provider-actions button { margin-top: 0; }
+    .ai-provider-pick {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .ai-provider-pick label {
+      margin-top: 0;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ai-provider-pick input[type="radio"] {
+      width: auto;
+      margin: 0;
+    }
     .menu { display: flex; gap: 8px; margin: 8px 0 14px; }
     .menu-btn {
       flex: 1;
@@ -162,19 +188,41 @@
 
     <div id="card_ai" class="card section-card">
       <h3>AI Settings</h3>
-      <form onsubmit="saveAiSettingsAndTest(); return false;">
+      <form onsubmit="saveAiSettings(); return false;">
+        <label>Primary Provider</label>
+        <div class="ai-provider-pick">
+          <label><input type="radio" name="ai_provider" value="gemini" checked>Gemini</label>
+          <label><input type="radio" name="ai_provider" value="claude">Claude</label>
+          <label><input type="radio" name="ai_provider" value="openai">OpenAI</label>
+        </div>
+
         <label>Gemini API Key</label>
         <input id="gemini_key" name="gemini_key" maxlength="127" type="password" autocomplete="off">
+        <div id="ai_msg_gemini" class="hint"></div>
+        <div class="ai-provider-actions">
+          <button type="button" class="secondary" onclick="testAiProvider('gemini')">Test Gemini Key</button>
+          <button type="button" class="secondary" onclick="clearAiProvider('gemini')">Clear Gemini Key</button>
+        </div>
 
         <label>Claude API Key</label>
         <input id="claude_key" name="claude_key" maxlength="127" type="password" autocomplete="off">
+        <div id="ai_msg_claude" class="hint"></div>
+        <div class="ai-provider-actions">
+          <button type="button" class="secondary" onclick="testAiProvider('claude')">Test Claude Key</button>
+          <button type="button" class="secondary" onclick="clearAiProvider('claude')">Clear Claude Key</button>
+        </div>
 
         <label>OpenAI API Key</label>
         <input id="openai_key" name="openai_key" maxlength="127" type="password" autocomplete="off">
+        <div id="ai_msg_openai" class="hint"></div>
+        <div class="ai-provider-actions">
+          <button type="button" class="secondary" onclick="testAiProvider('openai')">Test OpenAI Key</button>
+          <button type="button" class="secondary" onclick="clearAiProvider('openai')">Clear OpenAI Key</button>
+        </div>
 
         <div class="hint">Leave blank to keep existing key. Only providers with non-empty key will be used.</div>
         <button type="submit">Save AI Settings</button>
-        <button type="button" class="secondary" style="margin-top:8px;" onclick="testAiProviders()">Test AI Providers</button>
+        <div class="hint">修改後需按 Save AI Settings 才會記錄到裝置。</div>
       </form>
       <div id="ai_msg" class="hint"></div>
     </div>
@@ -315,6 +363,14 @@
 
     function setAiMsg(msg, ok) {
       var el = document.getElementById("ai_msg");
+      if (!el) return;
+      el.textContent = msg || "";
+      el.style.whiteSpace = "pre-line";
+      el.className = ok ? "ok" : "err";
+    }
+
+    function setAiProviderMsg(provider, msg, ok) {
+      var el = document.getElementById("ai_msg_" + provider);
       if (!el) return;
       el.textContent = msg || "";
       el.style.whiteSpace = "pre-line";
@@ -764,8 +820,21 @@
           gemini.placeholder = c.gemini_key_masked || "";
           claude.placeholder = c.claude_key_masked || "";
           openai.placeholder = c.openai_key_masked || "";
+          setAiProviderSelection((c && c.provider) ? c.provider : "gemini");
         })
         .catch(function () {});
+    }
+
+    function getAiProviderSelection() {
+      var selected = document.querySelector("input[name='ai_provider']:checked");
+      return selected ? selected.value : "";
+    }
+
+    function setAiProviderSelection(provider) {
+      var picked = (provider === "gemini" || provider === "claude" || provider === "openai")
+        ? provider : "gemini";
+      var target = document.querySelector("input[name='ai_provider'][value='" + picked + "']");
+      if (target) target.checked = true;
     }
 
     function renderAiTestResults(summary, results) {
@@ -790,29 +859,54 @@
       setAiMsg(lines.join("\n"), failed === 0);
     }
 
-    function testAiProviders() {
-      fetch("/ai/test", { method: "POST" })
+    function testAiProvider(provider) {
+      var inputId = provider === "gemini" ? "gemini_key" :
+                    provider === "claude" ? "claude_key" :
+                    provider === "openai" ? "openai_key" : "";
+      var apiKey = inputId ? (document.getElementById(inputId).value || "") : "";
+      var body = "provider=" + encodeURIComponent(provider || "") +
+                 "&api_key=" + encodeURIComponent(apiKey);
+      fetch("/ai/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body
+      })
         .then(function (r) {
           return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
         })
         .then(function (x) {
           if (!x.ok || !x.body.ok) {
             var err = (x.body && x.body.error) || "unknown";
-            setAiMsg("AI test failed: " + err, false);
+            setAiProviderMsg(provider, "Test failed: " + err, false);
             return;
           }
-          renderAiTestResults(x.body.summary || {}, x.body.results || []);
+          var result = (x.body.results && x.body.results[0]) ? x.body.results[0] : null;
+          if (!result || !result.configured) {
+            setAiProviderMsg(provider, "Test skipped: key not configured", false);
+            return;
+          }
+          if (result.ok) {
+            setAiProviderMsg(provider, "Test ok (HTTP " + (result.status || 0) + ")", true);
+          } else {
+            setAiProviderMsg(provider, "Test failed (" + (result.error || "unknown") + ", HTTP " + (result.status || 0) + ")", false);
+          }
         })
         .catch(function (e) {
-          setAiMsg("AI test failed: " + (e && e.message ? e.message : "network"), false);
+          setAiProviderMsg(provider, "Test failed: " + (e && e.message ? e.message : "network"), false);
         });
     }
 
-    function saveAiSettingsAndTest() {
+    function saveAiSettings() {
+      var provider = getAiProviderSelection();
+      if (!provider) {
+        setAiMsg("Save failed: missing provider", false);
+        return;
+      }
       var gemini = document.getElementById("gemini_key").value || "";
       var claude = document.getElementById("claude_key").value || "";
       var openai = document.getElementById("openai_key").value || "";
-      var body = "gemini_key=" + encodeURIComponent(gemini) +
+      var body = "provider=" + encodeURIComponent(provider) +
+                 "&gemini_key=" + encodeURIComponent(gemini) +
                  "&claude_key=" + encodeURIComponent(claude) +
                  "&openai_key=" + encodeURIComponent(openai);
       fetch("/ai", {
@@ -828,11 +922,40 @@
             setAiMsg("Save failed: " + ((x.body && x.body.error) || "unknown"), false);
             return;
           }
-          setAiMsg("AI settings saved, running test...", true);
-          testAiProviders();
+          setAiMsg("AI settings saved", true);
+          loadAiConfig();
         })
         .catch(function (e) {
           setAiMsg("Save failed: " + (e && e.message ? e.message : "network"), false);
+        });
+    }
+
+    function clearAiProvider(provider) {
+      var fieldName = "clear_" + provider;
+      var selectedProvider = getAiProviderSelection();
+      if (!selectedProvider) {
+        setAiProviderMsg(provider, "Clear failed: missing provider", false);
+        return;
+      }
+      var body = "provider=" + encodeURIComponent(selectedProvider) + "&" + fieldName + "=1";
+      fetch("/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body
+      })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.body.ok) {
+            setAiProviderMsg(provider, "Clear failed: " + ((x.body && x.body.error) || "unknown"), false);
+            return;
+          }
+          loadAiConfig();
+          setAiProviderMsg(provider, "Cleared key", true);
+        })
+        .catch(function (e) {
+          setAiProviderMsg(provider, "Clear failed: " + (e && e.message ? e.message : "network"), false);
         });
     }
 
