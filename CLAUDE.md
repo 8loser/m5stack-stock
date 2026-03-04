@@ -31,6 +31,7 @@ main/app_config.h        # 所有硬體 pin、任務優先級、NVS namespace �
 main/main.c              # 初始化順序 + 全域 queue/mutex 宣告
 docs/hardware_quick_ref.md  # 低 token 硬體速查（AI 開發預設先讀）
 docs/hardware_core2_reference.md  # Core2 官方規格、PinMap 與完整對照（需要細節時再查）
+docs/twse_api_fields.md  # TWSE getStockInfo.jsp 回傳欄位對照與本專案解析規則
 
 components/
   app_core/              # 應用層事件匯流排（跨模組解耦）
@@ -92,3 +93,4 @@ scheduler Timer（ai_ivl）
 
 - 本專案以 AI 協作為主，預設先讀 `docs/hardware_quick_ref.md`，避免每次載入完整硬體文件。
 - 只有在需要 pinmap 背景、官方連結或完整規格時，才展開 `docs/hardware_core2_reference.md`。
+- 涉及 TWSE API 欄位語意、回傳相容性或 parser 行為時，優先查 `docs/twse_api_fields.md`。
