@@ -1,4 +1,4 @@
-#include "wifi_service.h"
+#include "wifi_manager.h"
 #include "storage.h"
 #include "app_config.h"
 #include "esp_wifi.h"
@@ -15,7 +15,7 @@
 #define WIFI_FAIL_BIT       BIT1
 #define MAX_RETRY           5
 
-static const char *TAG = "wifi_service";
+static const char *TAG = "wifi_manager";
 
 static EventGroupHandle_t s_wifi_event_group = NULL;
 static wifi_state_t s_state = WIFI_STATE_DISCONNECTED;
@@ -94,7 +94,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
     }
 }
 
-esp_err_t wifi_service_init(void)
+esp_err_t wifi_manager_init(void)
 {
     if (s_initialized) {
         return ESP_OK;
@@ -137,7 +137,7 @@ esp_err_t wifi_service_init(void)
     return ESP_OK;
 }
 
-esp_err_t wifi_service_connect(const char *ssid, const char *password)
+esp_err_t wifi_manager_connect(const char *ssid, const char *password)
 {
     wifi_config_t wifi_cfg = {0};
 
@@ -173,7 +173,7 @@ esp_err_t wifi_service_connect(const char *ssid, const char *password)
     return ESP_FAIL;
 }
 
-esp_err_t wifi_service_connect_any_saved(void)
+esp_err_t wifi_manager_connect_any_saved(void)
 {
     uint8_t count = storage_wifi_ap_count();
     if (count == 0) {
@@ -190,7 +190,7 @@ esp_err_t wifi_service_connect_any_saved(void)
         }
 
         ESP_LOGI(TAG, "嘗試已儲存 AP %d/%d: %s", i + 1, count, ssid);
-        if (wifi_service_connect(ssid, password) == ESP_OK) {
+        if (wifi_manager_connect(ssid, password) == ESP_OK) {
             return ESP_OK;
         }
     }
@@ -199,12 +199,12 @@ esp_err_t wifi_service_connect_any_saved(void)
     return ESP_FAIL;
 }
 
-esp_err_t wifi_service_connect_saved(void)
+esp_err_t wifi_manager_connect_saved(void)
 {
-    return wifi_service_connect_any_saved();
+    return wifi_manager_connect_any_saved();
 }
 
-esp_err_t wifi_service_disconnect(void)
+esp_err_t wifi_manager_disconnect(void)
 {
     s_retry_count = MAX_RETRY;
     esp_wifi_disconnect();
@@ -212,32 +212,32 @@ esp_err_t wifi_service_disconnect(void)
     return ESP_OK;
 }
 
-wifi_state_t wifi_service_get_state(void)
+wifi_state_t wifi_manager_get_state(void)
 {
     return s_state;
 }
 
-bool wifi_service_is_connected(void)
+bool wifi_manager_is_connected(void)
 {
     return (s_state == WIFI_STATE_CONNECTED);
 }
 
-const char *wifi_service_get_ip(void)
+const char *wifi_manager_get_ip(void)
 {
     return s_ip_str;
 }
 
-const char *wifi_service_get_connected_ssid(void)
+const char *wifi_manager_get_connected_ssid(void)
 {
     return s_connected_ssid;
 }
 
-void wifi_service_set_callback(wifi_state_cb_t cb)
+void wifi_manager_set_callback(wifi_state_cb_t cb)
 {
     s_callback = cb;
 }
 
-esp_err_t wifi_service_scan(wifi_ap_info_t *results, uint16_t *count, uint16_t max_count)
+esp_err_t wifi_manager_scan(wifi_ap_info_t *results, uint16_t *count, uint16_t max_count)
 {
     wifi_scan_config_t scan_cfg = {
         .ssid = NULL,
@@ -272,7 +272,7 @@ esp_err_t wifi_service_scan(wifi_ap_info_t *results, uint16_t *count, uint16_t m
     return ret;
 }
 
-bool wifi_service_is_initialized(void)
+bool wifi_manager_is_initialized(void)
 {
     return s_initialized;
 }

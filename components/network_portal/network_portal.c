@@ -1,99 +1,96 @@
 #include "network_portal.h"
-#include "wifi_service.h"
-#include "portal_service.h"
-#include "stock_admin_service.h"
 
 esp_err_t network_portal_init(void)
 {
-    return wifi_service_init();
+    return wifi_manager_init();
 }
 
 esp_err_t network_portal_connect(const char *ssid, const char *password)
 {
-    return wifi_service_connect(ssid, password);
+    return wifi_manager_connect(ssid, password);
 }
 
 esp_err_t network_portal_connect_any_saved(void)
 {
-    return wifi_service_connect_any_saved();
+    return wifi_manager_connect_any_saved();
 }
 
 esp_err_t network_portal_connect_saved(void)
 {
-    return wifi_service_connect_saved();
+    return wifi_manager_connect_saved();
 }
 
 esp_err_t network_portal_disconnect(void)
 {
-    return wifi_service_disconnect();
+    return wifi_manager_disconnect();
 }
 
 wifi_state_t network_portal_get_state(void)
 {
-    return wifi_service_get_state();
+    return wifi_manager_get_state();
 }
 
 bool network_portal_is_connected(void)
 {
-    return wifi_service_is_connected();
+    return wifi_manager_is_connected();
 }
 
 const char *network_portal_get_ip(void)
 {
-    return wifi_service_get_ip();
+    return wifi_manager_get_ip();
 }
 
 const char *network_portal_get_connected_ssid(void)
 {
-    return wifi_service_get_connected_ssid();
+    return wifi_manager_get_connected_ssid();
 }
 
 esp_err_t network_portal_start_provisioning_portal(void)
 {
-    return portal_service_start();
+    return portal_backend_start();
 }
 
 esp_err_t network_portal_stop_provisioning_portal(void)
 {
-    return portal_service_stop();
+    return portal_backend_stop();
 }
 
 bool network_portal_is_provisioning_portal_active(void)
 {
-    return portal_service_is_active();
+    return portal_backend_is_active();
 }
 
 const char *network_portal_get_provisioning_ap_ssid(void)
 {
-    return portal_service_get_ap_ssid();
+    return portal_backend_get_ap_ssid();
 }
 
 const char *network_portal_get_provisioning_ap_password(void)
 {
-    return portal_service_get_ap_password();
+    return portal_backend_get_ap_password();
 }
 
 const char *network_portal_get_provisioning_url(void)
 {
-    return portal_service_get_url();
+    return portal_backend_get_url();
 }
 
 const char *network_portal_get_provisioning_ap_ip(void)
 {
-    return portal_service_get_ap_ip();
+    return portal_backend_get_ap_ip();
 }
 
 esp_err_t network_portal_scan(wifi_ap_info_t *results, uint16_t *count, uint16_t max_count)
 {
-    return wifi_service_scan(results, count, max_count);
+    return wifi_manager_scan(results, count, max_count);
 }
 
 void network_portal_set_callback(wifi_state_cb_t cb)
 {
-    wifi_service_set_callback(cb);
+    wifi_manager_set_callback(cb);
 }
 
 void network_portal_set_stock_list_changed_callback(stock_list_changed_cb_t cb)
 {
-    stock_admin_service_set_stock_list_changed_callback(cb);
+    portal_backend_set_stock_list_changed_callback(cb);
 }

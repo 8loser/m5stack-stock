@@ -51,7 +51,7 @@
 - 新增後可觸發重載清單與立即抓價。
 
 參考：
-- `components/network_portal/stock_admin_service.c` (`is_symbol_format_valid`, `portal_stocks_add_post_handler`)
+- `components/portal_backend/stock_admin_service.c` (`is_symbol_format_valid`, `portal_stocks_add_post_handler`)
 - `components/twse_client/twse_client.c` (`twse_client_validate_symbol`)
 - `include/app_config.h` (`MAX_STOCK_COUNT`)
 
@@ -147,4 +147,3 @@
 ### M3：外部整合與策略擴張
 
 - 加入 Telegram，再評估多資料源與跨市場（美股）擴充。
-

@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.16)
 set(EXTRA_COMPONENT_DIRS
     components/board
     components/storage
+    components/wifi_manager
+    components/portal_backend
     components/network_portal
     components/telegram_bot
     components/twse_client
