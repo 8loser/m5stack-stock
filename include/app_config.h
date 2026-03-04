@@ -53,6 +53,7 @@
 /* --- NVS Namespace --- */
 #define NVS_NS_WIFI             "wifi_cfg"
 #define NVS_NS_AI               "ai_cfg"
+#define NVS_NS_TELEGRAM         "tg_cfg"
 #define NVS_NS_STOCKS           "stocks"
 #define NVS_NS_SCHEDULE         "schedule"
 

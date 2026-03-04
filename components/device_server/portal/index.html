@@ -51,6 +51,7 @@
   <div class="menu">
     <button type="button" id="tab_wifi" class="menu-btn" onclick="showTab('wifi')">WiFi</button>
     <button type="button" id="tab_ai" class="menu-btn" onclick="showTab('ai')">AI Provider</button>
+    <button type="button" id="tab_telegram" class="menu-btn" onclick="showTab('telegram')">Telegram</button>
     <button type="button" id="tab_stocks" class="menu-btn" onclick="showTab('stocks')">Stocks</button>
   </div>
 
@@ -96,6 +97,26 @@
       <div id="ai_msg" class="ok"></div>
     </div>
 
+    <div id="card_telegram" class="card section-card">
+      <h3>Telegram Settings</h3>
+      <label style="display:flex;align-items:center;gap:8px;">
+        <input id="tg_enabled" type="checkbox" style="width:auto;margin-top:0;">
+        Enable Telegram
+      </label>
+
+      <label>Bot Token</label>
+      <input id="tg_bot_token" maxlength="159" placeholder="123456789:AA...">
+      <div class="hint">Leave empty to keep existing token.</div>
+
+      <label>Chat ID</label>
+      <input id="tg_chat_id" maxlength="39" placeholder="-1001234567890">
+      <div class="hint">Use private/group chat id. Usually group id starts with "-100".</div>
+
+      <button type="button" onclick="saveTelegram()">Save Telegram Settings</button>
+      <button type="button" style="background:#2d7dd2;margin-top:8px;" onclick="sendTelegramTest()">Send Test Message</button>
+      <div id="tg_msg" class="hint"></div>
+    </div>
+
     <div id="card_stocks" class="card section-card">
       <h3>Stocks (TWSE only, max 15)</h3>
       <label>Symbol (4 digits)</label>
@@ -111,7 +132,7 @@
     var s_stock_items = {};
 
     function showTab(tab) {
-      var ids = ["wifi", "ai", "stocks"];
+      var ids = ["wifi", "ai", "telegram", "stocks"];
       ids.forEach(function (x) {
         var card = document.getElementById("card_" + x);
         var btn = document.getElementById("tab_" + x);
@@ -120,6 +141,7 @@
       });
       if (tab === "stocks") loadStocks();
       if (tab === "wifi") loadSavedAps();
+      if (tab === "telegram") loadTelegram();
     }
 
     function stockErr(code) {
@@ -138,6 +160,75 @@
       var el = document.getElementById("stocks_msg");
       el.textContent = msg || "";
       el.className = ok ? "ok" : "err";
+    }
+
+    function setTelegramMsg(msg, ok) {
+      var el = document.getElementById("tg_msg");
+      if (!el) return;
+      el.textContent = msg || "";
+      el.className = ok ? "ok" : "err";
+    }
+
+    function loadTelegram() {
+      fetch("/telegram")
+        .then(function (r) { return r.json(); })
+        .then(function (c) {
+          var enabled = !!c.enabled;
+          var chat = c.chat_id || "";
+          var masked = c.token_masked || "";
+          document.getElementById("tg_enabled").checked = enabled;
+          document.getElementById("tg_chat_id").value = chat;
+          document.getElementById("tg_bot_token").value = "";
+          document.getElementById("tg_bot_token").placeholder = masked || "123456789:AA...";
+        })
+        .catch(function () {
+          setTelegramMsg("Load telegram config failed", false);
+        });
+    }
+
+    function saveTelegram() {
+      var enabled = document.getElementById("tg_enabled").checked ? "1" : "0";
+      var token = (document.getElementById("tg_bot_token").value || "").trim();
+      var chat = (document.getElementById("tg_chat_id").value || "").trim();
+      var body = "enabled=" + encodeURIComponent(enabled) +
+                 "&bot_token=" + encodeURIComponent(token) +
+                 "&chat_id=" + encodeURIComponent(chat);
+      fetch("/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body
+      })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.body.ok) {
+            setTelegramMsg("Save failed: " + ((x.body && x.body.error) || "unknown"), false);
+            return;
+          }
+          setTelegramMsg("Telegram settings saved", true);
+          loadTelegram();
+        })
+        .catch(function (e) {
+          setTelegramMsg("Save failed: " + (e && e.message ? e.message : "network"), false);
+        });
+    }
+
+    function sendTelegramTest() {
+      fetch("/telegram/test", { method: "POST" })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.body.ok) {
+            setTelegramMsg("Test failed: " + ((x.body && x.body.error) || "unknown"), false);
+            return;
+          }
+          setTelegramMsg("Test message sent", true);
+        })
+        .catch(function (e) {
+          setTelegramMsg("Test failed: " + (e && e.message ? e.message : "network"), false);
+        });
     }
 
     function formatPrice(v) {
@@ -314,6 +405,8 @@
         document.getElementById("openai_key").value = c.openai_key || "";
       })
       .catch(function () {});
+
+    loadTelegram();
 
     showTab("wifi");
     loadSavedAps();

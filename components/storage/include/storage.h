@@ -25,6 +25,14 @@ esp_err_t storage_ai_load_key(char *api_key, size_t size);
 esp_err_t storage_ai_save_provider_key(uint8_t provider_type, const char *api_key);
 esp_err_t storage_ai_load_provider_key(uint8_t provider_type, char *api_key, size_t size);
 
+/* ====== Telegram 設定 ====== */
+esp_err_t storage_tg_save_enabled(bool enabled);
+esp_err_t storage_tg_load_enabled(bool *enabled);
+esp_err_t storage_tg_save_bot_token(const char *token);
+esp_err_t storage_tg_load_bot_token(char *token, size_t size);
+esp_err_t storage_tg_save_chat_id(const char *chat_id);
+esp_err_t storage_tg_load_chat_id(char *chat_id, size_t size);
+
 /* ====== 股票清單 ====== */
 typedef struct {
     char symbols[MAX_STOCK_COUNT][8];  /* 最多 MAX_STOCK_COUNT 支，每個代號 ≤7 字元 */

@@ -447,6 +447,114 @@ esp_err_t storage_ai_load_provider_key(uint8_t provider_type, char *api_key, siz
     return ESP_OK;
 }
 
+/* -------- Telegram -------- */
+
+esp_err_t storage_tg_save_enabled(bool enabled)
+{
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_TELEGRAM, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    ret = nvs_set_u8(h, "enabled", enabled ? 1 : 0);
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_tg_load_enabled(bool *enabled)
+{
+    if (!enabled) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_TELEGRAM, NVS_READONLY, &h);
+    if (ret != ESP_OK) {
+        *enabled = false;
+        return ESP_OK;
+    }
+
+    uint8_t value = 0;
+    ret = nvs_get_u8(h, "enabled", &value);
+    nvs_close(h);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        *enabled = false;
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) return ret;
+
+    *enabled = (value != 0);
+    return ESP_OK;
+}
+
+esp_err_t storage_tg_save_bot_token(const char *token)
+{
+    if (!token) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_TELEGRAM, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    ret = nvs_set_str(h, "bot_token", token);
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_tg_load_bot_token(char *token, size_t size)
+{
+    if (!token || size == 0) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_TELEGRAM, NVS_READONLY, &h);
+    if (ret != ESP_OK) {
+        token[0] = '\0';
+        return ESP_OK;
+    }
+
+    ret = nvs_get_str(h, "bot_token", token, &size);
+    nvs_close(h);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        token[0] = '\0';
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) return ret;
+    return ESP_OK;
+}
+
+esp_err_t storage_tg_save_chat_id(const char *chat_id)
+{
+    if (!chat_id) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_TELEGRAM, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    ret = nvs_set_str(h, "chat_id", chat_id);
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_tg_load_chat_id(char *chat_id, size_t size)
+{
+    if (!chat_id || size == 0) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_TELEGRAM, NVS_READONLY, &h);
+    if (ret != ESP_OK) {
+        chat_id[0] = '\0';
+        return ESP_OK;
+    }
+
+    ret = nvs_get_str(h, "chat_id", chat_id, &size);
+    nvs_close(h);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        chat_id[0] = '\0';
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) return ret;
+    return ESP_OK;
+}
+
 /* -------- 股票清單 -------- */
 
 esp_err_t storage_stocks_save(const stock_list_t *list)
