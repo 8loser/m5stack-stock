@@ -23,6 +23,12 @@
 #define TELEGRAM_TOKEN_MAX_LEN 160
 #define TELEGRAM_CHAT_ID_MAX_LEN 40
 #define TELEGRAM_HTTP_BUF_INIT_SIZE 512
+#define AI_HTTP_BUF_INIT_SIZE 512
+#define AI_TEST_RESP_MAX_LEN 1536
+
+#define AI_GEMINI_TEST_URL_FMT "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=%s"
+#define AI_CLAUDE_TEST_URL "https://api.anthropic.com/v1/messages"
+#define AI_OPENAI_TEST_URL "https://api.openai.com/v1/chat/completions"
 
 enum {
     AI_PROVIDER_GEMINI = 0,
@@ -240,6 +246,151 @@ static size_t url_encode_component(const char *src, char *dst, size_t dst_size)
     }
     dst[di] = '\0';
     return di;
+}
+
+typedef struct {
+    char *buf;
+    size_t capacity;
+    size_t data_len;
+    bool overflow;
+} ai_http_ctx_t;
+
+static esp_err_t ai_http_event_handler(esp_http_client_event_t *evt)
+{
+    ai_http_ctx_t *ctx = (ai_http_ctx_t *)evt->user_data;
+    if (!ctx || evt->event_id != HTTP_EVENT_ON_DATA) {
+        return ESP_OK;
+    }
+
+    size_t needed = ctx->data_len + (size_t)evt->data_len + 1;
+    if (needed > ctx->capacity) {
+        size_t new_cap = ctx->capacity;
+        while (new_cap < needed && new_cap < 4096U) {
+            new_cap *= 2U;
+        }
+        if (new_cap < needed || new_cap > 4096U) {
+            ctx->overflow = true;
+            return ESP_OK;
+        }
+        char *new_buf = realloc(ctx->buf, new_cap);
+        if (!new_buf) {
+            ctx->overflow = true;
+            return ESP_OK;
+        }
+        ctx->buf = new_buf;
+        ctx->capacity = new_cap;
+    }
+
+    memcpy(ctx->buf + ctx->data_len, evt->data, (size_t)evt->data_len);
+    ctx->data_len += (size_t)evt->data_len;
+    return ESP_OK;
+}
+
+static esp_err_t ai_http_post_json(const char *url,
+                                   const char *json_body,
+                                   const char *auth_header_key,
+                                   const char *auth_header_val,
+                                   const char *extra_header_key,
+                                   const char *extra_header_val,
+                                   int *out_status_code)
+{
+    ai_http_ctx_t ctx = {0};
+    ctx.buf = malloc(AI_HTTP_BUF_INIT_SIZE);
+    if (!ctx.buf) {
+        return ESP_ERR_NO_MEM;
+    }
+    ctx.capacity = AI_HTTP_BUF_INIT_SIZE;
+
+    esp_http_client_config_t cfg = {
+        .url = url,
+        .event_handler = ai_http_event_handler,
+        .user_data = &ctx,
+        .timeout_ms = HTTP_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (!client) {
+        free(ctx.buf);
+        return ESP_FAIL;
+    }
+
+    esp_http_client_set_method(client, HTTP_METHOD_POST);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    if (auth_header_key && auth_header_val) {
+        esp_http_client_set_header(client, auth_header_key, auth_header_val);
+    }
+    if (extra_header_key && extra_header_val) {
+        esp_http_client_set_header(client, extra_header_key, extra_header_val);
+    }
+    esp_http_client_set_post_field(client, json_body, (int)strlen(json_body));
+
+    esp_err_t ret = esp_http_client_perform(client);
+    int status_code = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    free(ctx.buf);
+
+    if (out_status_code) {
+        *out_status_code = status_code;
+    }
+    if (ctx.overflow) {
+        return ESP_FAIL;
+    }
+    return ret;
+}
+
+static esp_err_t ai_test_gemini_key(const char *api_key, int *out_status_code)
+{
+    if (!api_key || api_key[0] == '\0') {
+        if (out_status_code) {
+            *out_status_code = 0;
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char url[320] = {0};
+    snprintf(url, sizeof(url), AI_GEMINI_TEST_URL_FMT, api_key);
+    return ai_http_post_json(url,
+                             "{\"contents\":[{\"parts\":[{\"text\":\"ping\"}]}]}",
+                             NULL, NULL, NULL, NULL,
+                             out_status_code);
+}
+
+static esp_err_t ai_test_claude_key(const char *api_key, int *out_status_code)
+{
+    if (!api_key || api_key[0] == '\0') {
+        if (out_status_code) {
+            *out_status_code = 0;
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return ai_http_post_json(
+        AI_CLAUDE_TEST_URL,
+        "{\"model\":\"claude-haiku-4-5-20251001\",\"max_tokens\":1,"
+        "\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}",
+        "x-api-key", api_key,
+        "anthropic-version", "2023-06-01",
+        out_status_code);
+}
+
+static esp_err_t ai_test_openai_key(const char *api_key, int *out_status_code)
+{
+    if (!api_key || api_key[0] == '\0') {
+        if (out_status_code) {
+            *out_status_code = 0;
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char auth_header[160] = {0};
+    snprintf(auth_header, sizeof(auth_header), "Bearer %s", api_key);
+    return ai_http_post_json(
+        AI_OPENAI_TEST_URL,
+        "{\"model\":\"gpt-4o-mini\",\"max_tokens\":1,"
+        "\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}",
+        "Authorization", auth_header,
+        NULL, NULL,
+        out_status_code);
 }
 
 typedef struct {
@@ -517,14 +668,109 @@ static esp_err_t portal_ai_post_handler(httpd_req_t *req)
     get_form_value(body, "openai_key", openai_key, sizeof(openai_key));
     free(body);
 
-    storage_ai_save_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key);
-    storage_ai_save_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key);
-    storage_ai_save_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key);
+    if (storage_ai_save_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key) != ESP_OK ||
+        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key) != ESP_OK ||
+        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key) != ESP_OK) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed\"}");
+    }
 
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
-    return httpd_resp_sendstr(req,
-                              "<html><body><h3>AI 設定已儲存</h3>"
-                              "<p>可返回上一頁繼續調整。</p><a href='/'>Back</a></body></html>");
+    return send_json_response(req, 200, "{\"ok\":true}");
+}
+
+static esp_err_t portal_ai_test_post_handler(httpd_req_t *req)
+{
+    (void)req;
+    char gemini_key[128] = {0};
+    char claude_key[128] = {0};
+    char openai_key[128] = {0};
+    int passed = 0;
+    int failed = 0;
+    int skipped = 0;
+    int gemini_status = 0;
+    int claude_status = 0;
+    int openai_status = 0;
+    bool gemini_ok = false;
+    bool claude_ok = false;
+    bool openai_ok = false;
+    const char *gemini_error = "";
+    const char *claude_error = "";
+    const char *openai_error = "";
+
+    storage_ai_load_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key, sizeof(gemini_key));
+    if (gemini_key[0] == '\0') {
+        storage_ai_load_key(gemini_key, sizeof(gemini_key));
+    }
+    storage_ai_load_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key, sizeof(claude_key));
+    storage_ai_load_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key, sizeof(openai_key));
+
+    if (gemini_key[0] == '\0' && claude_key[0] == '\0' && openai_key[0] == '\0') {
+        return send_json_response(req, 400, "{\"ok\":false,\"error\":\"missing_config\"}");
+    }
+
+    if (gemini_key[0] != '\0') {
+        esp_err_t ret = ai_test_gemini_key(gemini_key, &gemini_status);
+        gemini_ok = (ret == ESP_OK && gemini_status == 200);
+        gemini_error = (ret != ESP_OK) ? "network_error" : (gemini_ok ? "" : "http_error");
+        if (gemini_ok) {
+            passed++;
+        } else {
+            failed++;
+        }
+    } else {
+        skipped++;
+    }
+
+    if (claude_key[0] != '\0') {
+        esp_err_t ret = ai_test_claude_key(claude_key, &claude_status);
+        claude_ok = (ret == ESP_OK && claude_status == 200);
+        claude_error = (ret != ESP_OK) ? "network_error" : (claude_ok ? "" : "http_error");
+        if (claude_ok) {
+            passed++;
+        } else {
+            failed++;
+        }
+    } else {
+        skipped++;
+    }
+
+    if (openai_key[0] != '\0') {
+        esp_err_t ret = ai_test_openai_key(openai_key, &openai_status);
+        openai_ok = (ret == ESP_OK && openai_status == 200);
+        openai_error = (ret != ESP_OK) ? "network_error" : (openai_ok ? "" : "http_error");
+        if (openai_ok) {
+            passed++;
+        } else {
+            failed++;
+        }
+    } else {
+        skipped++;
+    }
+
+    ESP_LOGI(TAG, "AI test result: passed=%d failed=%d skipped=%d", passed, failed, skipped);
+
+    char json[AI_TEST_RESP_MAX_LEN] = {0};
+    snprintf(json, sizeof(json),
+             "{\"ok\":true,\"summary\":{\"passed\":%d,\"failed\":%d,\"skipped\":%d},"
+             "\"results\":["
+             "{\"provider\":\"gemini\",\"configured\":%s,\"ok\":%s,\"status\":%d,\"error\":\"%s\"},"
+             "{\"provider\":\"claude\",\"configured\":%s,\"ok\":%s,\"status\":%d,\"error\":\"%s\"},"
+             "{\"provider\":\"openai\",\"configured\":%s,\"ok\":%s,\"status\":%d,\"error\":\"%s\"}"
+             "]}",
+             passed, failed, skipped,
+             gemini_key[0] != '\0' ? "true" : "false",
+             gemini_ok ? "true" : "false",
+             gemini_status,
+             gemini_error,
+             claude_key[0] != '\0' ? "true" : "false",
+             claude_ok ? "true" : "false",
+             claude_status,
+             claude_error,
+             openai_key[0] != '\0' ? "true" : "false",
+             openai_ok ? "true" : "false",
+             openai_status,
+             openai_error);
+
+    return send_json_response(req, 200, json);
 }
 
 static esp_err_t portal_telegram_get_handler(httpd_req_t *req)
@@ -869,6 +1115,13 @@ static esp_err_t start_portal_http_server(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t ai_test_post_uri = {
+        .uri = "/ai/test",
+        .method = HTTP_POST,
+        .handler = portal_ai_test_post_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_uri_t telegram_get_uri = {
         .uri = "/telegram",
         .method = HTTP_GET,
@@ -902,6 +1155,7 @@ static esp_err_t start_portal_http_server(void)
     httpd_register_uri_handler(s_httpd, &scan_uri);
     httpd_register_uri_handler(s_httpd, &ai_get_uri);
     httpd_register_uri_handler(s_httpd, &ai_post_uri);
+    httpd_register_uri_handler(s_httpd, &ai_test_post_uri);
     httpd_register_uri_handler(s_httpd, &telegram_get_uri);
     httpd_register_uri_handler(s_httpd, &telegram_post_uri);
     httpd_register_uri_handler(s_httpd, &telegram_test_post_uri);

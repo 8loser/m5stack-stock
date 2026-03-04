@@ -162,7 +162,7 @@
 
     <div id="card_ai" class="card section-card">
       <h3>AI Settings</h3>
-      <form method="post" action="/ai">
+      <form onsubmit="saveAiSettingsAndTest(); return false;">
         <label>Gemini API Key</label>
         <input id="gemini_key" name="gemini_key" maxlength="127">
 
@@ -174,8 +174,9 @@
 
         <div class="hint">Only providers with non-empty key will be used.</div>
         <button type="submit">Save AI Settings</button>
+        <button type="button" class="secondary" style="margin-top:8px;" onclick="testAiProviders()">Test AI Providers</button>
       </form>
-      <div id="ai_msg" class="ok"></div>
+      <div id="ai_msg" class="hint"></div>
     </div>
 
     <div id="card_telegram" class="card section-card">
@@ -309,6 +310,14 @@
     function setStocksMsg(msg, ok) {
       var el = document.getElementById("stocks_msg");
       el.textContent = msg || "";
+      el.className = ok ? "ok" : "err";
+    }
+
+    function setAiMsg(msg, ok) {
+      var el = document.getElementById("ai_msg");
+      if (!el) return;
+      el.textContent = msg || "";
+      el.style.whiteSpace = "pre-line";
       el.className = ok ? "ok" : "err";
     }
 
@@ -751,6 +760,74 @@
           document.getElementById("openai_key").value = c.openai_key || "";
         })
         .catch(function () {});
+    }
+
+    function renderAiTestResults(summary, results) {
+      var lines = [];
+      var passed = summary && typeof summary.passed === "number" ? summary.passed : 0;
+      var failed = summary && typeof summary.failed === "number" ? summary.failed : 0;
+      var skipped = summary && typeof summary.skipped === "number" ? summary.skipped : 0;
+      lines.push("AI test: " + passed + " passed, " + failed + " failed, " + skipped + " skipped");
+
+      (results || []).forEach(function (r) {
+        var provider = (r && r.provider) ? r.provider : "unknown";
+        if (!r || !r.configured) {
+          lines.push("- " + provider + ": skipped");
+          return;
+        }
+        if (r.ok) {
+          lines.push("- " + provider + ": ok (HTTP " + (r.status || 0) + ")");
+        } else {
+          lines.push("- " + provider + ": failed (" + (r.error || "unknown") + ", HTTP " + (r.status || 0) + ")");
+        }
+      });
+      setAiMsg(lines.join("\n"), failed === 0);
+    }
+
+    function testAiProviders() {
+      fetch("/ai/test", { method: "POST" })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.body.ok) {
+            var err = (x.body && x.body.error) || "unknown";
+            setAiMsg("AI test failed: " + err, false);
+            return;
+          }
+          renderAiTestResults(x.body.summary || {}, x.body.results || []);
+        })
+        .catch(function (e) {
+          setAiMsg("AI test failed: " + (e && e.message ? e.message : "network"), false);
+        });
+    }
+
+    function saveAiSettingsAndTest() {
+      var gemini = document.getElementById("gemini_key").value || "";
+      var claude = document.getElementById("claude_key").value || "";
+      var openai = document.getElementById("openai_key").value || "";
+      var body = "gemini_key=" + encodeURIComponent(gemini) +
+                 "&claude_key=" + encodeURIComponent(claude) +
+                 "&openai_key=" + encodeURIComponent(openai);
+      fetch("/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body
+      })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.body.ok) {
+            setAiMsg("Save failed: " + ((x.body && x.body.error) || "unknown"), false);
+            return;
+          }
+          setAiMsg("AI settings saved, running test...", true);
+          testAiProviders();
+        })
+        .catch(function (e) {
+          setAiMsg("Save failed: " + (e && e.message ? e.message : "network"), false);
+        });
     }
 
     function removeSavedAp(ssid) {
