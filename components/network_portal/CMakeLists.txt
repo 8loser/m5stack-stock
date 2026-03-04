@@ -1,6 +1,6 @@
 idf_component_register(
     SRCS
-        "device_server.c"
+        "network_portal.c"
         "wifi_service.c"
         "portal_service.c"
         "stock_admin_service.c"

@@ -153,7 +153,7 @@ Stocks API 驗證規則：
 - `components/app_core/`：應用層事件匯流排（跨模組解耦）
 - `components/board/`：硬體抽象層（LCD/Touch/AXP192/RTC/音效/震動）
 - `components/ui/`：LVGL UI（screens/widgets/ui manager）
-- `components/device_server/`：STA 連線、SoftAP、Portal HTTP 服務
+- `components/network_portal/`：STA 連線、SoftAP、Portal HTTP 服務
 - `components/twse_client/`：TWSE API 抓價與代號驗證
 - `components/ai_provider/`：AI provider 封裝
 - `components/scheduler/`：報價/AI 排程與睡眠策略

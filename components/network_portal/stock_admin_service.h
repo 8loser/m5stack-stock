@@ -1,6 +1,6 @@
 #pragma once
 
-#include "device_server.h"
+#include "network_portal.h"
 #include "esp_err.h"
 #include "esp_http_server.h"
 

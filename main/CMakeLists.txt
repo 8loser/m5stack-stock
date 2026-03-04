@@ -5,7 +5,7 @@ idf_component_register(
         board
         app_core
         storage
-        device_server
+        network_portal
         telegram_bot
         twse_client
         scheduler

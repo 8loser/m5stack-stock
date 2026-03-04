@@ -1,7 +1,7 @@
 #include "portal_service.h"
 #include "stock_admin_service.h"
 #include "wifi_service.h"
-#include "device_server.h"
+#include "network_portal.h"
 #include "storage.h"
 #include "app_config.h"
 #include "ai_provider.h"
@@ -449,7 +449,7 @@ static void wifi_connect_task(void *arg)
     }
 
     ESP_LOGI(TAG, "Portal 提交配網，嘗試連線 SSID=%s", req->ssid);
-    esp_err_t ret = device_server_connect(req->ssid, req->password);
+    esp_err_t ret = network_portal_connect(req->ssid, req->password);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Portal 配網成功");
         if (s_portal_active) {
