@@ -20,6 +20,11 @@
 #define ERR_NOT_FOUND_OR_NOT_TSE "not_found_or_not_tse"
 #define ERR_VALIDATE_FAILED      "validate_failed"
 #define ERR_NOT_FOUND            "not_found"
+#define ERR_INVALID_THRESHOLD    "invalid_threshold"
+#define ERR_PROMPT_TOO_LONG      "prompt_too_long"
+
+#define ALERT_PROMPT_MAX_BYTES   512
+#define ALERT_THRESHOLD_MAX      99.99f
 
 typedef struct {
     char symbol[8];
@@ -383,6 +388,71 @@ static void add_quote_to_stock_item(cJSON *item, const stock_quote_t *quote)
     cJSON_AddItemToObject(item, "quote", quote_obj);
 }
 
+static void add_alert_config_to_stock_item(cJSON *item, const stock_alert_config_t *cfg)
+{
+    if (!item || !cfg) {
+        return;
+    }
+
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) {
+        return;
+    }
+    cJSON_AddBoolToObject(obj, "enabled", cfg->enabled);
+    cJSON_AddNumberToObject(obj, "up_threshold_pct", roundf(cfg->up_threshold_pct * 100.0f) / 100.0f);
+    cJSON_AddNumberToObject(obj, "down_threshold_pct", roundf(cfg->down_threshold_pct * 100.0f) / 100.0f);
+    cJSON_AddStringToObject(obj, "ai_prompt", cfg->ai_prompt);
+    cJSON_AddItemToObject(item, "alert_config", obj);
+}
+
+static bool is_alert_threshold_valid(double value)
+{
+    return isfinite(value) && value >= 0.0 && value <= ALERT_THRESHOLD_MAX;
+}
+
+static esp_err_t parse_alert_config_from_json(cJSON *alert_obj, stock_alert_config_t *cfg, const char **error_code)
+{
+    if (!cJSON_IsObject(alert_obj) || !cfg) {
+        if (error_code) {
+            *error_code = ERR_INVALID_FORMAT;
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *enabled = cJSON_GetObjectItem(alert_obj, "enabled");
+    cJSON *up = cJSON_GetObjectItem(alert_obj, "up_threshold_pct");
+    cJSON *down = cJSON_GetObjectItem(alert_obj, "down_threshold_pct");
+    cJSON *prompt = cJSON_GetObjectItem(alert_obj, "ai_prompt");
+    if (!cJSON_IsBool(enabled) || !cJSON_IsNumber(up) || !cJSON_IsNumber(down) || !cJSON_IsString(prompt)) {
+        if (error_code) {
+            *error_code = ERR_INVALID_FORMAT;
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!is_alert_threshold_valid(up->valuedouble) || !is_alert_threshold_valid(down->valuedouble)) {
+        if (error_code) {
+            *error_code = ERR_INVALID_THRESHOLD;
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t prompt_len = strlen(prompt->valuestring);
+    if (prompt_len > ALERT_PROMPT_MAX_BYTES) {
+        if (error_code) {
+            *error_code = ERR_PROMPT_TOO_LONG;
+        }
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    memset(cfg, 0, sizeof(*cfg));
+    cfg->enabled = cJSON_IsTrue(enabled);
+    cfg->up_threshold_pct = roundf((float)up->valuedouble * 100.0f) / 100.0f;
+    cfg->down_threshold_pct = roundf((float)down->valuedouble * 100.0f) / 100.0f;
+    strlcpy(cfg->ai_prompt, prompt->valuestring, sizeof(cfg->ai_prompt));
+    return ESP_OK;
+}
+
 static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
 {
     stock_list_t list = {0};
@@ -434,6 +504,12 @@ static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
         cJSON_AddStringToObject(item, "name", name ? name : "");
         cJSON_AddStringToObject(item, "abbr", abbr ? abbr : "");
         cJSON_AddStringToObject(item, "industry", industry ? industry : "");
+        stock_alert_config_t alert_cfg = {0};
+        if (storage_stock_alert_config_load(list.symbols[i], &alert_cfg) != ESP_OK) {
+            cJSON_Delete(root);
+            return send_json_error(req, 500, "load_failed");
+        }
+        add_alert_config_to_stock_item(item, &alert_cfg);
         add_quote_to_stock_item(item, has_quote_data ? find_quote_by_symbol(quotes, list.count, list.symbols[i]) : NULL);
         cJSON_AddItemToArray(items, item);
     }
@@ -506,6 +582,14 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
         return send_json_error(req, 500, "save_failed");
     }
 
+    stock_alert_config_t alert_cfg = {0};
+    if (storage_stock_alert_config_save(symbol, &alert_cfg) != ESP_OK) {
+        stock_list_remove_symbol(&list, symbol);
+        storage_stocks_save(&list);
+        storage_stock_meta_remove(symbol);
+        return send_json_error(req, 500, "save_failed");
+    }
+
     scheduler_reload_stock_list();
     scheduler_trigger_quote_now();
     cache_stock_meta(symbol, info.name, info.short_name, info.industry);
@@ -540,6 +624,122 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
     cJSON_AddStringToObject(item, "abbr", info.short_name);
     cJSON_AddStringToObject(item, "industry", info.industry);
     cJSON_AddStringToObject(item, "market", "tse");
+    add_alert_config_to_stock_item(item, &alert_cfg);
+    add_quote_to_stock_item(item, quote_ptr);
+
+    char *resp_json = cJSON_PrintUnformatted(resp);
+    cJSON_Delete(resp);
+    if (!resp_json) {
+        return send_json_error(req, 500, "encode_failed");
+    }
+
+    esp_err_t send_ret = send_json_response(req, 200, resp_json);
+    free(resp_json);
+    return send_ret;
+}
+
+static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
+{
+    char *body = NULL;
+    if (read_request_body_alloc(req, &body) != ESP_OK) {
+        return send_json_error(req, 400, ERR_INVALID_FORMAT);
+    }
+
+    cJSON *root = cJSON_Parse(body);
+    free(body);
+    if (!root) {
+        return send_json_error(req, 400, ERR_INVALID_FORMAT);
+    }
+
+    cJSON *sym = cJSON_GetObjectItem(root, "symbol");
+    cJSON *alert_obj = cJSON_GetObjectItem(root, "alert_config");
+    cJSON *clear_alert = cJSON_GetObjectItem(root, "clear_alert");
+    if (!cJSON_IsString(sym) || !is_symbol_format_valid(sym->valuestring)) {
+        cJSON_Delete(root);
+        return send_json_error(req, 400, ERR_INVALID_FORMAT);
+    }
+
+    bool should_clear_alert = cJSON_IsTrue(clear_alert);
+    if (clear_alert && !cJSON_IsBool(clear_alert)) {
+        cJSON_Delete(root);
+        return send_json_error(req, 400, ERR_INVALID_FORMAT);
+    }
+
+    char symbol[8] = {0};
+    strlcpy(symbol, sym->valuestring, sizeof(symbol));
+
+    stock_list_t list = {0};
+    if (storage_stocks_load(&list) != ESP_OK) {
+        cJSON_Delete(root);
+        return send_json_error(req, 500, "load_failed");
+    }
+    if (stock_list_find_symbol(&list, symbol) < 0) {
+        cJSON_Delete(root);
+        return send_json_error(req, 404, ERR_NOT_FOUND);
+    }
+
+    stock_alert_config_t alert_cfg = {0};
+    if (should_clear_alert) {
+        if (storage_stock_alert_config_remove(symbol) != ESP_OK) {
+            cJSON_Delete(root);
+            return send_json_error(req, 500, "save_failed");
+        }
+    } else {
+        const char *parse_error = NULL;
+        esp_err_t parse_ret = parse_alert_config_from_json(alert_obj, &alert_cfg, &parse_error);
+        if (parse_ret != ESP_OK) {
+            cJSON_Delete(root);
+            return send_json_error(req, 400, parse_error);
+        }
+        if (storage_stock_alert_config_save(symbol, &alert_cfg) != ESP_OK) {
+            cJSON_Delete(root);
+            return send_json_error(req, 500, "save_failed");
+        }
+    }
+    cJSON_Delete(root);
+
+    if (storage_stock_alert_config_load(symbol, &alert_cfg) != ESP_OK) {
+        return send_json_error(req, 500, "load_failed");
+    }
+
+    ensure_stock_meta_cached(symbol);
+    const char *name = "";
+    const char *abbr = "";
+    const char *industry = "";
+    stock_meta_cache_t *meta = find_stock_meta(symbol);
+    if (meta) {
+        name = meta->name;
+        abbr = meta->abbr;
+        industry = meta->industry;
+    }
+
+    stock_quote_t quote = {0};
+    const stock_quote_t *quote_ptr = NULL;
+    if (is_sta_connected()) {
+        char single_symbol[1][8] = {{0}};
+        strlcpy(single_symbol[0], symbol, sizeof(single_symbol[0]));
+        if (twse_client_fetch(single_symbol, 1, &quote) == ESP_OK) {
+            quote_ptr = &quote;
+        } else {
+            ESP_LOGW(TAG, "stocks_update quote fetch failed symbol=%s", symbol);
+        }
+    }
+
+    cJSON *resp = cJSON_CreateObject();
+    cJSON *item = cJSON_CreateObject();
+    if (!resp || !item) {
+        cJSON_Delete(resp);
+        cJSON_Delete(item);
+        return send_json_error(req, 500, "no_memory");
+    }
+
+    cJSON_AddBoolToObject(resp, "ok", true);
+    cJSON_AddItemToObject(resp, "item", item);
+    cJSON_AddStringToObject(item, "symbol", symbol);
+    cJSON_AddStringToObject(item, "name", name);
+    cJSON_AddStringToObject(item, "abbr", abbr);
+    cJSON_AddStringToObject(item, "industry", industry);
+    add_alert_config_to_stock_item(item, &alert_cfg);
     add_quote_to_stock_item(item, quote_ptr);
 
     char *resp_json = cJSON_PrintUnformatted(resp);
@@ -589,6 +789,9 @@ static esp_err_t portal_stocks_remove_post_handler(httpd_req_t *req)
         return send_json_error(req, 500, "save_failed");
     }
     if (storage_stock_meta_remove(symbol) != ESP_OK) {
+        return send_json_error(req, 500, "save_failed");
+    }
+    if (storage_stock_alert_config_remove(symbol) != ESP_OK) {
         return send_json_error(req, 500, "save_failed");
     }
 
@@ -697,6 +900,13 @@ esp_err_t stock_admin_service_register_handlers(httpd_handle_t httpd)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t stocks_update_uri = {
+        .uri = "/stocks/update",
+        .method = HTTP_POST,
+        .handler = portal_stocks_update_post_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_uri_t saved_aps_get_uri = {
         .uri = "/saved_aps",
         .method = HTTP_GET,
@@ -714,6 +924,7 @@ esp_err_t stock_admin_service_register_handlers(httpd_handle_t httpd)
     httpd_register_uri_handler(httpd, &stocks_uri);
     httpd_register_uri_handler(httpd, &stocks_add_uri);
     httpd_register_uri_handler(httpd, &stocks_remove_uri);
+    httpd_register_uri_handler(httpd, &stocks_update_uri);
     httpd_register_uri_handler(httpd, &saved_aps_get_uri);
     httpd_register_uri_handler(httpd, &saved_aps_remove_uri);
 

@@ -30,6 +30,11 @@ static void make_stock_meta_key(char *buf, size_t buf_size, const char *symbol)
     snprintf(buf, buf_size, "m_%s", symbol);
 }
 
+static void make_stock_alert_key(char *buf, size_t buf_size, const char *symbol)
+{
+    snprintf(buf, buf_size, "a_%s", symbol);
+}
+
 static esp_err_t migrate_ai_prompt_template_cleanup(void)
 {
     nvs_handle_t h;
@@ -649,6 +654,66 @@ esp_err_t storage_stock_meta_remove(const char *symbol)
 
     char key[16] = {0};
     make_stock_meta_key(key, sizeof(key), symbol);
+    ret = nvs_erase_key(h, key);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) ret = ESP_OK;
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_stock_alert_config_save(const char *symbol, const stock_alert_config_t *config)
+{
+    if (!is_stock_symbol_valid(symbol) || !config) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_STOCKS, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    char key[16] = {0};
+    make_stock_alert_key(key, sizeof(key), symbol);
+    ret = nvs_set_blob(h, key, config, sizeof(*config));
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_stock_alert_config_load(const char *symbol, stock_alert_config_t *config)
+{
+    if (!is_stock_symbol_valid(symbol) || !config) return ESP_ERR_INVALID_ARG;
+    memset(config, 0, sizeof(*config));
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_STOCKS, NVS_READONLY, &h);
+    if (ret != ESP_OK) {
+        return ESP_OK;
+    }
+
+    char key[16] = {0};
+    make_stock_alert_key(key, sizeof(key), symbol);
+    size_t sz = sizeof(*config);
+    ret = nvs_get_blob(h, key, config, &sz);
+    nvs_close(h);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        memset(config, 0, sizeof(*config));
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) return ret;
+    if (sz != sizeof(*config)) return ESP_ERR_INVALID_SIZE;
+    config->ai_prompt[sizeof(config->ai_prompt) - 1] = '\0';
+    return ESP_OK;
+}
+
+esp_err_t storage_stock_alert_config_remove(const char *symbol)
+{
+    if (!is_stock_symbol_valid(symbol)) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_STOCKS, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    char key[16] = {0};
+    make_stock_alert_key(key, sizeof(key), symbol);
     ret = nvs_erase_key(h, key);
     if (ret == ESP_ERR_NVS_NOT_FOUND) ret = ESP_OK;
     if (ret == ESP_OK) ret = nvs_commit(h);

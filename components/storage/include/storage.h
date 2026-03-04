@@ -53,6 +53,17 @@ esp_err_t storage_stock_meta_save(const char *symbol, const char *name,
 esp_err_t storage_stock_meta_load(const char *symbol, stock_meta_t *meta);
 esp_err_t storage_stock_meta_remove(const char *symbol);
 
+typedef struct {
+    bool enabled;
+    float up_threshold_pct;
+    float down_threshold_pct;
+    char ai_prompt[513];
+} stock_alert_config_t;
+
+esp_err_t storage_stock_alert_config_save(const char *symbol, const stock_alert_config_t *config);
+esp_err_t storage_stock_alert_config_load(const char *symbol, stock_alert_config_t *config);
+esp_err_t storage_stock_alert_config_remove(const char *symbol);
+
 /* ====== 排程設定 ====== */
 typedef struct {
     uint16_t quote_interval_s;   /* 報價更新間隔（秒）*/
