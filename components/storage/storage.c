@@ -30,8 +30,36 @@ static void make_stock_meta_key(char *buf, size_t buf_size, const char *symbol)
     snprintf(buf, buf_size, "m_%s", symbol);
 }
 
+static esp_err_t migrate_ai_prompt_template_cleanup(void)
+{
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    ret = nvs_erase_key(h, "prompt_tpl");
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(h);
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) {
+        nvs_close(h);
+        return ret;
+    }
+
+    ret = nvs_commit(h);
+    nvs_close(h);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "AI prompt_tpl 已清除（遷移）");
+    }
+    return ret;
+}
+
 esp_err_t storage_init(void)
 {
+    esp_err_t ret = migrate_ai_prompt_template_cleanup();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "AI prompt_tpl 遷移清除失敗: %s", esp_err_to_name(ret));
+    }
     ESP_LOGI(TAG, "NVS Storage 就緒");
     return ESP_OK;
 }
@@ -415,35 +443,6 @@ esp_err_t storage_ai_load_provider_key(uint8_t provider_type, char *api_key, siz
     }
     ret = nvs_get_str(h, key_name, api_key, &size);
     if (ret != ESP_OK) api_key[0] = '\0';
-    nvs_close(h);
-    return ESP_OK;
-}
-
-esp_err_t storage_ai_save_prompt_template(const char *prompt_template)
-{
-    if (!prompt_template) return ESP_ERR_INVALID_ARG;
-
-    nvs_handle_t h;
-    esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READWRITE, &h);
-    if (ret != ESP_OK) return ret;
-    nvs_set_str(h, "prompt_tpl", prompt_template);
-    ret = nvs_commit(h);
-    nvs_close(h);
-    return ret;
-}
-
-esp_err_t storage_ai_load_prompt_template(char *prompt_template, size_t size)
-{
-    if (!prompt_template || size == 0) return ESP_ERR_INVALID_ARG;
-
-    nvs_handle_t h;
-    esp_err_t ret = nvs_open(NVS_NS_AI, NVS_READONLY, &h);
-    if (ret != ESP_OK) {
-        prompt_template[0] = '\0';
-        return ESP_OK;
-    }
-    ret = nvs_get_str(h, "prompt_tpl", prompt_template, &size);
-    if (ret != ESP_OK) prompt_template[0] = '\0';
     nvs_close(h);
     return ESP_OK;
 }

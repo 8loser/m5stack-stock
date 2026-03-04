@@ -251,11 +251,9 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
     char gemini_key[128] = {0};
     char claude_key[128] = {0};
     char openai_key[128] = {0};
-    char prompt_template[1024] = {0};
     char e_gemini[300] = {0};
     char e_claude[300] = {0};
     char e_openai[300] = {0};
-    char e_prompt[2200] = {0};
 
     storage_ai_load_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key, sizeof(gemini_key));
     if (gemini_key[0] == '\0') {
@@ -263,23 +261,21 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
     }
     storage_ai_load_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key, sizeof(claude_key));
     storage_ai_load_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key, sizeof(openai_key));
-    storage_ai_load_prompt_template(prompt_template, sizeof(prompt_template));
 
     json_escape(e_gemini, sizeof(e_gemini), gemini_key);
     json_escape(e_claude, sizeof(e_claude), claude_key);
     json_escape(e_openai, sizeof(e_openai), openai_key);
-    json_escape(e_prompt, sizeof(e_prompt), prompt_template);
 
-    char *json = malloc(3200);
+    char *json = malloc(1200);
     if (!json) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
         return ESP_ERR_NO_MEM;
     }
 
-    int n = snprintf(json, 3200,
+    int n = snprintf(json, 1200,
                      "{\"gemini_key\":\"%s\",\"claude_key\":\"%s\","
-                     "\"openai_key\":\"%s\",\"prompt_template\":\"%s\"}",
-                     e_gemini, e_claude, e_openai, e_prompt);
+                     "\"openai_key\":\"%s\"}",
+                     e_gemini, e_claude, e_openai);
 
     httpd_resp_set_type(req, "application/json");
     esp_err_t ret = httpd_resp_send(req, json, n);
@@ -298,18 +294,15 @@ static esp_err_t portal_ai_post_handler(httpd_req_t *req)
     char gemini_key[128] = {0};
     char claude_key[128] = {0};
     char openai_key[128] = {0};
-    char prompt_template[1024] = {0};
 
     get_form_value(body, "gemini_key", gemini_key, sizeof(gemini_key));
     get_form_value(body, "claude_key", claude_key, sizeof(claude_key));
     get_form_value(body, "openai_key", openai_key, sizeof(openai_key));
-    get_form_value(body, "prompt_template", prompt_template, sizeof(prompt_template));
     free(body);
 
     storage_ai_save_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key);
     storage_ai_save_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key);
     storage_ai_save_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key);
-    storage_ai_save_prompt_template(prompt_template);
 
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     return httpd_resp_sendstr(req,

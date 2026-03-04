@@ -91,10 +91,6 @@
         <input id="openai_key" name="openai_key" maxlength="127">
 
         <div class="hint">Only providers with non-empty key will be used.</div>
-
-        <label>Prompt Template</label>
-        <textarea id="prompt_template" name="prompt_template" maxlength="1023" placeholder="例如：請保守評估，只在高信心時給 buy/sell，其他給 hold"></textarea>
-        <div class="hint">This prompt will be appended as AI instruction text.</div>
         <button type="submit">Save AI Settings</button>
       </form>
       <div id="ai_msg" class="ok"></div>
@@ -316,7 +312,6 @@
         document.getElementById("gemini_key").value = c.gemini_key || "";
         document.getElementById("claude_key").value = c.claude_key || "";
         document.getElementById("openai_key").value = c.openai_key || "";
-        document.getElementById("prompt_template").value = c.prompt_template || "";
       })
       .catch(function () {});
 

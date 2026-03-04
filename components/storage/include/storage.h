@@ -24,8 +24,6 @@ esp_err_t storage_ai_save_key(const char *api_key);
 esp_err_t storage_ai_load_key(char *api_key, size_t size);
 esp_err_t storage_ai_save_provider_key(uint8_t provider_type, const char *api_key);
 esp_err_t storage_ai_load_provider_key(uint8_t provider_type, char *api_key, size_t size);
-esp_err_t storage_ai_save_prompt_template(const char *prompt_template);
-esp_err_t storage_ai_load_prompt_template(char *prompt_template, size_t size);
 
 /* ====== 股票清單 ====== */
 typedef struct {

@@ -22,7 +22,6 @@ static const ai_provider_ops_t *s_providers[] = {
 
 static ai_provider_type_t s_current_type = AI_PROVIDER_GEMINI;
 static QueueHandle_t      s_result_queue = NULL;
-static char s_local_prompt_template[1024] = {0};
 
 /* 預設 Prompt 模板 */
 static const char *DEFAULT_PROMPT_TEMPLATE =
@@ -30,26 +29,18 @@ static const char *DEFAULT_PROMPT_TEMPLATE =
     "股票：%s (%s)\n"
     "現價：%.2f 元，漲跌：%.2f%%\n"
     "今日區間：%.2f - %.2f 元，成交量：%ld 張\n"
-    "%s\n"
     "\n請以 JSON 格式回應：\n"
     "{\"signal\": \"buy|sell|hold\", \"confidence\": 0-100, "
     "\"analysis\": \"說明（繁體中文，100字以內）\"}";
 
-void ai_provider_build_prompt(const stock_context_t *ctx,
-                               const char *prompt_template,
-                               char *out, size_t out_size)
+static void ai_provider_build_prompt(const stock_context_t *ctx,
+                                     char *out, size_t out_size)
 {
-    (void)prompt_template;
-    const char *tmpl = DEFAULT_PROMPT_TEMPLATE;
-    const char *extra = (strlen(s_local_prompt_template) > 0)
-                        ? s_local_prompt_template : "";
-
-    snprintf(out, out_size, tmpl,
+    snprintf(out, out_size, DEFAULT_PROMPT_TEMPLATE,
              ctx->name, ctx->symbol,
              ctx->current_price, ctx->change_percent,
              ctx->low_price, ctx->high_price,
-             ctx->volume,
-             extra);
+             ctx->volume);
 }
 
 static stock_context_t quote_to_context(const stock_quote_t *q)
@@ -63,11 +54,6 @@ static stock_context_t quote_to_context(const stock_quote_t *q)
     ctx.high_price     = q->high_price;
     ctx.volume         = q->volume;
     return ctx;
-}
-
-static void load_local_prompt_template(void)
-{
-    storage_ai_load_prompt_template(s_local_prompt_template, sizeof(s_local_prompt_template));
 }
 
 static void load_provider_key(ai_provider_type_t type, char *out, size_t out_size)
@@ -111,7 +97,6 @@ void ai_provider_get_active_api_key(char *out, size_t out_size)
 
 esp_err_t ai_provider_reload_local_config(void)
 {
-    load_local_prompt_template();
     return ESP_OK;
 }
 
@@ -122,7 +107,6 @@ esp_err_t ai_provider_init(QueueHandle_t result_queue)
     uint8_t saved_type = 0;
     storage_ai_load_provider(&saved_type);
     s_current_type = (ai_provider_type_t)saved_type;
-    load_local_prompt_template();
 
     ESP_LOGI(TAG, "AI Provider 初始化完成，使用 %s（本機設定模式）",
              s_providers[s_current_type]->name);
@@ -163,7 +147,7 @@ static void analyze_task(void *arg)
     stock_context_t ctx = quote_to_context(&args->quote);
 
     char prompt[1536];
-    ai_provider_build_prompt(&ctx, NULL, prompt, sizeof(prompt));
+    ai_provider_build_prompt(&ctx, prompt, sizeof(prompt));
 
     char active_key[128] = {0};
     strncpy(active_key, args->api_key, sizeof(active_key) - 1);
@@ -204,7 +188,7 @@ esp_err_t ai_provider_analyze_sync(const stock_quote_t *quote,
     stock_context_t ctx = quote_to_context(quote);
 
     char prompt[1536];
-    ai_provider_build_prompt(&ctx, NULL, prompt, sizeof(prompt));
+    ai_provider_build_prompt(&ctx, prompt, sizeof(prompt));
 
     char active_key[128] = {0};
     if (api_key && strlen(api_key) > 0) {

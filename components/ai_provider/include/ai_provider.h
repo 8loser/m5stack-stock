@@ -41,7 +41,7 @@ typedef struct {
 /* vtable 模式 */
 typedef struct {
     esp_err_t (*analyze)(const stock_context_t *ctx,
-                          const char *prompt_template,
+                          const char *prompt,
                           const char *api_key,
                           ai_analysis_result_t *result);
     const char *name;
