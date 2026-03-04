@@ -619,9 +619,12 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
     char gemini_key[128] = {0};
     char claude_key[128] = {0};
     char openai_key[128] = {0};
-    char e_gemini[300] = {0};
-    char e_claude[300] = {0};
-    char e_openai[300] = {0};
+    char gemini_masked[24] = {0};
+    char claude_masked[24] = {0};
+    char openai_masked[24] = {0};
+    char e_gemini_masked[64] = {0};
+    char e_claude_masked[64] = {0};
+    char e_openai_masked[64] = {0};
 
     storage_ai_load_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key, sizeof(gemini_key));
     if (gemini_key[0] == '\0') {
@@ -630,20 +633,26 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
     storage_ai_load_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key, sizeof(claude_key));
     storage_ai_load_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key, sizeof(openai_key));
 
-    json_escape(e_gemini, sizeof(e_gemini), gemini_key);
-    json_escape(e_claude, sizeof(e_claude), claude_key);
-    json_escape(e_openai, sizeof(e_openai), openai_key);
+    mask_secret_tail4(gemini_key, gemini_masked, sizeof(gemini_masked));
+    mask_secret_tail4(claude_key, claude_masked, sizeof(claude_masked));
+    mask_secret_tail4(openai_key, openai_masked, sizeof(openai_masked));
+    json_escape(e_gemini_masked, sizeof(e_gemini_masked), gemini_masked);
+    json_escape(e_claude_masked, sizeof(e_claude_masked), claude_masked);
+    json_escape(e_openai_masked, sizeof(e_openai_masked), openai_masked);
 
-    char *json = malloc(1200);
+    char *json = malloc(512);
     if (!json) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
         return ESP_ERR_NO_MEM;
     }
 
-    int n = snprintf(json, 1200,
-                     "{\"gemini_key\":\"%s\",\"claude_key\":\"%s\","
-                     "\"openai_key\":\"%s\"}",
-                     e_gemini, e_claude, e_openai);
+    int n = snprintf(json, 512,
+                     "{\"gemini_configured\":%s,\"claude_configured\":%s,\"openai_configured\":%s,"
+                     "\"gemini_key_masked\":\"%s\",\"claude_key_masked\":\"%s\",\"openai_key_masked\":\"%s\"}",
+                     gemini_key[0] != '\0' ? "true" : "false",
+                     claude_key[0] != '\0' ? "true" : "false",
+                     openai_key[0] != '\0' ? "true" : "false",
+                     e_gemini_masked, e_claude_masked, e_openai_masked);
 
     httpd_resp_set_type(req, "application/json");
     esp_err_t ret = httpd_resp_send(req, json, n);
@@ -663,15 +672,22 @@ static esp_err_t portal_ai_post_handler(httpd_req_t *req)
     char claude_key[128] = {0};
     char openai_key[128] = {0};
 
-    get_form_value(body, "gemini_key", gemini_key, sizeof(gemini_key));
-    get_form_value(body, "claude_key", claude_key, sizeof(claude_key));
-    get_form_value(body, "openai_key", openai_key, sizeof(openai_key));
+    bool has_gemini = get_form_value(body, "gemini_key", gemini_key, sizeof(gemini_key));
+    bool has_claude = get_form_value(body, "claude_key", claude_key, sizeof(claude_key));
+    bool has_openai = get_form_value(body, "openai_key", openai_key, sizeof(openai_key));
     free(body);
 
-    if (storage_ai_save_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key) != ESP_OK ||
-        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key) != ESP_OK ||
+    if (has_gemini && gemini_key[0] != '\0' &&
+        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key) != ESP_OK) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed_gemini\"}");
+    }
+    if (has_claude && claude_key[0] != '\0' &&
+        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key) != ESP_OK) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed_claude\"}");
+    }
+    if (has_openai && openai_key[0] != '\0' &&
         storage_ai_save_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key) != ESP_OK) {
-        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed\"}");
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed_openai\"}");
     }
 
     return send_json_response(req, 200, "{\"ok\":true}");

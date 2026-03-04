@@ -164,15 +164,15 @@
       <h3>AI Settings</h3>
       <form onsubmit="saveAiSettingsAndTest(); return false;">
         <label>Gemini API Key</label>
-        <input id="gemini_key" name="gemini_key" maxlength="127">
+        <input id="gemini_key" name="gemini_key" maxlength="127" type="password" autocomplete="off">
 
         <label>Claude API Key</label>
-        <input id="claude_key" name="claude_key" maxlength="127">
+        <input id="claude_key" name="claude_key" maxlength="127" type="password" autocomplete="off">
 
         <label>OpenAI API Key</label>
-        <input id="openai_key" name="openai_key" maxlength="127">
+        <input id="openai_key" name="openai_key" maxlength="127" type="password" autocomplete="off">
 
-        <div class="hint">Only providers with non-empty key will be used.</div>
+        <div class="hint">Leave blank to keep existing key. Only providers with non-empty key will be used.</div>
         <button type="submit">Save AI Settings</button>
         <button type="button" class="secondary" style="margin-top:8px;" onclick="testAiProviders()">Test AI Providers</button>
       </form>
@@ -755,9 +755,15 @@
         .then(function (r) { return r.json(); })
         .then(function (c) {
           if (is_stale_generation(generation)) return;
-          document.getElementById("gemini_key").value = c.gemini_key || "";
-          document.getElementById("claude_key").value = c.claude_key || "";
-          document.getElementById("openai_key").value = c.openai_key || "";
+          var gemini = document.getElementById("gemini_key");
+          var claude = document.getElementById("claude_key");
+          var openai = document.getElementById("openai_key");
+          gemini.value = "";
+          claude.value = "";
+          openai.value = "";
+          gemini.placeholder = c.gemini_key_masked || "";
+          claude.placeholder = c.claude_key_masked || "";
+          openai.placeholder = c.openai_key_masked || "";
         })
         .catch(function () {});
     }
