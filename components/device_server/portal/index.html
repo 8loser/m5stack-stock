@@ -15,6 +15,10 @@
     select, input, textarea, button { width: 100%; padding: 10px; margin-top: 6px; box-sizing: border-box; }
     textarea { min-height: 180px; resize: vertical; }
     button { background: #0b7; color: #fff; border: 0; border-radius: 6px; font-weight: 600; }
+    button.secondary { background: #1f78d1; }
+    button:active { transform: translateY(1px); }
+    button:hover { filter: brightness(0.95); }
+    button, .menu-btn { cursor: pointer; }
     .hint { font-size: 12px; color: #666; margin-top: 4px; }
     .ok { color: #0a6; font-size: 13px; }
     .err { color: #b00020; font-size: 13px; }
@@ -111,6 +115,11 @@
       <label>Chat ID</label>
       <input id="tg_chat_id" maxlength="39" placeholder="-1001234567890">
       <div class="hint">Use private/group chat id. Usually group id starts with "-100".</div>
+      <button type="button" class="secondary" style="margin-top:8px;" onclick="loadTelegramChats()">Load Chats</button>
+      <select id="tg_chat_select" onchange="applySelectedTelegramChat()">
+        <option value="">-- Select discovered chat --</option>
+      </select>
+      <div class="hint">Ask target user/group to send message to bot first, then click Load Chats.</div>
 
       <button type="button" onclick="saveTelegram()">Save Telegram Settings</button>
       <button type="button" style="background:#2d7dd2;margin-top:8px;" onclick="sendTelegramTest()">Send Test Message</button>
@@ -184,6 +193,44 @@
         .catch(function () {
           setTelegramMsg("Load telegram config failed", false);
         });
+    }
+
+    function loadTelegramChats() {
+      fetch("/telegram/chats")
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.body.ok) {
+            setTelegramMsg("Load chats failed: " + ((x.body && x.body.error) || "unknown"), false);
+            return;
+          }
+          var items = (x.body.items || []);
+          var sel = document.getElementById("tg_chat_select");
+          sel.options.length = 0;
+          sel.add(new Option("-- Select discovered chat --", ""));
+          items.forEach(function (it) {
+            var label = (it.label || it.chat_id || "chat") + " [" + (it.chat_id || "") + "]";
+            sel.add(new Option(label, it.chat_id || ""));
+          });
+          if (!items.length) {
+            setTelegramMsg("No chats found. Send message to bot first.", false);
+            return;
+          }
+          setTelegramMsg("Chats loaded. Select one to fill Chat ID.", true);
+        })
+        .catch(function (e) {
+          setTelegramMsg("Load chats failed: " + (e && e.message ? e.message : "network"), false);
+        });
+    }
+
+    function applySelectedTelegramChat() {
+      var sel = document.getElementById("tg_chat_select");
+      if (!sel) return;
+      var chatId = sel.value || "";
+      if (!chatId) return;
+      document.getElementById("tg_chat_id").value = chatId;
+      setTelegramMsg("Chat ID filled from discovered chats.", true);
     }
 
     function saveTelegram() {

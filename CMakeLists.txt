@@ -4,6 +4,7 @@ set(EXTRA_COMPONENT_DIRS
     components/board
     components/storage
     components/device_server
+    components/telegram_bot
     components/twse_client
     components/scheduler
     components/ui

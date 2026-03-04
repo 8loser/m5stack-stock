@@ -10,6 +10,7 @@
 #include "esp_http_server.h"
 #include "esp_crt_bundle.h"
 #include "esp_netif.h"
+#include "cJSON.h"
 #include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -292,23 +293,19 @@ static esp_err_t telegram_send_test_message(const char *token,
     char post_data[512] = {0};
     char url[320] = {0};
     int status_code = 0;
+    char *resp_body = NULL;
 
     url_encode_component(chat_id, encoded_chat, sizeof(encoded_chat));
     url_encode_component(text, encoded_text, sizeof(encoded_text));
     snprintf(post_data, sizeof(post_data), "chat_id=%s&text=%s", encoded_chat, encoded_text);
     snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/sendMessage", token);
 
-    char *resp_buf = malloc(TELEGRAM_HTTP_BUF_INIT_SIZE);
-    if (!resp_buf) {
+    telegram_http_ctx_t ctx = {0};
+    ctx.buf = malloc(TELEGRAM_HTTP_BUF_INIT_SIZE);
+    if (!ctx.buf) {
         return ESP_ERR_NO_MEM;
     }
-
-    telegram_http_ctx_t ctx = {
-        .buf = resp_buf,
-        .capacity = TELEGRAM_HTTP_BUF_INIT_SIZE,
-        .data_len = 0,
-        .overflow = false,
-    };
+    ctx.capacity = TELEGRAM_HTTP_BUF_INIT_SIZE;
 
     esp_http_client_config_t cfg = {
         .url = url,
@@ -317,7 +314,6 @@ static esp_err_t telegram_send_test_message(const char *token,
         .timeout_ms = HTTP_TIMEOUT_MS,
         .crt_bundle_attach = esp_crt_bundle_attach,
     };
-
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (!client) {
         free(ctx.buf);
@@ -335,15 +331,70 @@ static esp_err_t telegram_send_test_message(const char *token,
     bool success = false;
     if (ret == ESP_OK && !ctx.overflow && status_code == 200) {
         ctx.buf[ctx.data_len] = '\0';
-        success = (strstr(ctx.buf, "\"ok\":true") != NULL);
+        resp_body = ctx.buf;
+        success = (strstr(resp_body, "\"ok\":true") != NULL);
     }
-    free(ctx.buf);
+    if (resp_body == NULL) {
+        free(ctx.buf);
+    }
+    free(resp_body);
 
     if (!success) {
         ESP_LOGW(TAG, "telegram test failed ret=%s status=%d overflow=%d",
                  esp_err_to_name(ret), status_code, ctx.overflow ? 1 : 0);
         return (ret == ESP_OK) ? ESP_FAIL : ret;
     }
+    return ESP_OK;
+}
+
+static esp_err_t telegram_get_updates(const char *token, char **out_body, int *out_status)
+{
+    if (!token || token[0] == '\0' || !out_body) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *out_body = NULL;
+    if (out_status) {
+        *out_status = 0;
+    }
+
+    char url[384] = {0};
+    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/getUpdates?limit=20&timeout=1", token);
+
+    telegram_http_ctx_t ctx = {0};
+    ctx.buf = malloc(TELEGRAM_HTTP_BUF_INIT_SIZE);
+    if (!ctx.buf) {
+        return ESP_ERR_NO_MEM;
+    }
+    ctx.capacity = TELEGRAM_HTTP_BUF_INIT_SIZE;
+
+    esp_http_client_config_t cfg = {
+        .url = url,
+        .event_handler = telegram_http_event_handler,
+        .user_data = &ctx,
+        .timeout_ms = HTTP_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (!client) {
+        free(ctx.buf);
+        return ESP_FAIL;
+    }
+    esp_http_client_set_method(client, HTTP_METHOD_GET);
+
+    esp_err_t ret = esp_http_client_perform(client);
+    int status_code = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    if (out_status) {
+        *out_status = status_code;
+    }
+
+    if (ret != ESP_OK || ctx.overflow) {
+        free(ctx.buf);
+        return (ret == ESP_OK) ? ESP_FAIL : ret;
+    }
+    ctx.buf[ctx.data_len] = '\0';
+    *out_body = ctx.buf;
     return ESP_OK;
 }
 
@@ -513,19 +564,21 @@ static esp_err_t portal_telegram_post_handler(httpd_req_t *req)
     char token[TELEGRAM_TOKEN_MAX_LEN] = {0};
     char chat_id[TELEGRAM_CHAT_ID_MAX_LEN] = {0};
 
-    get_form_value(body, "enabled", enabled_raw, sizeof(enabled_raw));
-    get_form_value(body, "bot_token", token, sizeof(token));
-    get_form_value(body, "chat_id", chat_id, sizeof(chat_id));
+    bool has_enabled = get_form_value(body, "enabled", enabled_raw, sizeof(enabled_raw));
+    bool has_token = get_form_value(body, "bot_token", token, sizeof(token));
+    bool has_chat_id = get_form_value(body, "chat_id", chat_id, sizeof(chat_id));
     free(body);
 
-    bool enabled = (strcmp(enabled_raw, "1") == 0 || strcasecmp(enabled_raw, "true") == 0);
+    bool enabled = has_enabled && (strcmp(enabled_raw, "1") == 0 || strcasecmp(enabled_raw, "true") == 0);
     if (storage_tg_save_enabled(enabled) != ESP_OK) {
         return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed\"}");
     }
-    if (chat_id[0] != '\0' && storage_tg_save_chat_id(chat_id) != ESP_OK) {
+    /* chat_id 欄位若有提交，允許存空字串（用於清除設定） */
+    if (has_chat_id && storage_tg_save_chat_id(chat_id) != ESP_OK) {
         return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed\"}");
     }
-    if (token[0] != '\0' && storage_tg_save_bot_token(token) != ESP_OK) {
+    /* token 保留「空字串不覆寫」行為，避免誤清空 */
+    if (has_token && token[0] != '\0' && storage_tg_save_bot_token(token) != ESP_OK) {
         return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed\"}");
     }
 
@@ -553,6 +606,137 @@ static esp_err_t portal_telegram_test_post_handler(httpd_req_t *req)
     }
 
     return send_json_response(req, 200, "{\"ok\":true}");
+}
+
+static cJSON *extract_chat_obj_from_update(cJSON *update_item)
+{
+    const char *keys[] = {"message", "edited_message", "channel_post", "edited_channel_post"};
+    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+        cJSON *msg = cJSON_GetObjectItem(update_item, keys[i]);
+        if (!cJSON_IsObject(msg)) {
+            continue;
+        }
+        cJSON *chat = cJSON_GetObjectItem(msg, "chat");
+        if (cJSON_IsObject(chat)) {
+            return chat;
+        }
+    }
+    return NULL;
+}
+
+static esp_err_t portal_telegram_chats_get_handler(httpd_req_t *req)
+{
+    char token[TELEGRAM_TOKEN_MAX_LEN] = {0};
+    storage_tg_load_bot_token(token, sizeof(token));
+    if (token[0] == '\0') {
+        return send_json_response(req, 400, "{\"ok\":false,\"error\":\"missing_token\"}");
+    }
+
+    int status_code = 0;
+    char *resp_body = NULL;
+    esp_err_t ret = telegram_get_updates(token, &resp_body, &status_code);
+    if (ret != ESP_OK || !resp_body || status_code != 200) {
+        free(resp_body);
+        return send_json_response(req, 502, "{\"ok\":false,\"error\":\"updates_failed\"}");
+    }
+
+    cJSON *root = cJSON_Parse(resp_body);
+    free(resp_body);
+    if (!root) {
+        return send_json_response(req, 502, "{\"ok\":false,\"error\":\"bad_json\"}");
+    }
+
+    cJSON *ok = cJSON_GetObjectItem(root, "ok");
+    cJSON *result = cJSON_GetObjectItem(root, "result");
+    if (!cJSON_IsTrue(ok) || !cJSON_IsArray(result)) {
+        cJSON_Delete(root);
+        return send_json_response(req, 502, "{\"ok\":false,\"error\":\"bad_result\"}");
+    }
+
+    cJSON *out_root = cJSON_CreateObject();
+    cJSON *items = cJSON_AddArrayToObject(out_root, "items");
+    cJSON_AddBoolToObject(out_root, "ok", true);
+
+    const int max_items = 20;
+    char seen_ids[max_items][24];
+    int seen_count = 0;
+    memset(seen_ids, 0, sizeof(seen_ids));
+
+    int count = cJSON_GetArraySize(result);
+    for (int i = 0; i < count && seen_count < max_items; i++) {
+        cJSON *update_item = cJSON_GetArrayItem(result, i);
+        if (!cJSON_IsObject(update_item)) {
+            continue;
+        }
+
+        cJSON *chat = extract_chat_obj_from_update(update_item);
+        if (!chat) {
+            continue;
+        }
+
+        cJSON *chat_id_obj = cJSON_GetObjectItem(chat, "id");
+        char chat_id[24] = {0};
+        if (cJSON_IsNumber(chat_id_obj)) {
+            snprintf(chat_id, sizeof(chat_id), "%.0f", chat_id_obj->valuedouble);
+        } else if (cJSON_IsString(chat_id_obj) && chat_id_obj->valuestring) {
+            strlcpy(chat_id, chat_id_obj->valuestring, sizeof(chat_id));
+        } else {
+            continue;
+        }
+
+        bool duplicated = false;
+        for (int s = 0; s < seen_count; s++) {
+            if (strcmp(seen_ids[s], chat_id) == 0) {
+                duplicated = true;
+                break;
+            }
+        }
+        if (duplicated) {
+            continue;
+        }
+        strlcpy(seen_ids[seen_count], chat_id, sizeof(seen_ids[seen_count]));
+        seen_count++;
+
+        char label[96] = {0};
+        cJSON *title = cJSON_GetObjectItem(chat, "title");
+        cJSON *username = cJSON_GetObjectItem(chat, "username");
+        cJSON *first_name = cJSON_GetObjectItem(chat, "first_name");
+        cJSON *last_name = cJSON_GetObjectItem(chat, "last_name");
+        cJSON *type = cJSON_GetObjectItem(chat, "type");
+        const char *type_str = (cJSON_IsString(type) && type->valuestring) ? type->valuestring : "unknown";
+
+        if (cJSON_IsString(title) && title->valuestring) {
+            snprintf(label, sizeof(label), "%s (%s)", title->valuestring, type_str);
+        } else if (cJSON_IsString(first_name) && first_name->valuestring) {
+            if (cJSON_IsString(last_name) && last_name->valuestring && last_name->valuestring[0] != '\0') {
+                snprintf(label, sizeof(label), "%s %s (%s)", first_name->valuestring, last_name->valuestring, type_str);
+            } else {
+                snprintf(label, sizeof(label), "%s (%s)", first_name->valuestring, type_str);
+            }
+        } else if (cJSON_IsString(username) && username->valuestring) {
+            snprintf(label, sizeof(label), "@%s (%s)", username->valuestring, type_str);
+        } else {
+            snprintf(label, sizeof(label), "%s (%s)", chat_id, type_str);
+        }
+
+        cJSON *one = cJSON_CreateObject();
+        cJSON_AddStringToObject(one, "chat_id", chat_id);
+        cJSON_AddStringToObject(one, "label", label);
+        cJSON_AddStringToObject(one, "type", type_str);
+        cJSON_AddItemToArray(items, one);
+    }
+
+    char *out_str = cJSON_PrintUnformatted(out_root);
+    cJSON_Delete(out_root);
+    cJSON_Delete(root);
+
+    if (!out_str) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"encode_failed\"}");
+    }
+
+    esp_err_t send_ret = send_json_response(req, 200, out_str);
+    free(out_str);
+    return send_ret;
 }
 
 static esp_err_t portal_index_get_handler(httpd_req_t *req)
@@ -641,7 +825,7 @@ static esp_err_t start_portal_http_server(void)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 18;
     config.stack_size = 8192;
 
     esp_err_t ret = httpd_start(&s_httpd, &config);
@@ -706,6 +890,13 @@ static esp_err_t start_portal_http_server(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t telegram_chats_get_uri = {
+        .uri = "/telegram/chats",
+        .method = HTTP_GET,
+        .handler = portal_telegram_chats_get_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_register_uri_handler(s_httpd, &index_uri);
     httpd_register_uri_handler(s_httpd, &wifi_uri);
     httpd_register_uri_handler(s_httpd, &scan_uri);
@@ -714,6 +905,7 @@ static esp_err_t start_portal_http_server(void)
     httpd_register_uri_handler(s_httpd, &telegram_get_uri);
     httpd_register_uri_handler(s_httpd, &telegram_post_uri);
     httpd_register_uri_handler(s_httpd, &telegram_test_post_uri);
+    httpd_register_uri_handler(s_httpd, &telegram_chats_get_uri);
     stock_admin_service_register_handlers(s_httpd);
 
     return ESP_OK;

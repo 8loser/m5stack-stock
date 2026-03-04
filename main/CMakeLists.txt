@@ -6,6 +6,7 @@ idf_component_register(
         app_core
         storage
         device_server
+        telegram_bot
         twse_client
         scheduler
         ui

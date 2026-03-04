@@ -13,6 +13,7 @@
 #include "board.h"
 #include "storage.h"
 #include "device_server.h"
+#include "telegram_bot.h"
 #include "twse_client.h"
 #include "scheduler.h"
 #include "ui_manager.h"
@@ -160,6 +161,8 @@ void app_main(void)
     ESP_ERROR_CHECK(device_server_init());
     device_server_set_callback(on_wifi_state);
     device_server_set_stock_list_changed_callback(on_stock_list_changed);
+    ESP_ERROR_CHECK(telegram_bot_init());
+    telegram_bot_start();
 
     /* 嘗試自動連線；若無設定則導向 Portal 頁面，由使用者手動啟動配網入口 */
     ret = device_server_connect_saved();
