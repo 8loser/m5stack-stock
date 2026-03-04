@@ -178,3 +178,24 @@ esp_err_t ai_provider_analyze_sync(const stock_quote_t *quote,
     result->error_code = ret;
     return ret;
 }
+
+esp_err_t ai_provider_test_key(ai_provider_type_t type,
+                               const char *api_key,
+                               int *out_status_code)
+{
+    if (out_status_code) {
+        *out_status_code = 0;
+    }
+    if (type < AI_PROVIDER_GEMINI || type > AI_PROVIDER_OPENAI) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!api_key || api_key[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const ai_provider_ops_t *ops = s_providers[type];
+    if (!ops || !ops->test_key) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    return ops->test_key(api_key, out_status_code);
+}

@@ -136,7 +136,51 @@ static esp_err_t claude_analyze(const stock_context_t *ctx,
     return ESP_OK;
 }
 
+static esp_err_t claude_test_key(const char *api_key, int *out_status_code)
+{
+    if (out_status_code) {
+        *out_status_code = 0;
+    }
+    if (!api_key || api_key[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    resp_ctx_t resp_ctx = {.buf = NULL, .size = 0, .len = 0};
+    esp_http_client_config_t cfg = {
+        .url = CLAUDE_URL,
+        .method = HTTP_METHOD_POST,
+        .event_handler = resp_handler,
+        .user_data = &resp_ctx,
+        .timeout_ms = AI_HTTP_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (!client) {
+        return ESP_FAIL;
+    }
+
+    const char *body =
+        "{\"model\":\"" CLAUDE_MODEL "\",\"max_tokens\":1,"
+        "\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}";
+
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_header(client, "x-api-key", api_key);
+    esp_http_client_set_header(client, "anthropic-version", "2023-06-01");
+    esp_http_client_set_post_field(client, body, strlen(body));
+
+    esp_err_t ret = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+
+    if (out_status_code) {
+        *out_status_code = status;
+    }
+    return ret;
+}
+
 const ai_provider_ops_t claude_ops = {
     .analyze = claude_analyze,
+    .test_key = claude_test_key,
     .name    = "Claude",
 };

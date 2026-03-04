@@ -86,6 +86,12 @@
 #define TWSE_BASE_URL           "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
 #define HTTP_TIMEOUT_MS         15000
 
+/* --- AI (legacy compatibility) --- */
+#define AI_ANALYSIS_MAX_LEN     256
+#define AI_HTTP_TIMEOUT_MS      HTTP_TIMEOUT_MS
+#define TASK_PRIO_AI            TASK_PRIO_TWSE
+#define STACK_AI                STACK_TWSE
+
 /* --- 震動馬達 --- */
 #define VIBRATION_HAPTIC_MS     30    /* 觸控 haptic 震動時間 */
 #define VIBRATION_ALERT_MS      200   /* 警報震動時間 */
