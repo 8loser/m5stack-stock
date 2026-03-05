@@ -566,12 +566,14 @@ void ui_manager_set_dashboard_symbols(const char symbols[][8], uint8_t count)
 
 void ui_manager_update_wifi_state(int state, const char *ip)
 {
-    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         status_bar_update_wifi(state, ip);
         if (s_cur_screen == SCREEN_PORTAL) {
             screen_portal_refresh_network_info();
         }
         xSemaphoreGiveRecursive(s_ui_mutex);
+    } else {
+        ESP_LOGW(TAG, "update_wifi_state timeout state=%d ip=%s", state, ip ? ip : "");
     }
 }
 

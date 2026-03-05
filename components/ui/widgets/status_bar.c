@@ -2,7 +2,9 @@
 #include "axp192.h"
 #include "rtc_bm8563.h"
 #include "app_config.h"
+#include "network_portal.h"
 #include "ui_compat.h"
+#include "esp_log.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -24,12 +26,16 @@ static lv_obj_t *s_batt_lbl   = NULL;
 static lv_timer_t *s_update_timer = NULL;
 static lv_timer_t *s_heartbeat_timer = NULL;
 static screen_id_t s_page = SCREEN_DASHBOARD;
-static int s_wifi_state = 0;
 static uint8_t s_dashboard_watch_count = 0;
+static bool s_last_logged_external_wifi_connected = false;
+static bool s_last_logged_external_wifi_valid = false;
+static bool s_wifi_state_hint_valid = false;
+static bool s_wifi_state_hint_connected = false;
 static const int EDGE_PADDING = 4;
 static const int ITEM_GAP = 6;
 static const int HEARTBEAT_LABEL_W = 18;
 static const int HEARTBEAT_LABEL_H = 16;
+static const char *TAG = "status_bar";
 
 static void update_message_scroll_mode(void)
 {
@@ -137,16 +143,23 @@ static void refresh_page_message(void)
 static void refresh_wifi_icon(void)
 {
     if (!s_wifi_lbl) return;
+    bool external_wifi_connected = network_portal_is_connected();
 
-    if (s_wifi_state == 2 /* CONNECTED */) {
+    if (!s_last_logged_external_wifi_valid ||
+        s_last_logged_external_wifi_connected != external_wifi_connected) {
+        ESP_LOGI(TAG, "wifi_icon external_connected=%d symbol=%s",
+                 external_wifi_connected ? 1 : 0,
+                 external_wifi_connected ? "LV_SYMBOL_WIFI" : "LV_SYMBOL_WARNING");
+        s_last_logged_external_wifi_connected = external_wifi_connected;
+        s_last_logged_external_wifi_valid = true;
+    }
+
+    if (external_wifi_connected) {
         lv_label_set_text(s_wifi_lbl, LV_SYMBOL_WIFI);
-        lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0x4CAF50), 0);
-    } else if (s_wifi_state == 1 /* CONNECTING */) {
-        lv_label_set_text(s_wifi_lbl, LV_SYMBOL_WIFI);
-        lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0xFFC107), 0);
+        lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0x8864B0), LV_PART_MAIN | LV_STATE_DEFAULT);
     } else {
-        lv_label_set_text(s_wifi_lbl, LV_SYMBOL_WIFI);
-        lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0xFF5252), 0);
+        lv_label_set_text(s_wifi_lbl, LV_SYMBOL_WARNING);
+        lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0x00C4CF), LV_PART_MAIN | LV_STATE_DEFAULT);
     }
     lv_obj_clear_flag(s_wifi_lbl, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(s_wifi_lbl);
@@ -226,6 +239,8 @@ static void status_update_cb(lv_timer_t *t)
         lv_label_set_text(s_batt_lbl, batt);
         lv_obj_set_style_text_color(s_batt_lbl, BAR_TEXT_COLOR, 0);
     }
+    ESP_LOGI(TAG, "status_tick external_connected=%d",
+             network_portal_is_connected() ? 1 : 0);
     refresh_wifi_icon();
     layout_topbar_items();
 }
@@ -307,10 +322,38 @@ void status_bar_create_on(lv_obj_t *parent)
 
 void status_bar_update_wifi(int state, const char *ip)
 {
-    s_wifi_state = state;
     (void)ip;
+    bool connected = (state == WIFI_STATE_CONNECTED);
+    s_wifi_state_hint_valid = true;
+    s_wifi_state_hint_connected = connected;
+
+    if (s_wifi_lbl != NULL) {
+        if (!s_last_logged_external_wifi_valid ||
+            s_last_logged_external_wifi_connected != connected) {
+            ESP_LOGI(TAG, "wifi_icon update(source=event) connected=%d symbol=%s",
+                     connected ? 1 : 0,
+                     connected ? "LV_SYMBOL_WIFI" : "LV_SYMBOL_WARNING");
+            s_last_logged_external_wifi_connected = connected;
+            s_last_logged_external_wifi_valid = true;
+        }
+
+        if (connected) {
+            lv_label_set_text(s_wifi_lbl, LV_SYMBOL_WIFI);
+            lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0x8864B0), LV_PART_MAIN | LV_STATE_DEFAULT);
+        } else {
+            lv_label_set_text(s_wifi_lbl, LV_SYMBOL_WARNING);
+            lv_obj_set_style_text_color(s_wifi_lbl, lv_color_hex(0x00C4CF), LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
+        lv_obj_clear_flag(s_wifi_lbl, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(s_wifi_lbl);
+    }
+
     refresh_page_message();
-    refresh_wifi_icon();
+
+    /* 若 event hint 與實際狀態不同，立即用 network state 校正。 */
+    if (!s_wifi_state_hint_valid || (network_portal_is_connected() != s_wifi_state_hint_connected)) {
+        refresh_wifi_icon();
+    }
     layout_topbar_items();
 }
 
