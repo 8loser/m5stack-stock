@@ -70,11 +70,12 @@ function loadScan(generation) {
 
 function loadWifiData(generation) {
   return loadSavedAps(generation)
-    .catch(function () {})
-    .then(function () {
-      setScanLoadingState("Scanning...");
-      loadScan(generation).catch(function () {});
-    });
+    .catch(function () {});
+}
+
+function scanWifiNow(generation) {
+  setScanLoadingState("Scanning...");
+  return loadScan(generation).catch(function () {});
 }
 
 function removeSavedAp(ssid) {

@@ -37,8 +37,9 @@
       <form method="post" action="/wifi">
         <label>SSID</label>
         <select id="ss" name="ssid" onchange="chk(this)">
-          <option value="">Scanning...</option>
+          <option value="">Click "Scan WiFi" to load networks</option>
         </select>
+        <button type="button" class="secondary" onclick="scanWifiNow()">Scan WiFi</button>
 
         <div id="m" style="display:none">
           <label>Manual SSID</label>
