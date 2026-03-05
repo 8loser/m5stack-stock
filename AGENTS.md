@@ -54,3 +54,7 @@
 - `m5stack-core2-flash-agent` 在燒錄阻塞時可最小修改 `flash.sh`（限連線/燒錄路徑），不得延伸到韌體功能邏輯。
 - `m5stack-core2-dev` 需要實機 log 時，先切 `m5stack-core2-flash-agent` 取得結果，再回 `m5stack-core2-dev` 續修。
 - 具體流程與守則以各自的 skill/agent 文件為準，`AGENTS.md` 不重複維護其細節。
+
+## 路由可觀測性
+- 每個任務開始時，第一則進度訊息必須明確標示：`Routing: <skill-name>`。
+- 若任務中途改派（例如 `m5stack-core2-dev` 轉 `m5stack-core2-flash-agent`），需再補一則路由切換訊息。
