@@ -1,6 +1,6 @@
 ---
 name: m5stack-core2-dev
-description: M5Stack Core2 韌體開發協作技能，聚焦 ESP-IDF v5.1.x、FreeRTOS、LVGL UI、驅動整合、網路與資料流程除錯。當需求涉及 Core2 架構設計、模組修改、UI 事件與執行緒安全、感測與周邊行為、TWSE parser 相容性時使用。本技能不處理燒錄、序列埠監看、erase 或 flash 流程。
+description: M5Stack Core2 韌體開發協作技能，聚焦 ESP-IDF v5.1.x、FreeRTOS、LVGL UI、驅動整合、網路與資料流程除錯與效能調校。當需求涉及 Core2 架構設計、模組修改、UI 事件與執行緒安全、感測與周邊行為、TWSE parser 相容性、heap/stack 調整時使用。本技能不處理燒錄、序列埠監看、erase 或 flash 流程。
 ---
 
 # M5Stack Core2 Dev
@@ -17,6 +17,8 @@ description: M5Stack Core2 韌體開發協作技能，聚焦 ESP-IDF v5.1.x、Fr
 3. 涉及 TWSE API 欄位語意或 parser 相容性時，優先讀 `docs/twse_api_fields.md`。
 4. 變更邏輯時，先定位責任元件再改：`components/board`（硬體）、`components/ui`（畫面）、`components/twse`（行情）、`components/scheduler`（排程）、`components/storage`（設定）。
 5. 先用最小改動解決問題，避免跨模組重構與行為變更混在同次提交。
+6. 進行效能調校時先建立 baseline（啟動時間、畫面更新延遲、單次報價抓取耗時），再做優化與前後對照。
+7. 效能問題先按責任元件拆解（UI/scheduler/network/storage），每輪僅做低風險調整並回歸功能。
 
 ## 程式風格與命名慣例
 
@@ -37,13 +39,24 @@ description: M5Stack Core2 韌體開發協作技能，聚焦 ESP-IDF v5.1.x、Fr
 - FT6336U 底部虛擬鍵區域要在輸入層攔截，不傳給 LVGL 一般觸控流程。
 - UI 顏色調整先以 `components/ui/screens/screen_dashboard.c` 的校正值為基準，再上板驗證。
 
+## 效能調校守則
+
+- FreeRTOS 任務避免 busy loop，優先使用 event-driven，同步補上 `vTaskDelay` 或事件阻塞點。
+- stack 調整以任務高水位為依據，避免長期過大浪費或過小造成 overflow/reset。
+- 大型與長生命週期 buffer 優先 PSRAM，降低 heap 壓力並減少高頻配置/釋放抖動。
+- heap 調校需觀察可用量與碎片趨勢，避免只看單次峰值判斷。
+- LVGL 更新保持持鎖區最小化，合併刷新避免過度 redraw。
+- 網路與 TWSE 拉取避免過高輪詢，timeout/retry 需可控且可觀測。
+
 ## 實作與驗證清單
 
 1. 確認需求影響範圍與模組邊界，列出行為變更點。
 2. 修改後至少通過 `./flash.sh --build-only`。
-3. 實機驗證主要流程（UI、WiFi、報價抓取、AI、排程）。
-4. 需要執行期 log 時，切換 `m5stack-core2-flash-agent` 使用 `--monitor` 取得 log，再回本技能續修。
-5. 涉及 UI/WiFi/報價/AI/排程的改動，補上可重現手動測試步驟並優先處理 warning/error。
+3. 若含效能調校，提供 baseline 與優化後對照（至少涵蓋啟動、畫面更新、單次報價抓取）。
+4. 實機驗證主要流程（UI、WiFi、報價抓取、AI、排程）未回歸。
+5. heap/stack 調整需附任務高水位與記憶體觀測結果，避免只憑體感調整。
+6. 需要執行期 log 時，切換 `m5stack-core2-flash-agent` 使用 `--monitor` 取得 log，再回本技能續修。
+7. 涉及 UI/WiFi/報價/AI/排程的改動，補上可重現手動測試步驟並優先處理 warning/error。
 
 ## Handoff
 
