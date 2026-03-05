@@ -7,6 +7,7 @@
 #include "app_config.h"
 #include "esp_log.h"
 #include "esp_sntp.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,6 +27,7 @@ static TimerHandle_t     s_quote_timer     = NULL;
 static TaskHandle_t      s_scheduler_task  = NULL;
 static bool              s_sntp_synced     = false;
 static bool              s_quote_polling_paused = false;
+static volatile bool     s_quote_fetch_in_flight = false;
 
 /* 儲存的股票清單（供排程使用）*/
 static stock_list_t      s_stock_list;
@@ -155,10 +157,13 @@ static void do_fetch_quotes(bool force_fetch)
     int skipped_empty_symbol = 0;
     int skipped_invalid = 0;
 
+    s_quote_fetch_in_flight = true;
     esp_err_t ret = twse_client_fetch(
                         (const char(*)[8])s_stock_list.symbols,
                         s_stock_list.count,
                         quotes);
+    s_quote_fetch_in_flight = false;
+
     if (ret == ESP_OK && s_quote_queue) {
         for (int i = 0; i < s_stock_list.count; i++) {
             if (quotes[i].symbol[0] == '\0') {
@@ -191,6 +196,26 @@ static void do_fetch_quotes(bool force_fetch)
                                   APP_QUOTE_FETCH_REASON_FETCH_FAILED,
                                   s_stock_list.count, 0, 0, 0, ret);
     }
+}
+
+bool scheduler_is_quote_fetch_in_flight(void)
+{
+    return s_quote_fetch_in_flight;
+}
+
+esp_err_t scheduler_wait_quote_fetch_idle(uint32_t timeout_ms)
+{
+    int64_t start_us = esp_timer_get_time();
+    int64_t timeout_us = (int64_t)timeout_ms * 1000LL;
+
+    while (s_quote_fetch_in_flight) {
+        if ((esp_timer_get_time() - start_us) >= timeout_us) {
+            return ESP_ERR_TIMEOUT;
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    return ESP_OK;
 }
 
 static void quote_timer_cb(TimerHandle_t xTimer)

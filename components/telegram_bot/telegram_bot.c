@@ -24,6 +24,7 @@
 #define TG_TOKEN_MAX_LEN 160
 #define TG_CHAT_ID_MAX_LEN 40
 #define TG_INFO_STALE_SEC 1800
+#define TG_GET_UPDATES_TIMEOUT_SEC 3
 
 static const char *TAG = "telegram_bot";
 
@@ -38,6 +39,8 @@ static TaskHandle_t s_task_handle = NULL;
 static bool s_running = false;
 static bool s_polling_paused = false;
 static int64_t s_next_update_id = 0;
+static portMUX_TYPE s_http_lock = portMUX_INITIALIZER_UNLOCKED;
+static volatile uint32_t s_http_in_flight = 0;
 
 typedef struct {
     bool has_quote;
@@ -158,9 +161,17 @@ static esp_err_t tg_http_call(const char *url,
         esp_http_client_set_post_field(client, post_data, (int)strlen(post_data));
     }
 
+    taskENTER_CRITICAL(&s_http_lock);
+    s_http_in_flight++;
+    taskEXIT_CRITICAL(&s_http_lock);
     esp_err_t ret = esp_http_client_perform(client);
     int status_code = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
+    taskENTER_CRITICAL(&s_http_lock);
+    if (s_http_in_flight > 0) {
+        s_http_in_flight--;
+    }
+    taskEXIT_CRITICAL(&s_http_lock);
     if (out_status_code) {
         *out_status_code = status_code;
     }
@@ -679,8 +690,8 @@ static void telegram_task(void *arg)
 
         char url[384] = {0};
         snprintf(url, sizeof(url),
-                 "https://api.telegram.org/bot%s/getUpdates?offset=%lld&timeout=20&limit=10",
-                 token, (long long)s_next_update_id);
+                 "https://api.telegram.org/bot%s/getUpdates?offset=%lld&timeout=%d&limit=10",
+                 token, (long long)s_next_update_id, TG_GET_UPDATES_TIMEOUT_SEC);
 
         char *resp = NULL;
         int status_code = 0;
@@ -718,7 +729,7 @@ esp_err_t telegram_bot_init(void)
 
 esp_err_t telegram_bot_start(void)
 {
-    if (s_running) {
+    if (s_running || s_task_handle != NULL) {
         return ESP_OK;
     }
     s_polling_paused = false;
@@ -757,4 +768,43 @@ bool telegram_bot_is_running(void)
 bool telegram_bot_is_polling_paused(void)
 {
     return s_polling_paused;
+}
+
+bool telegram_bot_is_http_in_flight(void)
+{
+    bool in_flight = false;
+    taskENTER_CRITICAL(&s_http_lock);
+    in_flight = (s_http_in_flight > 0);
+    taskEXIT_CRITICAL(&s_http_lock);
+    return in_flight;
+}
+
+esp_err_t telegram_bot_wait_http_idle(uint32_t timeout_ms)
+{
+    int64_t start_us = esp_timer_get_time();
+    int64_t timeout_us = (int64_t)timeout_ms * 1000LL;
+
+    while (telegram_bot_is_http_in_flight()) {
+        if ((esp_timer_get_time() - start_us) >= timeout_us) {
+            return ESP_ERR_TIMEOUT;
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t telegram_bot_wait_stopped(uint32_t timeout_ms)
+{
+    int64_t start_us = esp_timer_get_time();
+    int64_t timeout_us = (int64_t)timeout_ms * 1000LL;
+
+    while (s_task_handle != NULL || telegram_bot_is_http_in_flight()) {
+        if ((esp_timer_get_time() - start_us) >= timeout_us) {
+            return ESP_ERR_TIMEOUT;
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    return ESP_OK;
 }

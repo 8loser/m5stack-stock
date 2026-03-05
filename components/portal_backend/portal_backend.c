@@ -1220,7 +1220,7 @@ static esp_err_t start_portal_http_server(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.max_uri_handlers = 28;
-    config.stack_size = 8192;
+    config.stack_size = 6144;
 
     esp_err_t ret = httpd_start(&s_httpd, &config);
     if (ret != ESP_OK) {
@@ -1413,9 +1413,14 @@ esp_err_t portal_backend_start(void)
     ap_cfg.ap.max_connection = WIFI_PORTAL_MAX_STA;
     ap_cfg.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
 
-    esp_err_t ret = esp_wifi_set_mode(WIFI_MODE_APSTA);
+    esp_err_t ret = esp_wifi_disconnect();
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_STARTED) {
+        ESP_LOGW(TAG, "切換入口前 STA disconnect 失敗: %s", esp_err_to_name(ret));
+    }
+
+    ret = esp_wifi_set_mode(WIFI_MODE_AP);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "切換 APSTA 模式失敗: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "切換 AP 模式失敗: %s", esp_err_to_name(ret));
         return ret;
     }
 

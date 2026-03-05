@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "storage.h"
+#include <stdint.h>
 
 /**
  * @brief 初始化排程器（含 SNTP 時間同步）
@@ -48,3 +49,14 @@ esp_err_t scheduler_pause_quote_polling(void);
  * @brief 恢復週期報價抓取
  */
 esp_err_t scheduler_resume_quote_polling(void);
+
+/**
+ * @brief 目前是否有進行中的報價抓取（含 HTTP）
+ */
+bool scheduler_is_quote_fetch_in_flight(void);
+
+/**
+ * @brief 等待進行中的報價抓取完成
+ * @param timeout_ms 最多等待毫秒數
+ */
+esp_err_t scheduler_wait_quote_fetch_idle(uint32_t timeout_ms);

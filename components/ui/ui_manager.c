@@ -32,6 +32,9 @@ static uint32_t    s_last_auto_return_ms = 0;
 static bool        s_last_screen_on = true;
 static bool        s_lcd_flush_async_ready = false;
 static SemaphoreHandle_t s_lcd_flush_done_sem = NULL;
+static volatile uint32_t s_lcd_flush_submit_count = 0;
+static volatile uint32_t s_lcd_flush_done_count = 0;
+static volatile uint32_t s_lcd_flush_timeout_count = 0;
 
 static bool lvgl_flush_ready_cb(esp_lcd_panel_io_handle_t panel_io,
                                 esp_lcd_panel_io_event_data_t *edata,
@@ -42,7 +45,12 @@ static bool lvgl_flush_ready_cb(esp_lcd_panel_io_handle_t panel_io,
     BaseType_t high_task_wakeup = pdFALSE;
     SemaphoreHandle_t done_sem = (SemaphoreHandle_t)user_ctx;
     if (done_sem != NULL) {
-        xSemaphoreGiveFromISR(done_sem, &high_task_wakeup);
+        s_lcd_flush_done_count++;
+        if (xPortInIsrContext()) {
+            xSemaphoreGiveFromISR(done_sem, &high_task_wakeup);
+        } else {
+            xSemaphoreGive(done_sem);
+        }
     }
     return high_task_wakeup == pdTRUE;
 }
@@ -51,6 +59,11 @@ static bool lvgl_flush_ready_cb(esp_lcd_panel_io_handle_t panel_io,
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
                            lv_color_t *color_map)
 {
+    if (s_lcd_flush_async_ready && s_lcd_flush_done_sem != NULL) {
+        /* Drain stale signal before queueing a new flush transaction. */
+        (void)xSemaphoreTake(s_lcd_flush_done_sem, 0);
+    }
+
     esp_err_t ret = ili9342c_flush(board_get_panel(),
                                    area->x1, area->y1, area->x2, area->y2,
                                    color_map);
@@ -59,12 +72,22 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
         lv_disp_flush_ready(drv);
         return;
     }
+    s_lcd_flush_submit_count++;
 
     if (s_lcd_flush_async_ready && s_lcd_flush_done_sem != NULL) {
-        /* Drain stale signal before waiting current flush completion. */
-        (void)xSemaphoreTake(s_lcd_flush_done_sem, 0);
+        /* Wait for completion of the flush just queued above. */
         if (xSemaphoreTake(s_lcd_flush_done_sem, pdMS_TO_TICKS(100)) != pdTRUE) {
-            ESP_LOGW(TAG, "LCD flush done wait timeout");
+            s_lcd_flush_timeout_count++;
+            ESP_LOGW(TAG, "LCD flush done wait timeout submit=%lu done=%lu timeout=%lu",
+                     (unsigned long)s_lcd_flush_submit_count,
+                     (unsigned long)s_lcd_flush_done_count,
+                     (unsigned long)s_lcd_flush_timeout_count);
+            /* Timeout can be transient under bus contention; wait longer before giving up. */
+            if (xSemaphoreTake(s_lcd_flush_done_sem, pdMS_TO_TICKS(500)) != pdTRUE) {
+                ESP_LOGE(TAG, "LCD flush fallback wait failed submit=%lu done=%lu",
+                         (unsigned long)s_lcd_flush_submit_count,
+                         (unsigned long)s_lcd_flush_done_count);
+            }
         }
     }
     lv_disp_flush_ready(drv);
@@ -149,6 +172,7 @@ static uint32_t          s_startup_guard_start_ms = 0;
 #define SCHED_HEARTBEAT_TIMEOUT_MS     3000U
 #define AUTO_RETURN_GUARD_MS           500U
 #define STARTUP_GUARD_MIN_MS           3000U
+#define PORTAL_NET_DRAIN_TIMEOUT_MS    6000U
 static const screen_id_t s_nav_screens[] = {
     SCREEN_DASHBOARD,
     SCREEN_LOG,
@@ -269,22 +293,24 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
 
     lv_init();
 
-    /* LVGL Display Buffer（放在 PSRAM）*/
+    /* LVGL Display Buffer（優先 DMA-capable internal RAM，避免 SPI DMA 不穩）*/
     static lv_color_t *buf1 = NULL;
     static lv_color_t *buf2 = NULL;
     size_t buf_size = LCD_WIDTH * LVGL_BUF_LINES * sizeof(lv_color_t);
 
-    buf1 = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
-    buf2 = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
+    buf1 = heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    buf2 = heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
     if (!buf1 || !buf2) {
-        /* fallback to internal RAM */
-        buf1 = heap_caps_malloc(buf_size, MALLOC_CAP_DEFAULT);
-        buf2 = heap_caps_malloc(buf_size, MALLOC_CAP_DEFAULT);
+        /* fallback to PSRAM when internal DMA memory is insufficient */
+        buf1 = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
+        buf2 = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
         if (!buf1 || !buf2) {
             ESP_LOGE(TAG, "LVGL buffer 分配失敗");
             return ESP_ERR_NO_MEM;
         }
-        ESP_LOGW(TAG, "LVGL buffer 使用內部 RAM");
+        ESP_LOGW(TAG, "LVGL buffer fallback 使用 PSRAM（可能影響 LCD flush 穩定性）");
+    } else {
+        ESP_LOGI(TAG, "LVGL buffer 使用 DMA internal RAM");
     }
 
     static lv_disp_draw_buf_t draw_buf;
@@ -374,9 +400,9 @@ void ui_manager_switch_screen(screen_id_t id)
     /* 離開 Portal 頁面時關閉 provisioning portal（含 SoftAP） */
     if (prev == SCREEN_PORTAL && id != SCREEN_PORTAL) {
         screen_portal_close_portal();
-        esp_err_t tg_resume_ret = telegram_bot_resume_polling();
-        if (tg_resume_ret != ESP_OK) {
-            ESP_LOGW(TAG, "telegram bot resume polling failed: %s", esp_err_to_name(tg_resume_ret));
+        esp_err_t tg_start_ret = telegram_bot_start();
+        if (tg_start_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram bot start failed: %s", esp_err_to_name(tg_start_ret));
         }
         esp_err_t resume_ret = scheduler_resume_quote_polling();
         if (resume_ret != ESP_OK) {
@@ -415,13 +441,21 @@ void ui_manager_switch_screen(screen_id_t id)
 
     /* 進入 Portal 頁面時自動啟動 provisioning portal（含 SoftAP） */
     if (id == SCREEN_PORTAL && prev != SCREEN_PORTAL) {
-        esp_err_t tg_pause_ret = telegram_bot_pause_polling();
-        if (tg_pause_ret != ESP_OK) {
-            ESP_LOGW(TAG, "telegram bot pause polling failed: %s", esp_err_to_name(tg_pause_ret));
+        esp_err_t tg_stop_ret = telegram_bot_stop();
+        if (tg_stop_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram bot stop failed: %s", esp_err_to_name(tg_stop_ret));
+        }
+        esp_err_t tg_stopped_ret = telegram_bot_wait_stopped(PORTAL_NET_DRAIN_TIMEOUT_MS);
+        if (tg_stopped_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram task not stopped before portal: %s", esp_err_to_name(tg_stopped_ret));
         }
         esp_err_t pause_ret = scheduler_pause_quote_polling();
         if (pause_ret != ESP_OK) {
             ESP_LOGW(TAG, "pause quote polling failed: %s", esp_err_to_name(pause_ret));
+        }
+        esp_err_t sched_idle_ret = scheduler_wait_quote_fetch_idle(PORTAL_NET_DRAIN_TIMEOUT_MS);
+        if (sched_idle_ret != ESP_OK) {
+            ESP_LOGW(TAG, "scheduler fetch not idle before portal: %s", esp_err_to_name(sched_idle_ret));
         }
         screen_portal_open_portal();
     }
