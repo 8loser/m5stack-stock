@@ -44,6 +44,8 @@ description: M5Stack Core2 韌體開發協作技能，聚焦 ESP-IDF v5.1.x、Fr
 - Core2 面板顯色有偏移，`lv_color_hex` 名義色不一定等於肉眼顏色；UI 狀態色請先用實機校正值。
 - 調整 `lv_obj_set_style_text_color` 時，優先使用 `LV_PART_MAIN | LV_STATE_DEFAULT`，避免 `LV_STATE_ANY` 在部分情境下被樣式鏈覆蓋。
 - `screen_log` 是事件 ring buffer，不是即時狀態來源；`Connected` 文字可能是歷史事件，當下連線狀態需看 state API。
+- 任何 UI 文案（尤其中文）變更後，需執行 `tools/fonts/generate_fonts.sh` 更新字型子集，否則可能出現缺字或亂碼。
+- `SCREEN_INFO` 目前語意為「Resource/資源監控頁」；若改頁面名稱，需同步更新 status bar 文案與 README。
 
 ## 效能調校守則
 
@@ -63,6 +65,7 @@ description: M5Stack Core2 韌體開發協作技能，聚焦 ESP-IDF v5.1.x、Fr
 5. heap/stack 調整需附任務高水位與記憶體觀測結果，避免只憑體感調整。
 6. 需要執行期 log 時，切換 `m5stack-core2-flash-agent` 使用 `--monitor` 取得 log，再回本技能續修。
 7. 涉及 UI/WiFi/報價/AI/排程的改動，補上可重現手動測試步驟並優先處理 warning/error。
+8. 若有 UI 文字異動，驗證步驟需包含：`tools/fonts/generate_fonts.sh` + `./flash.sh --build-only`。
 
 ## Handoff
 

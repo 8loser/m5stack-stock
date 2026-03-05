@@ -5,7 +5,7 @@
 - 台股（TWSE）報價輪詢
 - AI 分析（Gemini / Claude / OpenAI）
 - 手機配網 Portal（SoftAP + Web）
-- 觸控 UI（Dashboard / Portal / Log / Info / Settings / HW Test）
+- 觸控 UI（Dashboard / Portal / Log / Resource / Settings / HW Test）
 
 ## 硬體需求
 
@@ -64,10 +64,10 @@ curl --fail --silent --show-error --location \
   | python3 tools/fonts/fetch_stock_chars.py --input-json -
 
 # 2) 產生 14px / 16px 字型（預設離線，不連網）
-./generate_fonts.sh --offline
+tools/fonts/generate_fonts.sh --offline
 
 # 3) 線上模式：先更新 twse_symbols.txt 再產生字型
-./generate_fonts.sh --online
+tools/fonts/generate_fonts.sh --online
 
 # 4) 檢查字型大小（擴充後通常會明顯增加）
 wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_tc_16.c
@@ -87,7 +87,7 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
 
 ### 底部虛擬按鍵（觸控區）
 
-- 左鍵：切到上一頁（輪詢頁面：`Dashboard -> Log -> Info -> Settings -> HW Test`）
+- 左鍵：切到上一頁（輪詢頁面：`Dashboard -> Log -> Resource -> Settings -> HW Test`）
 - 中鍵：進入 `Portal`
 - 右鍵：切到下一頁（同上輪詢）
 - 在 `Portal` 頁面時，任一底部鍵都會回到 `Dashboard`
@@ -103,7 +103,7 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
 - `Dashboard`：顯示最多 5 檔股票卡片（代號/名稱、價格、漲跌幅、最後更新時間）
 - `Portal`：顯示配網 QRCode 與 AP 資訊，進入頁面時會啟動配網 Portal，離開時會關閉
 - `Log`：顯示系統事件（STOCK / WIFI / AI / SYS）
-- `Info`：顯示裝置資訊、WiFi 狀態、AI Provider 狀態、排程摘要
+- `Resource`：顯示 Heap current 與 Stack peak（LVGL）使用率 progress bar
 - `Settings`：切換報價更新間隔（1 / 5 / 10 分鐘）
 - `HW Test`：提供震動與嗶聲硬體測試按鈕
 
@@ -115,7 +115,7 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
   - 正常：顯示 `♡`，每秒閃爍一次
   - 異常：顯示 `!`（停止閃爍）
 - 時間（12 小時制）
-- 中央 screen 標題（`Dashboard / Portal / Log / Info / Settings / HW Test`）
+- 中央 screen 標題（`Dashboard / Portal / Log / Resource / Settings / HW Test`）
   - `Portal` 頁面固定顯示：`Portal`
 - WiFi 圖示（連線/連線中/離線）
 - 電量百分比
@@ -176,5 +176,5 @@ Stocks API 驗證規則：
 - 請勿提交真實 API Key、WiFi 密碼或私人端點
 - `build/` 為建置產物，請勿手動修改
 - Core2 這批面板在目前驅動下顏色可能偏移，新增/調整 UI 色彩時建議先參考 `components/ui/screens/screen_dashboard.c` 的校正色（`COLOR_UP/DOWN/FLAT`）再上板確認
-- 若修改 `tools/fonts/ui_symbols.txt`（例如心跳符號），需先執行 `./generate_fonts.sh` 重建子集字型，再編譯與燒錄
+- 若修改 `tools/fonts/ui_symbols.txt`（例如心跳符號），需先執行 `tools/fonts/generate_fonts.sh` 重建子集字型，再編譯與燒錄
 - 若變更 UI/流程，請同步更新本 README
