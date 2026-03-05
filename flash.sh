@@ -30,6 +30,36 @@ log()  { echo -e "${GREEN}[docker-flash]${NC} $*"; }
 warn() { echo -e "${YELLOW}[docker-flash] WARN:${NC} $*"; }
 err()  { echo -e "${RED}[docker-flash] ERR:${NC} $*"; exit 1; }
 
+release_port_lock() {
+    local port="$1"
+    local pids=""
+
+    [ -z "${port}" ] && return 0
+    [ ! -e "${port}" ] && return 0
+
+    pids="$(lsof -t "${port}" 2>/dev/null | sort -u | tr '\n' ' ' || true)"
+    [ -z "${pids}" ] && return 0
+
+    warn "${port} 目前被行程占用，嘗試自動釋放: ${pids}"
+    # shellcheck disable=SC2086
+    kill ${pids} 2>/dev/null || true
+    sleep 1
+
+    pids="$(lsof -t "${port}" 2>/dev/null | sort -u | tr '\n' ' ' || true)"
+    if [ -n "${pids}" ]; then
+        warn "${port} 仍被占用，改用強制終止: ${pids}"
+        # shellcheck disable=SC2086
+        kill -9 ${pids} 2>/dev/null || true
+        sleep 1
+    fi
+
+    if lsof -t "${port}" >/dev/null 2>&1; then
+        err "${port} 仍被占用，請手動釋放後重試"
+    fi
+
+    log "${port} 已釋放"
+}
+
 # ---------- 偵測 container runtime ----------
 # 優先使用 podman（避免 Podman Docker CLI 模擬被誤判為真 Docker）
 if command -v podman &>/dev/null; then
@@ -99,6 +129,8 @@ fi
 
 # ---------- 確認 port 權限 ----------
 if [ -n "$PORT" ] && [ -e "$PORT" ]; then
+    release_port_lock "$PORT"
+
     if [ ! -w "$PORT" ]; then
         warn "$PORT 無寫入權限，嘗試修正..."
         sudo chmod 666 "$PORT" || err "無法存取 $PORT，請執行：sudo usermod -aG uucp \$USER 並重新登入"
