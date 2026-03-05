@@ -172,6 +172,7 @@ static uint32_t          s_startup_guard_start_ms = 0;
 #define SCHED_HEARTBEAT_TIMEOUT_MS     3000U
 #define AUTO_RETURN_GUARD_MS           500U
 #define STARTUP_GUARD_MIN_MS           3000U
+#define PORTAL_TG_DRAIN_TIMEOUT_MS     PORTAL_NET_DRAIN_TIMEOUT_MS
 #define PORTAL_NET_DRAIN_TIMEOUT_MS    (HTTP_TIMEOUT_MS + 5000U)
 static const screen_id_t s_nav_screens[] = {
     SCREEN_DASHBOARD,
@@ -404,6 +405,10 @@ void ui_manager_switch_screen(screen_id_t id)
         if (tg_start_ret != ESP_OK) {
             ESP_LOGW(TAG, "telegram bot start failed: %s", esp_err_to_name(tg_start_ret));
         }
+        esp_err_t tg_resume_ret = telegram_bot_resume_polling();
+        if (tg_resume_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram bot resume polling failed: %s", esp_err_to_name(tg_resume_ret));
+        }
         esp_err_t resume_ret = scheduler_resume_quote_polling();
         if (resume_ret != ESP_OK) {
             ESP_LOGW(TAG, "resume quote polling failed: %s", esp_err_to_name(resume_ret));
@@ -446,7 +451,7 @@ void ui_manager_switch_screen(screen_id_t id)
         if (tg_stop_ret != ESP_OK) {
             ESP_LOGW(TAG, "telegram bot stop failed: %s", esp_err_to_name(tg_stop_ret));
         }
-        esp_err_t tg_stopped_ret = telegram_bot_wait_stopped(PORTAL_NET_DRAIN_TIMEOUT_MS);
+        esp_err_t tg_stopped_ret = telegram_bot_wait_stopped(PORTAL_TG_DRAIN_TIMEOUT_MS);
         if (tg_stopped_ret != ESP_OK) {
             ESP_LOGW(TAG, "telegram task not stopped before portal: %s", esp_err_to_name(tg_stopped_ret));
             net_drained = false;
