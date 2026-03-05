@@ -8,6 +8,8 @@
 #include "freertos/task.h"
 
 static const char *TAG = "ili9342c";
+static const uint32_t LCD_PCLK_HZ = 20 * 1000 * 1000;
+static const size_t LCD_TRANS_QUEUE_DEPTH = 2;
 
 /* ILI9342C 初始化序列 */
 static const uint8_t s_init_cmds[][20] = {
@@ -81,11 +83,11 @@ esp_err_t ili9342c_init(esp_lcd_panel_handle_t *panel_out,
     esp_lcd_panel_io_spi_config_t io_cfg = {
         .dc_gpio_num        = LCD_DC_GPIO,
         .cs_gpio_num        = LCD_CS_GPIO,
-        .pclk_hz            = 40 * 1000 * 1000,
+        .pclk_hz            = LCD_PCLK_HZ,
         .lcd_cmd_bits       = 8,
         .lcd_param_bits     = 8,
         .spi_mode           = 0,
-        .trans_queue_depth  = 10,
+        .trans_queue_depth  = LCD_TRANS_QUEUE_DEPTH,
     };
     ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_cfg, &s_io);
     if (ret != ESP_OK) return ret;
