@@ -13,6 +13,8 @@
 #include "screen_hw_test.h"
 #include "status_bar.h"
 #include "loading_spinner.h"
+#include "scheduler.h"
+#include "telegram_bot.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_lcd_panel_io.h"
@@ -338,6 +340,14 @@ void ui_manager_switch_screen(screen_id_t id)
     /* 離開 Portal 頁面時關閉 provisioning portal（含 SoftAP） */
     if (prev == SCREEN_PORTAL && id != SCREEN_PORTAL) {
         screen_portal_close_portal();
+        esp_err_t tg_start_ret = telegram_bot_start();
+        if (tg_start_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram bot start failed: %s", esp_err_to_name(tg_start_ret));
+        }
+        esp_err_t resume_ret = scheduler_resume_quote_polling();
+        if (resume_ret != ESP_OK) {
+            ESP_LOGW(TAG, "resume quote polling failed: %s", esp_err_to_name(resume_ret));
+        }
     }
     if (prev == SCREEN_DASHBOARD && id != SCREEN_DASHBOARD) {
         screen_dashboard_on_leave();
@@ -371,6 +381,14 @@ void ui_manager_switch_screen(screen_id_t id)
 
     /* 進入 Portal 頁面時自動啟動 provisioning portal（含 SoftAP） */
     if (id == SCREEN_PORTAL && prev != SCREEN_PORTAL) {
+        esp_err_t tg_stop_ret = telegram_bot_stop();
+        if (tg_stop_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram bot stop failed: %s", esp_err_to_name(tg_stop_ret));
+        }
+        esp_err_t pause_ret = scheduler_pause_quote_polling();
+        if (pause_ret != ESP_OK) {
+            ESP_LOGW(TAG, "pause quote polling failed: %s", esp_err_to_name(pause_ret));
+        }
         screen_portal_open_portal();
     }
 
