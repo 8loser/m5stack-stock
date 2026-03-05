@@ -1,0 +1,4 @@
+interface:
+  display_name: "M5Stack Core2 Dev"
+  short_description: "M5Stack Core2 韌體開發協作與除錯，排除燒錄流程"
+  default_prompt: "Use $m5stack-core2-dev to handle Core2 firmware development, debugging, and architecture updates without flash/monitor tasks."
