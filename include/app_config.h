@@ -65,6 +65,8 @@
 #define DEFAULT_QUOTE_INTERVAL_S    60      /* 報價更新間隔（秒）*/
 #define DEFAULT_MARKET_ONLY         false   /* 全天候更新 */
 #define DASHBOARD_SLOT_ROTATION_MS  1500    /* Dashboard 固定格位輪巡節拍（毫秒）*/
+#define MAIN_LOOP_DELAY_MS          20      /* 主迴圈節拍（毫秒）*/
+#define MAIN_QUOTE_DRAIN_MAX_PER_CYCLE 8    /* 主迴圈每輪最多處理報價筆數 */
 
 /* --- WiFi 手機配網 Portal --- */
 #define WIFI_PORTAL_AP_SSID         "Core2-Setup"

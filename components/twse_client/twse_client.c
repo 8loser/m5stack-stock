@@ -267,15 +267,14 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 /* 解析單一股票 JSON 物件 */
 static void parse_stock_item(cJSON *item, const char *symbol, stock_quote_t *q)
 {
-    strncpy(q->symbol, symbol, 7);
-    q->symbol[7] = '\0';
+    strlcpy(q->symbol, symbol, sizeof(q->symbol));
     q->is_valid = false;
     q->is_market_closed = false;
     q->has_limit_bounds = false;
 
     cJSON *name = cJSON_GetObjectItem(item, "n");
     if (name && cJSON_IsString(name)) {
-        strncpy(q->name, name->valuestring, 31);
+        strlcpy(q->name, name->valuestring, sizeof(q->name));
     }
 
     /* 停板上下限（TWSE: u=漲停, w=跌停） */
@@ -343,7 +342,7 @@ static void parse_stock_item(cJSON *item, const char *symbol, stock_quote_t *q)
 
     cJSON *t = cJSON_GetObjectItem(item, "t");
     if (t && cJSON_IsString(t)) {
-        strncpy(q->trade_time, t->valuestring, 15);
+        strlcpy(q->trade_time, t->valuestring, sizeof(q->trade_time));
     }
 
     bool market_closed_snapshot =
@@ -371,7 +370,7 @@ static void parse_stock_item(cJSON *item, const char *symbol, stock_quote_t *q)
     q->change_percent = (q->yesterday_close > 0.0f)
                         ? (q->change_amount / q->yesterday_close * 100.0f)
                         : 0.0f;
-    ESP_LOGI(TAG,
+    ESP_LOGD(TAG,
              "parse symbol=%s z=%s y=%s src=%s vol=%ld zero_vol=%d ohl=%d%d%d ab=%d%d closed_rule=%d -> valid=%d market_closed=%d price=%.2f chg=%.2f%%",
              q->symbol, z_raw, y_raw, price_source,
              q->volume, is_zero_volume ? 1 : 0,
@@ -506,7 +505,7 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
                      fallback_source);
             continue;
         }
-        ESP_LOGI(TAG, "map i=%d raw_c=%s raw_ch=%s sym=%s fallback=%s -> idx=%d req=%s",
+        ESP_LOGD(TAG, "map i=%d raw_c=%s raw_ch=%s sym=%s fallback=%s -> idx=%d req=%s",
                  i,
                  raw_c ? raw_c : "<null>",
                  raw_ch ? raw_ch : "<null>",

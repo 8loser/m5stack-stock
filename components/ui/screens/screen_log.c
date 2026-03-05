@@ -146,10 +146,8 @@ void screen_log_push(log_tag_t tag, log_level_t level, const char *msg)
     log_entry_t *entry = &s_ring[s_head];
     entry->tag = tag;
     entry->level = level;
-    strncpy(entry->ts, ts, sizeof(entry->ts) - 1);
-    entry->ts[sizeof(entry->ts) - 1] = '\0';
-    strncpy(entry->msg, safe_msg, LOG_MSG_MAX - 1);
-    entry->msg[LOG_MSG_MAX - 1] = '\0';
+    strlcpy(entry->ts, ts, sizeof(entry->ts));
+    strlcpy(entry->msg, safe_msg, sizeof(entry->msg));
 
     s_head = (s_head + 1) % LOG_RING_SIZE;
     if (s_count < LOG_RING_SIZE) {

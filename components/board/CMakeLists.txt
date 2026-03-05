@@ -15,3 +15,6 @@ idf_component_register(
         freertos
         log
 )
+
+# Work around xtensa gcc ICE in audio_beep with -O2; keep this file at -O1.
+set_source_files_properties("audio.c" PROPERTIES COMPILE_OPTIONS "-O1")

@@ -25,8 +25,8 @@ static QueueHandle_t      s_result_queue = NULL;
 static stock_context_t quote_to_context(const stock_quote_t *q)
 {
     stock_context_t ctx;
-    strncpy(ctx.symbol, q->symbol, 7);
-    strncpy(ctx.name,   q->name,   31);
+    strlcpy(ctx.symbol, q->symbol, sizeof(ctx.symbol));
+    strlcpy(ctx.name, q->name, sizeof(ctx.name));
     ctx.current_price  = q->current_price;
     ctx.change_percent = q->change_percent;
     ctx.low_price      = q->low_price;
@@ -61,8 +61,7 @@ static void select_provider_and_key(char *out_key, size_t out_size)
         if (candidate[0] != '\0') {
             s_current_type = (ai_provider_type_t)i;
             storage_ai_save_provider((uint8_t)s_current_type);
-            strncpy(out_key, candidate, out_size - 1);
-            out_key[out_size - 1] = '\0';
+            strlcpy(out_key, candidate, out_size);
             ESP_LOGI(TAG, "自動切換 AI Provider: %s", s_providers[s_current_type]->name);
             return;
         }
@@ -127,7 +126,7 @@ static void analyze_task(void *arg)
     stock_context_t ctx = quote_to_context(&args->quote);
 
     char active_key[128] = {0};
-    strncpy(active_key, args->api_key, sizeof(active_key) - 1);
+    strlcpy(active_key, args->api_key, sizeof(active_key));
 
     esp_err_t ret = s_providers[args->provider_type]->analyze(
                         &ctx, prompt, active_key, &result);
@@ -148,7 +147,11 @@ esp_err_t ai_provider_analyze_async(const stock_quote_t *quote,
     if (!args) return ESP_ERR_NO_MEM;
 
     args->quote = *quote;
-    strncpy(args->api_key, api_key, 127);
+    if (api_key) {
+        strlcpy(args->api_key, api_key, sizeof(args->api_key));
+    } else {
+        args->api_key[0] = '\0';
+    }
     args->provider_type = s_current_type;
 
     BaseType_t res = xTaskCreatePinnedToCore(analyze_task, "ai_analyze",
@@ -167,7 +170,7 @@ esp_err_t ai_provider_analyze_sync(const stock_quote_t *quote,
 
     char active_key[128] = {0};
     if (api_key && strlen(api_key) > 0) {
-        strncpy(active_key, api_key, sizeof(active_key) - 1);
+        strlcpy(active_key, api_key, sizeof(active_key));
     } else {
         ai_provider_get_active_api_key(active_key, sizeof(active_key));
     }

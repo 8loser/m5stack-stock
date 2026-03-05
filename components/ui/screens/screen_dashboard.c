@@ -474,8 +474,7 @@ void screen_dashboard_update(const stock_quote_t *q)
         for (int i = 0; i < s_card_count; i++) {
             if (s_symbols_order[i][0] == '\0') {
                 idx = i;
-                strncpy(s_symbols_order[i], q->symbol, 7);
-                s_symbols_order[i][7] = '\0';
+                strlcpy(s_symbols_order[i], q->symbol, sizeof(s_symbols_order[i]));
                 mapping_action = "assign_empty";
                 break;
             }
@@ -484,8 +483,7 @@ void screen_dashboard_update(const stock_quote_t *q)
     if (idx == -1 && s_card_count < MAX_STOCK_COUNT) {
         screen_dashboard_set_card_count((uint8_t)(s_card_count + 1));
         idx = s_card_count - 1;
-        strncpy(s_symbols_order[idx], q->symbol, 7);
-        s_symbols_order[idx][7] = '\0';
+        strlcpy(s_symbols_order[idx], q->symbol, sizeof(s_symbols_order[idx]));
         mapping_action = "expand";
     }
     if (idx < 0 || idx >= MAX_STOCK_COUNT) {

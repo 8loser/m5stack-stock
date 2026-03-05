@@ -85,8 +85,8 @@ static esp_err_t gemini_analyze(const stock_context_t *ctx,
     if (ret != ESP_OK || status != 200) {
         ESP_LOGE(TAG, "Gemini HTTP %d: %s", status, esp_err_to_name(ret));
         free(resp_buf);
-        strncpy(result->analysis, "Gemini API 請求失敗",
-                AI_ANALYSIS_MAX_LEN - 1);
+        strlcpy(result->analysis, "Gemini API 請求失敗",
+                AI_ANALYSIS_MAX_LEN);
         result->signal = AI_SIGNAL_UNKNOWN;
         return ESP_FAIL;
     }
@@ -136,8 +136,8 @@ static esp_err_t gemini_analyze(const stock_context_t *ctx,
                 result->signal     = parse_signal(sig ? sig->valuestring : NULL);
                 result->confidence = conf ? conf->valueint : 50;
                 if (anal && cJSON_IsString(anal)) {
-                    strncpy(result->analysis, anal->valuestring,
-                            AI_ANALYSIS_MAX_LEN - 1);
+                    strlcpy(result->analysis, anal->valuestring,
+                            AI_ANALYSIS_MAX_LEN);
                 }
                 cJSON_Delete(ai_json);
             }

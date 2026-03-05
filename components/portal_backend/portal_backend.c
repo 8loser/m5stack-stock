@@ -1190,8 +1190,7 @@ static esp_err_t portal_wifi_post_handler(httpd_req_t *req)
                 continue;
             }
             if (strcmp(ssid, conn_req->ssid) == 0) {
-                strncpy(conn_req->password, password, sizeof(conn_req->password) - 1);
-                conn_req->password[sizeof(conn_req->password) - 1] = '\0';
+                strlcpy(conn_req->password, password, sizeof(conn_req->password));
                 break;
             }
         }
@@ -1407,9 +1406,9 @@ esp_err_t portal_backend_start(void)
     }
 
     wifi_config_t ap_cfg = {0};
-    strncpy((char *)ap_cfg.ap.ssid, s_portal_ap_ssid, sizeof(ap_cfg.ap.ssid) - 1);
-    strncpy((char *)ap_cfg.ap.password, s_portal_ap_password, sizeof(ap_cfg.ap.password) - 1);
-    ap_cfg.ap.ssid_len = strlen(s_portal_ap_ssid);
+    strlcpy((char *)ap_cfg.ap.ssid, s_portal_ap_ssid, sizeof(ap_cfg.ap.ssid));
+    strlcpy((char *)ap_cfg.ap.password, s_portal_ap_password, sizeof(ap_cfg.ap.password));
+    ap_cfg.ap.ssid_len = strlen((const char *)ap_cfg.ap.ssid);
     ap_cfg.ap.channel = WIFI_PORTAL_AP_CHANNEL;
     ap_cfg.ap.max_connection = WIFI_PORTAL_MAX_STA;
     ap_cfg.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;

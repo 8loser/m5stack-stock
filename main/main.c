@@ -187,20 +187,23 @@ void app_main(void)
 
     while (1) {
         static uint32_t s_last_diag_ms = 0;
+        uint8_t processed = 0;
 
         /* 只處理 Power 鍵短按：切換螢幕開/關 */
         board_poll_power_key();
 
-        /* 每個 tick 最多處理一筆報價，避免一次鎖 mutex 多次與 LVGL 競爭 */
-        if (xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
+        /* 批次消費 queue，縮短整輪報價顯示延遲，同時限制單輪上限避免長時間佔用 CPU */
+        while (processed < MAIN_QUOTE_DRAIN_MAX_PER_CYCLE &&
+               xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
             ui_manager_update_quote(&quote);
             ret = telegram_bot_cache_quote(&quote);
             if (ret != ESP_OK) {
                 ESP_LOGW(TAG, "telegram cache quote failed: %s", esp_err_to_name(ret));
             }
+            processed++;
         }
 
-        /* 每 100ms 輪詢一次，同時監控堆疊健康度 */
+        /* 每輪輪詢同時監控堆疊健康度 */
         size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
         if (free_heap < 8192) {
             ESP_LOGW(TAG, "heap 不足警告: %u bytes", free_heap);
@@ -217,6 +220,9 @@ void app_main(void)
             s_last_diag_ms = now_ms;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(100));
+        if (processed >= MAIN_QUOTE_DRAIN_MAX_PER_CYCLE) {
+            taskYIELD();
+        }
+        vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_DELAY_MS));
     }
 }

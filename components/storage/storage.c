@@ -653,8 +653,7 @@ esp_err_t storage_stocks_load(stock_list_t *list)
         }
 
         for (uint8_t i = 0; i < list->count; i++) {
-            strncpy(list->symbols[i], defaults[i], 7);
-            list->symbols[i][7] = '\0';
+            strlcpy(list->symbols[i], defaults[i], sizeof(list->symbols[i]));
         }
         return ESP_OK;
     }

@@ -77,8 +77,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
 
         snprintf(s_ip_str, sizeof(s_ip_str), IPSTR, IP2STR(&event->ip_info.ip));
         if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-            strncpy(s_connected_ssid, (const char *)ap_info.ssid, sizeof(s_connected_ssid) - 1);
-            s_connected_ssid[sizeof(s_connected_ssid) - 1] = '\0';
+            strlcpy(s_connected_ssid, (const char *)ap_info.ssid, sizeof(s_connected_ssid));
         } else {
             s_connected_ssid[0] = '\0';
         }
@@ -141,8 +140,8 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
 {
     wifi_config_t wifi_cfg = {0};
 
-    strncpy((char *)wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid) - 1);
-    strncpy((char *)wifi_cfg.sta.password, password, sizeof(wifi_cfg.sta.password) - 1);
+    strlcpy((char *)wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid));
+    strlcpy((char *)wifi_cfg.sta.password, password, sizeof(wifi_cfg.sta.password));
     wifi_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
 
     s_retry_count = 0;
@@ -262,8 +261,7 @@ esp_err_t wifi_manager_scan(wifi_ap_info_t *results, uint16_t *count, uint16_t m
     if (ret == ESP_OK) {
         *count = (ap_count < max_count) ? ap_count : max_count;
         for (uint16_t i = 0; i < *count; i++) {
-            strncpy(results[i].ssid, (char *)ap_records[i].ssid, 32);
-            results[i].ssid[32] = '\0';
+            strlcpy(results[i].ssid, (char *)ap_records[i].ssid, sizeof(results[i].ssid));
             results[i].rssi = ap_records[i].rssi;
         }
     }
