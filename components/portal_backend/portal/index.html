@@ -33,7 +33,7 @@
 
   <div class="grid">
     <div id="card_wifi" class="card section-card">
-      <h3>WiFi Setup</h3>
+      <div class="section-notice">設定裝置連線網路：儲存後 Core2 會切回 STA 模式，後續 Portal 入口可能改變。</div>
       <form method="post" action="/wifi">
         <label>SSID</label>
         <select id="ss" name="ssid" onchange="chk(this)">
@@ -57,7 +57,7 @@
     </div>
 
     <div id="card_ai" class="card section-card">
-      <h3>AI Settings</h3>
+      <div class="section-notice">設定 AI 供應商、金鑰與通用 Prompt：排程任務會以「通用 Prompt + 各任務自定 Prompt」組合送出。</div>
       <form onsubmit="saveAiSettings(); return false;">
         <label>Primary Provider</label>
         <div class="ai-provider-pick">
@@ -102,7 +102,7 @@
     </div>
 
     <div id="card_telegram" class="card section-card">
-      <h3>Telegram Settings</h3>
+      <div class="section-notice">設定 Telegram Bot 與目標 Chat：AI 任務與測試訊息都會發送到這裡。</div>
       <label style="display:flex;align-items:center;gap:8px;">
         <input id="tg_enabled" type="checkbox" style="width:auto;margin-top:0;">
         Enable Telegram
@@ -127,7 +127,7 @@
     </div>
 
     <div id="card_stocks" class="card section-card">
-      <h3>Stocks (TWSE only, max 15)</h3>
+      <div class="section-notice">管理股票清單與 Alert Prompt：系統會依排程抓取報價並套用告警規則。</div>
       <label>Symbol (4 digits)</label>
       <input id="stock_symbol" maxlength="4" inputmode="numeric" placeholder="2330">
       <button type="button" onclick="addStock()">Add</button>
@@ -137,8 +137,7 @@
     </div>
 
     <div id="card_at_time" class="card section-card">
-      <h3>At Time AI Trigger</h3>
-      <div class="at-time-warning">在指定時間觸發 AI：系統會組合「通用 Prompt + 這筆自定 Prompt」，並透過 Telegram 發送給目標使用者。</div>
+      <div class="section-notice">在指定時間觸發 AI：系統會組合「通用 Prompt + 這筆自定 Prompt」，並透過 Telegram 發送給目標使用者。</div>
       <button type="button" onclick="addAtTimeRow()">Add Time</button>
       <div id="at_time_list" class="at-time-list"></div>
       <button type="button" class="btn-disabled" disabled>Save At Time Settings</button>
@@ -148,8 +147,7 @@
     </div>
 
     <div id="card_interval" class="card section-card">
-      <h3>Interval AI Trigger</h3>
-      <div class="at-time-warning">每隔固定時間觸發 AI：系統會組合「通用 Prompt + 這筆自定 Prompt」，並透過 Telegram 發送給使用者。</div>
+      <div class="section-notice">每隔固定時間觸發 AI：系統會組合「通用 Prompt + 這筆自定 Prompt」，並透過 Telegram 發送給使用者。</div>
       <button type="button" onclick="addIntervalRow()">Add Interval</button>
       <div id="interval_list" class="at-time-list"></div>
       <button type="button" class="btn-disabled" disabled>Save Interval Settings</button>
