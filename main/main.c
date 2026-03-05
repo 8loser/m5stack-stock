@@ -181,6 +181,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "=== 系統啟動完成 ===");
     ui_manager_log_sys(LOG_LEVEL_INFO, "System ready");
+    ui_manager_set_startup_ready(true);
 
     /* 主迴圈：消費 queue 資料 → 驅動 UI 更新 */
     stock_quote_t      quote;

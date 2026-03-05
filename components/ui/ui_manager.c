@@ -138,12 +138,17 @@ static SemaphoreHandle_t s_ui_mutex   = NULL;
 static lv_disp_t        *s_disp       = NULL;
 static screen_id_t       s_cur_screen = SCREEN_DASHBOARD;
 static portMUX_TYPE      s_heartbeat_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE      s_startup_guard_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t          s_main_heartbeat_ms = 0;
 static uint32_t          s_scheduler_heartbeat_ms = 0;
+static bool              s_startup_guard_active = true;
+static bool              s_startup_ready = false;
+static uint32_t          s_startup_guard_start_ms = 0;
 
 #define MAIN_HEARTBEAT_TIMEOUT_MS      1500U
 #define SCHED_HEARTBEAT_TIMEOUT_MS     3000U
 #define AUTO_RETURN_GUARD_MS           500U
+#define STARTUP_GUARD_MIN_MS           3000U
 static const screen_id_t s_nav_screens[] = {
     SCREEN_DASHBOARD,
     SCREEN_LOG,
@@ -179,9 +184,31 @@ static void lvgl_task(void *arg)
     while (1) {
         if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             lv_task_handler();
+            bool startup_guard_active = false;
+            bool startup_ready = false;
+            uint32_t startup_guard_start_ms = 0;
+            uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+
+            taskENTER_CRITICAL(&s_startup_guard_lock);
+            startup_guard_active = s_startup_guard_active;
+            startup_ready = s_startup_ready;
+            startup_guard_start_ms = s_startup_guard_start_ms;
+            taskEXIT_CRITICAL(&s_startup_guard_lock);
+
+            if (startup_guard_active) {
+                loading_spinner_set_visible(true);
+                if (startup_ready && (now_ms - startup_guard_start_ms >= STARTUP_GUARD_MIN_MS)) {
+                    taskENTER_CRITICAL(&s_startup_guard_lock);
+                    s_startup_guard_active = false;
+                    taskEXIT_CRITICAL(&s_startup_guard_lock);
+                    loading_spinner_set_visible(false);
+                    ESP_LOGI(TAG, "startup guard released");
+                }
+            }
+
             bool screen_on = board_is_screen_on();
             if (s_last_screen_on != screen_on) {
-                uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+                now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
                 if (s_last_screen_on && !screen_on) {
                     s_last_touch_ms = now_ms;
                     s_last_auto_return_ms = now_ms;
@@ -230,6 +257,11 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     s_last_touch_ms = now_ms;
     s_last_auto_return_ms = now_ms;
     s_last_screen_on = board_is_screen_on();
+    taskENTER_CRITICAL(&s_startup_guard_lock);
+    s_startup_guard_active = true;
+    s_startup_ready = false;
+    s_startup_guard_start_ms = now_ms;
+    taskEXIT_CRITICAL(&s_startup_guard_lock);
     taskENTER_CRITICAL(&s_heartbeat_lock);
     s_main_heartbeat_ms = now_ms;
     s_scheduler_heartbeat_ms = now_ms;
@@ -314,6 +346,7 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     status_bar_create_on(lv_layer_top());
     status_bar_set_page(SCREEN_DASHBOARD);
     loading_spinner_create(lv_layer_top());
+    loading_spinner_set_visible(true);
 
     /* 啟動 LVGL 任務 */
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", STACK_LVGL, NULL,
@@ -332,6 +365,7 @@ void ui_manager_switch_screen(screen_id_t id)
 {
     if (id >= SCREEN_COUNT) return;
     if (s_screens[id] == NULL) return;
+
     screen_id_t prev = s_cur_screen;
     uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
     ESP_LOGI(TAG, "[%u ms] switch_screen %d -> %d",
@@ -408,6 +442,11 @@ void ui_manager_switch_screen(screen_id_t id)
 
 static void handle_hw_button(uint8_t btn)
 {
+    if (ui_manager_is_startup_guard_active()) {
+        ESP_LOGI(TAG, "startup guard active, ignore nav btn=%u", (unsigned)btn);
+        return;
+    }
+
     ESP_LOGI(TAG, "handle_hw_button: cur=%d btn=%u", (int)s_cur_screen, btn);
 
     if (s_cur_screen == SCREEN_PORTAL && (btn == 0 || btn == 2)) {
@@ -537,6 +576,22 @@ bool ui_manager_is_main_flow_alive(uint32_t *age_main_ms, uint32_t *age_sched_ms
 
     return (main_age <= MAIN_HEARTBEAT_TIMEOUT_MS) &&
            (sched_age <= SCHED_HEARTBEAT_TIMEOUT_MS);
+}
+
+void ui_manager_set_startup_ready(bool ready)
+{
+    taskENTER_CRITICAL(&s_startup_guard_lock);
+    s_startup_ready = ready;
+    taskEXIT_CRITICAL(&s_startup_guard_lock);
+}
+
+bool ui_manager_is_startup_guard_active(void)
+{
+    bool active = false;
+    taskENTER_CRITICAL(&s_startup_guard_lock);
+    active = s_startup_guard_active;
+    taskEXIT_CRITICAL(&s_startup_guard_lock);
+    return active;
 }
 
 void ui_manager_log_stock(log_level_t level, const char *fmt, ...)

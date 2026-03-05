@@ -29,6 +29,8 @@ void ui_manager_set_dashboard_symbols(const char symbols[][8], uint8_t count);
 void ui_manager_heartbeat_feed_main(void);
 void ui_manager_heartbeat_feed_scheduler(void);
 bool ui_manager_is_main_flow_alive(uint32_t *age_main_ms, uint32_t *age_sched_ms);
+void ui_manager_set_startup_ready(bool ready);
+bool ui_manager_is_startup_guard_active(void);
 void ui_manager_log_stock(log_level_t level, const char *fmt, ...);
 void ui_manager_log_wifi(log_level_t level, const char *fmt, ...);
 void ui_manager_log_sys(log_level_t level, const char *fmt, ...);
