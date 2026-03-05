@@ -1,0 +1,4 @@
+interface:
+  display_name: "M5Stack Core2 Flash Agent"
+  short_description: "Core2 連線/燒錄/monitor 與 log 擷取，不處理韌體功能邏輯"
+  default_prompt: "使用 $m5stack-core2-flash-agent 處理 Core2 的連線、燒錄、monitor 與 log 擷取；遵循本技能的 SKILL.md 流程與邊界，並保持在 flash/connection 路徑任務，不延伸到韌體功能邏輯修改。"
