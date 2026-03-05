@@ -44,6 +44,7 @@
 
 ## AI 協作分工（去重）
 - 功能開發、程式修改與邏輯除錯一律使用 `m5stack-core2-dev`。
+- `components/portal_backend/portal` 網頁調整優先使用 `m5stack-portal-web-dev`；若需 firmware/API 行為變更再轉交 `m5stack-core2-dev`。
 - 連線、燒錄、監看與 log 取得一律使用 `m5stack-core2-flash-agent`。
 - `m5stack-core2-flash-agent` 在燒錄阻塞時可最小修改 `flash.sh`（限連線/燒錄路徑），不得延伸到韌體功能邏輯。
 - `m5stack-core2-dev` 需要實機 log 時，先切 `m5stack-core2-flash-agent` 取得結果，再回 `m5stack-core2-dev` 續修。
