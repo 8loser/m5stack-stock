@@ -39,6 +39,12 @@ description: M5Stack Core2 韌體開發協作技能，聚焦 ESP-IDF v5.1.x、Fr
 - FT6336U 底部虛擬鍵區域要在輸入層攔截，不傳給 LVGL 一般觸控流程。
 - UI 顏色調整先以 `components/ui/screens/screen_dashboard.c` 的校正值為基準，再上板驗證。
 
+## UI/WiFi Gotchas
+
+- Core2 面板顯色有偏移，`lv_color_hex` 名義色不一定等於肉眼顏色；UI 狀態色請先用實機校正值。
+- 調整 `lv_obj_set_style_text_color` 時，優先使用 `LV_PART_MAIN | LV_STATE_DEFAULT`，避免 `LV_STATE_ANY` 在部分情境下被樣式鏈覆蓋。
+- `screen_log` 是事件 ring buffer，不是即時狀態來源；`Connected` 文字可能是歷史事件，當下連線狀態需看 state API。
+
 ## 效能調校守則
 
 - FreeRTOS 任務避免 busy loop，優先使用 event-driven，同步補上 `vTaskDelay` 或事件阻塞點。
