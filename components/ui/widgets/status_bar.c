@@ -120,7 +120,7 @@ static void refresh_page_message(void)
         page_name = "日誌";
         break;
     case SCREEN_INFO:
-        page_name = "資訊";
+        page_name = "資源";
         break;
     case SCREEN_SETTINGS:
         page_name = "設定";
