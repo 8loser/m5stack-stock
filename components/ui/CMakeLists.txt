@@ -19,6 +19,7 @@ idf_component_register(
         storage
         twse_client
         scheduler
+        telegram_bot
         network_portal
         freertos
         log

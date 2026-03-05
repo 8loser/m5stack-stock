@@ -25,6 +25,7 @@ static QueueHandle_t     s_quote_queue     = NULL;
 static TimerHandle_t     s_quote_timer     = NULL;
 static TaskHandle_t      s_scheduler_task  = NULL;
 static bool              s_sntp_synced     = false;
+static bool              s_quote_polling_paused = false;
 
 /* 儲存的股票清單（供排程使用）*/
 static stock_list_t      s_stock_list;
@@ -245,6 +246,7 @@ static void scheduler_task(void *arg)
 esp_err_t scheduler_init(QueueHandle_t quote_queue)
 {
     s_quote_queue     = quote_queue;
+    s_quote_polling_paused = false;
 
     /* 載入設定 */
     storage_schedule_load(&s_config);
@@ -333,6 +335,41 @@ esp_err_t scheduler_reload_stock_list(void)
 void scheduler_stop(void)
 {
     if (s_quote_timer) xTimerStop(s_quote_timer, 0);
+    s_quote_polling_paused = true;
     twse_client_stop_task();
     ESP_LOGI(TAG, "所有排程已停止");
+}
+
+esp_err_t scheduler_pause_quote_polling(void)
+{
+    if (!s_quote_timer) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_quote_polling_paused) {
+        return ESP_OK;
+    }
+    if (xTimerStop(s_quote_timer, 0) != pdPASS) {
+        ESP_LOGW(TAG, "暫停週期報價抓取失敗");
+        return ESP_FAIL;
+    }
+    s_quote_polling_paused = true;
+    ESP_LOGI(TAG, "已暫停週期報價抓取");
+    return ESP_OK;
+}
+
+esp_err_t scheduler_resume_quote_polling(void)
+{
+    if (!s_quote_timer) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!s_quote_polling_paused) {
+        return ESP_OK;
+    }
+    if (xTimerStart(s_quote_timer, 0) != pdPASS) {
+        ESP_LOGW(TAG, "恢復週期報價抓取失敗");
+        return ESP_FAIL;
+    }
+    s_quote_polling_paused = false;
+    ESP_LOGI(TAG, "已恢復週期報價抓取");
+    return ESP_OK;
 }

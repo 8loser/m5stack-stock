@@ -38,3 +38,13 @@ esp_err_t scheduler_reload_stock_list(void);
  * @brief 停止所有排程（休市睡眠前呼叫）
  */
 void      scheduler_stop(void);
+
+/**
+ * @brief 暫停週期報價抓取（保留 scheduler task）
+ */
+esp_err_t scheduler_pause_quote_polling(void);
+
+/**
+ * @brief 恢復週期報價抓取
+ */
+esp_err_t scheduler_resume_quote_polling(void);

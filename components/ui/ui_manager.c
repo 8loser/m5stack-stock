@@ -13,6 +13,8 @@
 #include "screen_hw_test.h"
 #include "status_bar.h"
 #include "loading_spinner.h"
+#include "scheduler.h"
+#include "telegram_bot.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_lcd_panel_io.h"
@@ -338,6 +340,14 @@ void ui_manager_switch_screen(screen_id_t id)
     /* 離開 Portal 頁面時關閉 provisioning portal（含 SoftAP） */
     if (prev == SCREEN_PORTAL && id != SCREEN_PORTAL) {
         screen_portal_close_portal();
+        esp_err_t tg_resume_ret = telegram_bot_resume_polling();
+        if (tg_resume_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram bot resume polling failed: %s", esp_err_to_name(tg_resume_ret));
+        }
+        esp_err_t resume_ret = scheduler_resume_quote_polling();
+        if (resume_ret != ESP_OK) {
+            ESP_LOGW(TAG, "resume quote polling failed: %s", esp_err_to_name(resume_ret));
+        }
     }
     if (prev == SCREEN_DASHBOARD && id != SCREEN_DASHBOARD) {
         screen_dashboard_on_leave();
@@ -360,8 +370,8 @@ void ui_manager_switch_screen(screen_id_t id)
         if (id == SCREEN_SETTINGS) {
             screen_settings_load();
         }
-        if (id == SCREEN_SETTINGS) {
-            /* Settings + slider redraw is sensitive; avoid transition animation re-entry. */
+        if (id == SCREEN_SETTINGS || id == SCREEN_PORTAL || prev == SCREEN_PORTAL) {
+            /* Settings and portal transitions are sensitive to long-running side effects. */
             lv_scr_load(s_screens[id]);
         } else {
             lv_scr_load_anim(s_screens[id], LV_SCR_LOAD_ANIM_SLIDE_LEFT, 200, 0, false);
@@ -371,6 +381,14 @@ void ui_manager_switch_screen(screen_id_t id)
 
     /* 進入 Portal 頁面時自動啟動 provisioning portal（含 SoftAP） */
     if (id == SCREEN_PORTAL && prev != SCREEN_PORTAL) {
+        esp_err_t tg_pause_ret = telegram_bot_pause_polling();
+        if (tg_pause_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram bot pause polling failed: %s", esp_err_to_name(tg_pause_ret));
+        }
+        esp_err_t pause_ret = scheduler_pause_quote_polling();
+        if (pause_ret != ESP_OK) {
+            ESP_LOGW(TAG, "pause quote polling failed: %s", esp_err_to_name(pause_ret));
+        }
         screen_portal_open_portal();
     }
 

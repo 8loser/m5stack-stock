@@ -36,6 +36,7 @@ typedef struct {
 
 static TaskHandle_t s_task_handle = NULL;
 static bool s_running = false;
+static bool s_polling_paused = false;
 static int64_t s_next_update_id = 0;
 
 typedef struct {
@@ -636,6 +637,11 @@ static void telegram_task(void *arg)
     bool bootstrap_done = false;
 
     while (s_running) {
+        if (s_polling_paused) {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
+
         bool enabled = false;
         char token[TG_TOKEN_MAX_LEN] = {0};
         char chat_id[TG_CHAT_ID_MAX_LEN] = {0};
@@ -705,6 +711,7 @@ esp_err_t telegram_bot_init(void)
     memset(s_quote_cache, 0, sizeof(s_quote_cache));
     memset(s_last_quote_trade_time, 0, sizeof(s_last_quote_trade_time));
     s_last_quote_update_s = 0;
+    s_polling_paused = false;
     s_next_update_id = 0;
     return ESP_OK;
 }
@@ -714,6 +721,7 @@ esp_err_t telegram_bot_start(void)
     if (s_running) {
         return ESP_OK;
     }
+    s_polling_paused = false;
     s_running = true;
     if (xTaskCreate(telegram_task, "telegram_bot", TG_TASK_STACK, NULL, TG_TASK_PRIO, &s_task_handle) != pdPASS) {
         s_running = false;
@@ -725,10 +733,28 @@ esp_err_t telegram_bot_start(void)
 esp_err_t telegram_bot_stop(void)
 {
     s_running = false;
+    s_polling_paused = false;
+    return ESP_OK;
+}
+
+esp_err_t telegram_bot_pause_polling(void)
+{
+    s_polling_paused = true;
+    return ESP_OK;
+}
+
+esp_err_t telegram_bot_resume_polling(void)
+{
+    s_polling_paused = false;
     return ESP_OK;
 }
 
 bool telegram_bot_is_running(void)
 {
     return s_running;
+}
+
+bool telegram_bot_is_polling_paused(void)
+{
+    return s_polling_paused;
 }
