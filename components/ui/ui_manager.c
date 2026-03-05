@@ -172,7 +172,7 @@ static uint32_t          s_startup_guard_start_ms = 0;
 #define SCHED_HEARTBEAT_TIMEOUT_MS     3000U
 #define AUTO_RETURN_GUARD_MS           500U
 #define STARTUP_GUARD_MIN_MS           3000U
-#define PORTAL_NET_DRAIN_TIMEOUT_MS    6000U
+#define PORTAL_NET_DRAIN_TIMEOUT_MS    (HTTP_TIMEOUT_MS + 5000U)
 static const screen_id_t s_nav_screens[] = {
     SCREEN_DASHBOARD,
     SCREEN_LOG,
@@ -441,6 +441,7 @@ void ui_manager_switch_screen(screen_id_t id)
 
     /* 進入 Portal 頁面時自動啟動 provisioning portal（含 SoftAP） */
     if (id == SCREEN_PORTAL && prev != SCREEN_PORTAL) {
+        bool net_drained = true;
         esp_err_t tg_stop_ret = telegram_bot_stop();
         if (tg_stop_ret != ESP_OK) {
             ESP_LOGW(TAG, "telegram bot stop failed: %s", esp_err_to_name(tg_stop_ret));
@@ -448,6 +449,7 @@ void ui_manager_switch_screen(screen_id_t id)
         esp_err_t tg_stopped_ret = telegram_bot_wait_stopped(PORTAL_NET_DRAIN_TIMEOUT_MS);
         if (tg_stopped_ret != ESP_OK) {
             ESP_LOGW(TAG, "telegram task not stopped before portal: %s", esp_err_to_name(tg_stopped_ret));
+            net_drained = false;
         }
         esp_err_t pause_ret = scheduler_pause_quote_polling();
         if (pause_ret != ESP_OK) {
@@ -456,6 +458,13 @@ void ui_manager_switch_screen(screen_id_t id)
         esp_err_t sched_idle_ret = scheduler_wait_quote_fetch_idle(PORTAL_NET_DRAIN_TIMEOUT_MS);
         if (sched_idle_ret != ESP_OK) {
             ESP_LOGW(TAG, "scheduler fetch not idle before portal: %s", esp_err_to_name(sched_idle_ret));
+            net_drained = false;
+        }
+
+        if (!net_drained) {
+            ESP_LOGW(TAG, "skip portal_start due to network drain timeout");
+            ui_manager_log_wifi(LOG_LEVEL_WARN, "Portal start skipped: net busy");
+            return;
         }
         screen_portal_open_portal();
     }

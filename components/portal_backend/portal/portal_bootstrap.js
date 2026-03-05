@@ -1,4 +1,5 @@
 var PORTAL_INIT_TIMEOUT_MS = 10000;
+var PORTAL_API_TIMEOUT_MS = 8000;
 var s_init_generation = 0;
 var s_init_timeout_timer = 0;
 
@@ -120,6 +121,18 @@ function escHtml(v) {
     .replace(/'/g, "&#39;");
 }
 
+function fetchWithTimeout(url, options, timeoutMs) {
+  var timeout = (typeof timeoutMs === "number" && timeoutMs > 0) ? timeoutMs : PORTAL_API_TIMEOUT_MS;
+  return Promise.race([
+    fetch(url, options),
+    new Promise(function (_, reject) {
+      setTimeout(function () {
+        reject(new Error("fetch_timeout"));
+      }, timeout);
+    })
+  ]);
+}
+
 function loadTabData(tab, generation) {
   if (tab === "wifi") return loadWifiData(generation);
   if (tab === "ai") return loadAiConfig(generation);
@@ -204,6 +217,15 @@ function beginBootstrapInit() {
 }
 
 function initPortalApp() {
-  document.getElementById("init_retry_btn").addEventListener("click", beginBootstrapInit);
+  var retryBtn = document.getElementById("init_retry_btn");
+  if (retryBtn) {
+    retryBtn.addEventListener("click", beginBootstrapInit);
+  }
   beginBootstrapInit();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initPortalApp);
+} else {
+  initPortalApp();
 }

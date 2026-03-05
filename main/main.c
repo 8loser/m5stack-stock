@@ -66,6 +66,7 @@ static void on_quote_fetch_round_event(const app_event_t *evt, void *ctx)
 /* WiFi 狀態回調：橋接 network_portal → ui_manager */
 static void on_wifi_state(wifi_state_t state, const char *ip)
 {
+    ESP_LOGI(TAG, "wifi_state=%d ip=%s", (int)state, (ip != NULL) ? ip : "");
     ui_manager_update_wifi_state((int)state, ip);
     if (state == WIFI_STATE_CONNECTED) {
         const char *ssid = network_portal_get_connected_ssid();

@@ -1,5 +1,14 @@
+function setScanLoadingState(text) {
+  var s = document.getElementById("ss");
+  if (!s) return;
+  s.options.length = 0;
+  s.add(new Option(text || "Scanning...", ""));
+  var manualBox = document.getElementById("m");
+  if (manualBox) manualBox.style.display = "none";
+}
+
 function loadSavedAps(generation) {
-  return fetch("/saved_aps")
+  return fetchWithTimeout("/saved_aps", null, PORTAL_API_TIMEOUT_MS)
     .then(function (r) { return r.json(); })
     .then(function (a) {
       if (is_stale_generation(generation)) return;
@@ -29,7 +38,7 @@ function loadSavedAps(generation) {
 }
 
 function loadScan(generation) {
-  return fetch("/scan")
+  return fetchWithTimeout("/scan", null, PORTAL_API_TIMEOUT_MS)
     .then(function (r) { return r.json(); })
     .then(function (a) {
       if (is_stale_generation(generation)) return;
@@ -61,8 +70,10 @@ function loadScan(generation) {
 
 function loadWifiData(generation) {
   return loadSavedAps(generation)
+    .catch(function () {})
     .then(function () {
-      return loadScan(generation);
+      setScanLoadingState("Scanning...");
+      loadScan(generation).catch(function () {});
     });
 }
 

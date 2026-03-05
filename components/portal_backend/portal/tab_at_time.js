@@ -64,4 +64,3 @@ function initAtTimePage() {
 }
 
 initAtTimePage();
-initPortalApp();

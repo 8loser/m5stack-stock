@@ -11,6 +11,7 @@
 #include "esp_http_server.h"
 #include "esp_crt_bundle.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "cJSON.h"
 #include <ctype.h>
 #include <stdint.h>
@@ -25,6 +26,7 @@
 #define TELEGRAM_CHAT_ID_MAX_LEN 40
 #define TELEGRAM_HTTP_BUF_INIT_SIZE 512
 #define AI_TEST_RESP_MAX_LEN 1536
+#define PORTAL_SCAN_CACHE_TTL_MS 15000
 
 static bool parse_ai_provider(const char *name, int *out_provider)
 {
@@ -70,6 +72,9 @@ static esp_netif_t *s_ap_netif = NULL;
 static httpd_handle_t s_httpd = NULL;
 static bool s_portal_active = false;
 static bool s_connecting_busy = false;
+static wifi_ap_info_t s_scan_cache[PORTAL_SCAN_MAX_APS];
+static uint16_t s_scan_cache_count = 0;
+static int64_t s_scan_cache_ts_us = 0;
 
 static char s_portal_ap_ssid[33] = WIFI_PORTAL_AP_SSID;
 static char s_portal_ap_password[65] = WIFI_PORTAL_AP_PASSWORD;
@@ -485,13 +490,32 @@ static void wifi_connect_task(void *arg)
 
 static esp_err_t portal_scan_get_handler(httpd_req_t *req)
 {
-    wifi_ap_info_t ap_infos[PORTAL_SCAN_MAX_APS] = {0};
+    int64_t start_us = esp_timer_get_time();
+    int64_t now_us = start_us;
+    bool use_cache = false;
+    wifi_ap_info_t fresh_infos[PORTAL_SCAN_MAX_APS] = {0};
+    const wifi_ap_info_t *ap_infos = fresh_infos;
     uint16_t count = PORTAL_SCAN_MAX_APS;
 
-    esp_err_t ret = wifi_manager_scan(ap_infos, &count, PORTAL_SCAN_MAX_APS);
-    if (ret != ESP_OK) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "scan failed");
-        return ret;
+    if (s_scan_cache_count > 0 &&
+        (now_us - s_scan_cache_ts_us) <= ((int64_t)PORTAL_SCAN_CACHE_TTL_MS * 1000LL)) {
+        use_cache = true;
+        ap_infos = s_scan_cache;
+        count = s_scan_cache_count;
+    } else {
+        esp_err_t scan_ret = wifi_manager_scan(fresh_infos, &count, PORTAL_SCAN_MAX_APS);
+        if (scan_ret != ESP_OK) {
+            ESP_LOGW(TAG, "GET /scan failed err=%s elapsed=%lldms",
+                     esp_err_to_name(scan_ret),
+                     (long long)((esp_timer_get_time() - start_us) / 1000LL));
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "scan failed");
+            return scan_ret;
+        }
+        if (count > 0) {
+            memcpy(s_scan_cache, fresh_infos, count * sizeof(wifi_ap_info_t));
+        }
+        s_scan_cache_count = count;
+        s_scan_cache_ts_us = now_us;
     }
 
     char *buf = malloc(2048);
@@ -508,15 +532,20 @@ static esp_err_t portal_scan_get_handler(httpd_req_t *req)
         int n = snprintf(buf + pos, 2048 - pos,
                          "%s{\"ssid\":\"%s\",\"rssi\":%d}",
                          i > 0 ? "," : "", esc, (int)ap_infos[i].rssi);
-        if (n > 0) {
-            pos += (size_t)n;
+        if (n <= 0 || (size_t)n >= 2048 - pos) {
+            break;
         }
+        pos += (size_t)n;
     }
     buf[pos++] = ']';
     buf[pos] = '\0';
 
     httpd_resp_set_type(req, "application/json");
-    ret = httpd_resp_send(req, buf, (ssize_t)pos);
+    esp_err_t ret = httpd_resp_send(req, buf, (ssize_t)pos);
+    ESP_LOGI(TAG, "GET /scan mode=%s count=%u elapsed=%lldms",
+             use_cache ? "cache" : "fresh",
+             (unsigned)count,
+             (long long)((esp_timer_get_time() - start_us) / 1000LL));
     free(buf);
     return ret;
 }
@@ -1220,7 +1249,13 @@ static esp_err_t start_portal_http_server(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.max_uri_handlers = 28;
-    config.stack_size = 6144;
+    config.max_open_sockets = 8;
+    config.backlog_conn = 4;
+    config.lru_purge_enable = true;
+    config.recv_wait_timeout = 5;
+    config.send_wait_timeout = 5;
+    /* Portal handlers include JSON assembly and multiple local buffers; keep headroom. */
+    config.stack_size = 8192;
 
     esp_err_t ret = httpd_start(&s_httpd, &config);
     if (ret != ESP_OK) {
@@ -1413,14 +1448,10 @@ esp_err_t portal_backend_start(void)
     ap_cfg.ap.max_connection = WIFI_PORTAL_MAX_STA;
     ap_cfg.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
 
-    esp_err_t ret = esp_wifi_disconnect();
-    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_STARTED) {
-        ESP_LOGW(TAG, "切換入口前 STA disconnect 失敗: %s", esp_err_to_name(ret));
-    }
-
-    ret = esp_wifi_set_mode(WIFI_MODE_AP);
+    /* Keep STA online while portal is active so LAN IP access still works. */
+    esp_err_t ret = esp_wifi_set_mode(WIFI_MODE_APSTA);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "切換 AP 模式失敗: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "切換 APSTA 模式失敗: %s", esp_err_to_name(ret));
         return ret;
     }
 
