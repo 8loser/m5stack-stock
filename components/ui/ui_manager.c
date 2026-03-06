@@ -172,8 +172,8 @@ static uint32_t          s_startup_guard_start_ms = 0;
 #define SCHED_HEARTBEAT_TIMEOUT_MS     3000U
 #define AUTO_RETURN_GUARD_MS           500U
 #define STARTUP_GUARD_MIN_MS           3000U
+#define PORTAL_NET_DRAIN_TIMEOUT_MS    5000U
 #define PORTAL_TG_DRAIN_TIMEOUT_MS     PORTAL_NET_DRAIN_TIMEOUT_MS
-#define PORTAL_NET_DRAIN_TIMEOUT_MS    (HTTP_TIMEOUT_MS + 5000U)
 static const screen_id_t s_nav_screens[] = {
     SCREEN_DASHBOARD,
     SCREEN_LOG,
@@ -467,9 +467,8 @@ void ui_manager_switch_screen(screen_id_t id)
         }
 
         if (!net_drained) {
-            ESP_LOGW(TAG, "skip portal_start due to network drain timeout");
-            ui_manager_log_wifi(LOG_LEVEL_WARN, "Portal start skipped: net busy");
-            return;
+            ESP_LOGW(TAG, "net drain incomplete, starting portal anyway (APSTA)");
+            ui_manager_log_wifi(LOG_LEVEL_WARN, "Portal: net drain partial");
         }
         screen_portal_open_portal();
     }
