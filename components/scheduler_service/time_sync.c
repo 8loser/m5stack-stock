@@ -9,7 +9,10 @@ static const char *TAG = "scheduler";
 static void scheduler_service_sntp_sync_cb(struct timeval *tv)
 {
     (void)tv;
-    s_sntp_synced = true;
+    scheduler_service_ctx_t *ctx = scheduler_service_ctx();
+    if (ctx) {
+        ctx->sntp_synced = true;
+    }
     ESP_LOGI(TAG, "SNTP 時間同步完成");
 
     time_t now = time(NULL);
@@ -29,8 +32,9 @@ static void scheduler_service_sntp_sync_cb(struct timeval *tv)
     }
 }
 
-void scheduler_service_init_sntp(void)
+void scheduler_service_init_sntp(scheduler_service_ctx_t *ctx)
 {
+    (void)ctx;
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, "pool.ntp.org");
     esp_sntp_setservername(1, "time.cloudflare.com");

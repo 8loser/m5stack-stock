@@ -3,8 +3,10 @@
 
 static const char *TAG = "scheduler";
 
-void scheduler_service_publish_scheduler_tick(bool force_fetch)
+void scheduler_service_publish_scheduler_tick(const scheduler_service_ctx_t *ctx,
+                                              bool force_fetch)
 {
+    (void)ctx;
     app_event_t evt = {
         .type = APP_EVENT_SCHEDULER_TICK,
         .timestamp_ms = 0,
@@ -15,7 +17,8 @@ void scheduler_service_publish_scheduler_tick(bool force_fetch)
     }
 }
 
-void scheduler_service_publish_quote_fetch_round(bool force_fetch,
+void scheduler_service_publish_quote_fetch_round(const scheduler_service_ctx_t *ctx,
+                                                 bool force_fetch,
                                                  app_quote_fetch_reason_t reason,
                                                  uint8_t total,
                                                  uint8_t pushed,
@@ -23,6 +26,7 @@ void scheduler_service_publish_quote_fetch_round(bool force_fetch,
                                                  uint8_t skipped_invalid,
                                                  esp_err_t fetch_err)
 {
+    (void)ctx;
     app_event_t evt = {
         .type = APP_EVENT_QUOTE_FETCH_ROUND,
         .timestamp_ms = 0,
