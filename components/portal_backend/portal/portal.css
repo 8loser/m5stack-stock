@@ -224,11 +224,11 @@ button, .menu-btn { cursor: pointer; }
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
   margin: 8px 0 14px;
-  padding: 7px;
-  border: 1px solid var(--nav-wrap-border);
-  border-radius: 14px;
-  background: var(--nav-wrap-bg);
-  box-shadow: var(--nav-wrap-shadow);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .menu-btn {
@@ -288,9 +288,9 @@ button, .menu-btn { cursor: pointer; }
   .menu {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
-    padding: 6px;
+    padding: 0;
     margin: 6px 0 12px;
-    border-radius: 12px;
+    border-radius: 0;
   }
 
   .menu-btn {
