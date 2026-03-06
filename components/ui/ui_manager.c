@@ -170,10 +170,10 @@ static uint32_t          s_startup_guard_start_ms = 0;
 
 #define MAIN_HEARTBEAT_TIMEOUT_MS      1500U
 #define SCHED_HEARTBEAT_TIMEOUT_MS     3000U
+#define PORTAL_NET_DRAIN_TIMEOUT_MS    (HTTP_TIMEOUT_MS + 5000U)
+#define PORTAL_TG_DRAIN_TIMEOUT_MS     PORTAL_NET_DRAIN_TIMEOUT_MS
 #define AUTO_RETURN_GUARD_MS           500U
 #define STARTUP_GUARD_MIN_MS           3000U
-#define PORTAL_NET_DRAIN_TIMEOUT_MS    5000U
-#define PORTAL_TG_DRAIN_TIMEOUT_MS     PORTAL_NET_DRAIN_TIMEOUT_MS
 static const screen_id_t s_nav_screens[] = {
     SCREEN_DASHBOARD,
     SCREEN_LOG,
@@ -446,6 +446,7 @@ void ui_manager_switch_screen(screen_id_t id)
 
     /* 進入 Portal 頁面時自動啟動 provisioning portal（含 SoftAP） */
     if (id == SCREEN_PORTAL && prev != SCREEN_PORTAL) {
+        /* Drain STA 網路活動以釋放 heap，SoftAP 啟動需要足夠記憶體 */
         bool net_drained = true;
         esp_err_t tg_stop_ret = telegram_bot_stop();
         if (tg_stop_ret != ESP_OK) {
@@ -467,7 +468,7 @@ void ui_manager_switch_screen(screen_id_t id)
         }
 
         if (!net_drained) {
-            ESP_LOGW(TAG, "net drain incomplete, starting portal anyway (APSTA)");
+            ESP_LOGW(TAG, "net drain incomplete, starting portal anyway");
             ui_manager_log_wifi(LOG_LEVEL_WARN, "Portal: net drain partial");
         }
         screen_portal_open_portal();

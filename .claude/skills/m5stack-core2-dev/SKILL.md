@@ -46,6 +46,7 @@ Routing: m5stack-core2-dev
 - `screen_log` 是事件 ring buffer，不是即時狀態來源；`Connected` 文字可能是歷史事件，當下連線狀態需看 state API。
 - 任何 UI 文案變更後，需執行 `tools/fonts/generate_fonts.sh` 更新字型子集，否則可能出現缺字或亂碼。
 - `SCREEN_INFO` 目前語意為「Resource/資源監控頁」；若改頁面名稱，需同步更新 status bar 文案與 README。
+- WiFi driver 的 internal DRAM buffer pool 與通用 heap（含 PSRAM）是獨立的記憶體池。Resource screen 顯示 heap 充裕不代表 WiFi driver 有足夠 buffer。STA 有 active traffic 時切 `WIFI_MODE_APSTA`，會因 WiFi internal buffer 不足導致 `ieee80211_hostap_attach` NULL pointer crash。Portal 啟動前的 drain 等待是必要的（釋放 WiFi internal buffer），不可 fire-and-forget。
 
 ## 效能調校守則
 

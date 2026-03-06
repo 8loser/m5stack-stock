@@ -58,3 +58,4 @@
 ## 路由可觀測性
 - 每個任務開始時，第一則進度訊息必須明確標示：`Routing: <skill-name>`。
 - 若任務中途改派（例如 `m5stack-core2-dev` 轉 `m5stack-core2-flash-agent`），需再補一則路由切換訊息。
+- 計劃中的驗證步驟（build/flash/monitor）也需標記由哪個 skill 執行，避免實作時遺漏路由切換。
