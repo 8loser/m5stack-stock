@@ -79,7 +79,7 @@ function renderAtTimeList() {
       "</div>" +
       "</div>" +
       "<div class='at-time-row-grid'>" +
-      "<label>Time (24h)<div class='at-time-time-picker'>" +
+      "<label>Time<div class='at-time-time-picker'>" +
       "<input class='at-time-input' type='time' step='60' value='" + safeTime + "' oninput=\"updateAtTimeField(" + item.id + ",'time',this.value)\"></div></label>" +
       "<label>Weekdays<div class='weekday-grid'>" + weekdaysHtml + "</div></label>" +
       "<label>Prompt<textarea maxlength='512' oninput=\"updateAtTimeField(" + item.id + ",'prompt',this.value)\">" +
@@ -87,6 +87,7 @@ function renderAtTimeList() {
       "</div>" +
       "<div class='at-time-actions'>" +
       "<button type='button' class='btn-remove-time' onclick='removeAtTimeRow(" + item.id + ")'>Remove</button>" +
+      "<button type='button' class='btn-save-time' onclick='saveAtTimeRow(" + item.id + ")'>Save</button>" +
       "</div>" +
       "</div>";
   });
@@ -106,10 +107,25 @@ function addAtTimeRow() {
 }
 
 function removeAtTimeRow(id) {
+  var ok = window.confirm("Remove this entry?");
+  if (!ok) {
+    return;
+  }
   s_at_time_items = s_at_time_items.filter(function (item) { return item.id !== id; });
   ensureAtTimeNotEmpty();
   renderAtTimeList();
   setAtTimeMsg("Entry removed.", true);
+}
+
+function saveAtTimeRow(id) {
+  var entryNo = -1;
+  s_at_time_items.forEach(function (item, idx) {
+    if (item.id === id) {
+      entryNo = idx + 1;
+    }
+  });
+  if (entryNo < 0) return;
+  setAtTimeMsg("Entry " + entryNo + " saved (local preview).", true);
 }
 
 function updateAtTimeField(id, field, value) {

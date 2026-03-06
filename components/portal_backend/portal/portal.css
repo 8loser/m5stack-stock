@@ -372,6 +372,7 @@ button, .menu-btn { cursor: pointer; }
   display: flex;
   gap: 8px;
   margin-top: 8px;
+  justify-content: flex-end;
 }
 
 .at-time-head {
@@ -469,6 +470,7 @@ button, .menu-btn { cursor: pointer; }
 }
 
 .btn-remove-time { background: var(--danger); }
+.btn-save-time { background: #2a7dd8; }
 .btn-disabled { background: #9aa8b3; }
 
 button:disabled {
