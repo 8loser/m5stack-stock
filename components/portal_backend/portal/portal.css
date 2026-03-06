@@ -232,7 +232,9 @@ button, .menu-btn { cursor: pointer; }
 }
 
 .menu-btn {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
   width: 100%;
   margin-top: 0;
@@ -284,7 +286,7 @@ button, .menu-btn { cursor: pointer; }
 
 @media (max-width: 859px) {
   .menu {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
     padding: 6px;
     margin: 6px 0 12px;
@@ -298,6 +300,12 @@ button, .menu-btn { cursor: pointer; }
     white-space: normal;
     line-height: 1.1;
     border-radius: 9px;
+  }
+}
+
+@media (max-width: 359px) {
+  .menu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
