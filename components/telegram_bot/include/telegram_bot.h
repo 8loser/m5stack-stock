@@ -16,3 +16,4 @@ bool telegram_bot_is_http_in_flight(void);
 esp_err_t telegram_bot_wait_http_idle(uint32_t timeout_ms);
 esp_err_t telegram_bot_wait_stopped(uint32_t timeout_ms);
 esp_err_t telegram_bot_cache_quote(const stock_quote_t *quote);
+esp_err_t telegram_bot_send_text(const char *text);

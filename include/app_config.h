@@ -56,6 +56,11 @@
 #define NVS_NS_TELEGRAM         "tg_cfg"
 #define NVS_NS_STOCKS           "stocks"
 #define NVS_NS_SCHEDULE         "schedule"
+#define NVS_NS_AT_TIME          "at_time"
+
+/* --- AtTime --- */
+#define MAX_AT_TIME_COUNT       8
+#define AT_TIME_PROMPT_MAX_LEN  512
 
 /* --- 股票 --- */
 #define MAX_STOCK_COUNT         15

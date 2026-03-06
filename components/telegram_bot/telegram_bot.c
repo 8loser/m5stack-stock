@@ -794,6 +794,28 @@ esp_err_t telegram_bot_wait_http_idle(uint32_t timeout_ms)
     return ESP_OK;
 }
 
+esp_err_t telegram_bot_send_text(const char *text)
+{
+    if (!text || text[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    bool enabled = false;
+    if (storage_tg_load_enabled(&enabled) != ESP_OK || !enabled) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    char token[TG_TOKEN_MAX_LEN] = {0};
+    char chat_id[TG_CHAT_ID_MAX_LEN] = {0};
+    storage_tg_load_bot_token(token, sizeof(token));
+    storage_tg_load_chat_id(chat_id, sizeof(chat_id));
+    if (token[0] == '\0' || chat_id[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return tg_send_message(token, chat_id, text);
+}
+
 esp_err_t telegram_bot_wait_stopped(uint32_t timeout_ms)
 {
     int64_t start_us = esp_timer_get_time();

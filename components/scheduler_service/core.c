@@ -7,6 +7,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include <stdlib.h>
+#include "esp_heap_caps.h"
 
 static const char *TAG = "scheduler";
 
@@ -50,6 +52,8 @@ static void scheduler_service_task(void *arg)
         } else if (bits & SCHEDULER_SERVICE_NOTIFY_QUOTE_BIT) {
             scheduler_service_do_fetch_quotes(ctx, false);
         }
+
+        scheduler_service_check_at_time(ctx);
 
         if (sleep_manager_is_enabled() && sleep_manager_should_sleep()) {
             ESP_LOGI(TAG, "進入休市睡眠模式");
@@ -95,6 +99,12 @@ esp_err_t scheduler_service_init(QueueHandle_t quote_queue)
 
     storage_schedule_load(&s_ctx.config);
     storage_stocks_load(&s_ctx.stock_list);
+    s_ctx.at_time_entries = heap_caps_calloc(MAX_AT_TIME_COUNT, sizeof(at_time_entry_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_ctx.at_time_entries) {
+        storage_at_time_load_all(s_ctx.at_time_entries, &s_ctx.at_time_count);
+    }
+    s_ctx.at_time_prev_minute = -1;
+    s_ctx.at_time_fired_bitmask = 0;
 
     sleep_manager_init();
 
@@ -169,6 +179,25 @@ esp_err_t scheduler_service_reload_stock_list(void)
     }
 
     ESP_LOGI(TAG, "股票清單已重載，count=%u（下個排程週期生效）", s_ctx.stock_list.count);
+    return ESP_OK;
+}
+
+esp_err_t scheduler_service_reload_at_time(void)
+{
+    if (!s_ctx.at_time_entries) {
+        s_ctx.at_time_entries = heap_caps_calloc(MAX_AT_TIME_COUNT, sizeof(at_time_entry_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!s_ctx.at_time_entries) {
+            ESP_LOGE(TAG, "AtTime reload OOM");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    esp_err_t ret = storage_at_time_load_all(s_ctx.at_time_entries, &s_ctx.at_time_count);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "AtTime reload failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    s_ctx.at_time_fired_bitmask = 0;
+    ESP_LOGI(TAG, "AtTime entries reloaded, count=%u", (unsigned)s_ctx.at_time_count);
     return ESP_OK;
 }
 

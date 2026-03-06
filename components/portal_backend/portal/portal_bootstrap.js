@@ -149,8 +149,7 @@ function loadTabData(tab, generation) {
   if (tab === "telegram") return loadTelegram(generation);
   if (tab === "stocks") return loadStocks(generation);
   if (tab === "at_time") {
-    initAtTimePage();
-    return Promise.resolve();
+    return initAtTimePage();
   }
   if (tab === "interval") {
     initIntervalPage();

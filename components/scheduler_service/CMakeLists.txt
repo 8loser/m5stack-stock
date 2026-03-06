@@ -5,6 +5,7 @@ idf_component_register(
         "quote_worker.c"
         "time_sync.c"
         "sleep_manager.c"
+        "at_time_worker.c"
     INCLUDE_DIRS "include"
     REQUIRES
         esp_timer
@@ -17,4 +18,6 @@ idf_component_register(
         log
         freertos
         lwip
+        ai_provider
+        telegram_bot
 )

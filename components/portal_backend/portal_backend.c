@@ -1,5 +1,6 @@
 #include "portal_backend.h"
 #include "stock_admin_service.h"
+#include "at_time_admin_service.h"
 #include "wifi_manager.h"
 
 #include "storage.h"
@@ -1297,7 +1298,7 @@ static esp_err_t start_portal_http_server(void)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
-    config.max_uri_handlers = 36;
+    config.max_uri_handlers = 40;
     config.max_open_sockets = 8;
     config.backlog_conn = 4;
     config.lru_purge_enable = true;
@@ -1505,6 +1506,7 @@ static esp_err_t start_portal_http_server(void)
     httpd_register_uri_handler(s_httpd, &telegram_test_post_uri);
     httpd_register_uri_handler(s_httpd, &telegram_chats_get_uri);
     stock_admin_service_register_handlers(s_httpd);
+    at_time_admin_service_register_handlers(s_httpd);
 
     return ESP_OK;
 }

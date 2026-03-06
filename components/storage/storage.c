@@ -783,6 +783,162 @@ esp_err_t storage_stock_alert_config_remove(const char *symbol)
     return ret;
 }
 
+/* -------- AtTime -------- */
+
+static void make_at_time_key(char *buf, size_t buf_size, uint8_t idx)
+{
+    snprintf(buf, buf_size, "e_%u", (unsigned)idx);
+}
+
+esp_err_t storage_at_time_save_count(uint8_t count)
+{
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_AT_TIME, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    ret = nvs_set_u8(h, "count", count);
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+uint8_t storage_at_time_load_count(void)
+{
+    uint8_t count = 0;
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_AT_TIME, NVS_READONLY, &h);
+    if (ret != ESP_OK) return 0;
+
+    ret = nvs_get_u8(h, "count", &count);
+    nvs_close(h);
+    if (ret != ESP_OK) return 0;
+    if (count > MAX_AT_TIME_COUNT) return MAX_AT_TIME_COUNT;
+    return count;
+}
+
+esp_err_t storage_at_time_save_entry(uint8_t idx, const at_time_entry_t *entry)
+{
+    if (!entry || idx >= MAX_AT_TIME_COUNT) return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_AT_TIME, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    char key[8] = {0};
+    make_at_time_key(key, sizeof(key), idx);
+    ret = nvs_set_blob(h, key, entry, sizeof(*entry));
+    if (ret != ESP_OK) {
+        nvs_close(h);
+        return ret;
+    }
+
+    /* auto-update count if needed */
+    uint8_t count = 0;
+    esp_err_t cr = nvs_get_u8(h, "count", &count);
+    if (cr == ESP_ERR_NVS_NOT_FOUND) count = 0;
+    if (idx >= count) {
+        count = idx + 1;
+        nvs_set_u8(h, "count", count);
+    }
+
+    ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_at_time_load_entry(uint8_t idx, at_time_entry_t *entry)
+{
+    if (!entry || idx >= MAX_AT_TIME_COUNT) return ESP_ERR_INVALID_ARG;
+    memset(entry, 0, sizeof(*entry));
+
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_AT_TIME, NVS_READONLY, &h);
+    if (ret != ESP_OK) return ret;
+
+    char key[8] = {0};
+    make_at_time_key(key, sizeof(key), idx);
+    size_t sz = sizeof(*entry);
+    ret = nvs_get_blob(h, key, entry, &sz);
+    nvs_close(h);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        memset(entry, 0, sizeof(*entry));
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) return ret;
+    entry->prompt[AT_TIME_PROMPT_MAX_LEN] = '\0';
+    return ESP_OK;
+}
+
+esp_err_t storage_at_time_remove_entry(uint8_t idx)
+{
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_AT_TIME, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    uint8_t count = 0;
+    ret = nvs_get_u8(h, "count", &count);
+    if (ret == ESP_ERR_NVS_NOT_FOUND || idx >= count) {
+        nvs_close(h);
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (ret != ESP_OK) {
+        nvs_close(h);
+        return ret;
+    }
+
+    /* shift entries after idx forward */
+    for (uint8_t i = idx; i + 1 < count; i++) {
+        char src_key[8] = {0};
+        make_at_time_key(src_key, sizeof(src_key), (uint8_t)(i + 1));
+        at_time_entry_t tmp = {0};
+        size_t sz = sizeof(tmp);
+        ret = nvs_get_blob(h, src_key, &tmp, &sz);
+        if (ret != ESP_OK) {
+            nvs_close(h);
+            return ret;
+        }
+        char dst_key[8] = {0};
+        make_at_time_key(dst_key, sizeof(dst_key), i);
+        ret = nvs_set_blob(h, dst_key, &tmp, sizeof(tmp));
+        if (ret != ESP_OK) {
+            nvs_close(h);
+            return ret;
+        }
+    }
+
+    /* erase last entry */
+    char last_key[8] = {0};
+    make_at_time_key(last_key, sizeof(last_key), (uint8_t)(count - 1));
+    ret = nvs_erase_key(h, last_key);
+    if (ret != ESP_OK && ret != ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(h);
+        return ret;
+    }
+
+    ret = nvs_set_u8(h, "count", (uint8_t)(count - 1));
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
+esp_err_t storage_at_time_load_all(at_time_entry_t *entries, uint8_t *out_count)
+{
+    if (!entries || !out_count) return ESP_ERR_INVALID_ARG;
+
+    uint8_t count = storage_at_time_load_count();
+    *out_count = count;
+
+    for (uint8_t i = 0; i < count; i++) {
+        esp_err_t ret = storage_at_time_load_entry(i, &entries[i]);
+        if (ret != ESP_OK) {
+            *out_count = i;
+            return ret;
+        }
+    }
+    return ESP_OK;
+}
+
 /* -------- 排程設定 -------- */
 
 esp_err_t storage_schedule_save(const schedule_config_t *cfg)

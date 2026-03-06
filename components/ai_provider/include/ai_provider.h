@@ -76,6 +76,13 @@ esp_err_t ai_provider_analyze_sync(const stock_quote_t *quote,
                                     ai_analysis_result_t *result);
 
 /**
+ * @brief 同步分析（純 prompt，不帶股票資料）
+ */
+esp_err_t ai_provider_analyze_prompt_sync(const char *prompt,
+                                           const char *api_key,
+                                           ai_analysis_result_t *result);
+
+/**
  * @brief 測試指定 Provider 的 API Key 可用性
  */
 esp_err_t ai_provider_test_key(ai_provider_type_t type,
