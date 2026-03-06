@@ -360,12 +360,80 @@ button, .menu-btn { cursor: pointer; }
   h3 { font-size: 30px; }
   .at-time-row-grid,
   .interval-row-grid { grid-template-columns: 1fr; }
+  .weekday-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .at-time-actions {
   display: flex;
   gap: 8px;
   margin-top: 8px;
+}
+
+.at-time-meta {
+  margin: 6px 0 4px;
+}
+
+.at-time-enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.at-time-enabled input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.weekday-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.weekday-btn {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-top: 0;
+  padding: 6px 4px;
+  min-height: 34px;
+  border: 1px solid #d6e1eb;
+  border-radius: 8px;
+  background: #f5f8fb;
+  color: #8a97a4;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.weekday-name {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.weekday-btn:hover {
+  filter: none;
+  background: #edf3f8;
+  color: #768492;
+}
+
+.weekday-btn.active {
+  background: #168f6c;
+  border-color: #0f7658;
+  color: #fff;
+}
+
+.weekday-btn.active:hover {
+  background: #137a5d;
+}
+
+.weekday-btn:focus-visible {
+  outline: 2px solid #2b7de3;
+  outline-offset: 1px;
 }
 
 .at-time-actions button {
