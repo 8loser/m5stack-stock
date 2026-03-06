@@ -67,6 +67,7 @@ scheduler_service Timer
 - 開發類 gotchas 由 `m5stack-core2-dev` 維護（避免與 `CLAUDE.md` 重複）。
 - 燒錄/連線類 gotchas 由 `m5stack-core2-flash-agent` 維護（例如 monitor 鎖 port）。
 - `CLAUDE.md` 僅保留分工與路由規則，不再重複列細節表。
+- 連線判讀規則：`WiFi connected (STA)` 不等於 `Provisioning Portal active (AP/HTTP)`；診斷 Portal 頁面時不得只憑 STA 已連線判定正常。
 
 ## NVS 命名空間
 
