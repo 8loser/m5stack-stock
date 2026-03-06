@@ -1,5 +1,5 @@
 function loadTelegram(generation) {
-  return fetch("/telegram")
+  return fetch("/api/telegram")
     .then(function (r) { return r.json(); })
     .then(function (c) {
       if (is_stale_generation(generation)) return;
@@ -19,7 +19,7 @@ function loadTelegram(generation) {
 }
 
 function loadTelegramChats() {
-  fetch("/telegram/chats")
+  fetch("/api/telegram/chats")
     .then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
     })
@@ -64,7 +64,7 @@ function saveTelegram() {
     "&bot_token=" + encodeURIComponent(token) +
     "&chat_id=" + encodeURIComponent(chat);
 
-  fetch("/telegram", {
+  fetch("/api/telegram", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body
@@ -86,7 +86,7 @@ function saveTelegram() {
 }
 
 function sendTelegramTest() {
-  fetch("/telegram/test", { method: "POST" })
+  fetch("/api/telegram/test", { method: "POST" })
     .then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
     })

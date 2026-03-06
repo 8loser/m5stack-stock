@@ -880,42 +880,42 @@ esp_err_t stock_admin_service_register_handlers(httpd_handle_t httpd)
     }
 
     httpd_uri_t stocks_uri = {
-        .uri = "/stocks",
+        .uri = "/api/stocks",
         .method = HTTP_GET,
         .handler = portal_stocks_get_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t stocks_add_uri = {
-        .uri = "/stocks/add",
+        .uri = "/api/stocks/add",
         .method = HTTP_POST,
         .handler = portal_stocks_add_post_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t stocks_remove_uri = {
-        .uri = "/stocks/remove",
+        .uri = "/api/stocks/remove",
         .method = HTTP_POST,
         .handler = portal_stocks_remove_post_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t stocks_update_uri = {
-        .uri = "/stocks/update",
+        .uri = "/api/stocks/update",
         .method = HTTP_POST,
         .handler = portal_stocks_update_post_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t saved_aps_get_uri = {
-        .uri = "/saved_aps",
+        .uri = "/api/saved_aps",
         .method = HTTP_GET,
         .handler = portal_saved_aps_get_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t saved_aps_remove_uri = {
-        .uri = "/saved_aps/remove",
+        .uri = "/api/saved_aps/remove",
         .method = HTTP_POST,
         .handler = portal_saved_aps_remove_post_handler,
         .user_ctx = NULL,

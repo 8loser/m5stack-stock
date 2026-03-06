@@ -112,7 +112,7 @@ function saveStockEdit(sym) {
     return;
   }
 
-  fetch("/stocks/update", {
+  fetch("/api/stocks/update", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ symbol: sym, alert_config: cfg })
@@ -145,7 +145,7 @@ function clearStockAlert(sym) {
   if (!confirm("確定要清除 " + sym + " 的 Alert 設定？")) {
     return;
   }
-  fetch("/stocks/update", {
+  fetch("/api/stocks/update", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ symbol: sym, clear_alert: true })
@@ -175,7 +175,7 @@ function clearStockAlert(sym) {
 }
 
 function loadStocks(generation) {
-  return fetch("/stocks")
+  return fetch("/api/stocks")
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (is_stale_generation(generation)) return;
@@ -206,7 +206,7 @@ function loadStocks(generation) {
 
 function addStock() {
   var sym = (document.getElementById("stock_symbol").value || "").trim();
-  fetch("/stocks/add", {
+  fetch("/api/stocks/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ symbol: sym })
@@ -234,7 +234,7 @@ function removeStock(sym) {
   if (!confirm("確定要移除股票 " + sym + " 嗎？此操作也會刪除該股 Alert 設定。")) {
     return;
   }
-  fetch("/stocks/remove", {
+  fetch("/api/stocks/remove", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ symbol: sym })

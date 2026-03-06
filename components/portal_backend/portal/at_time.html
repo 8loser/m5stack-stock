@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Core2 Portal - At Time</title>
+  <link rel="stylesheet" href="/assets/portal.css?v=2">
+</head>
+<body>
+  <h2>M5Stack Core2 Portal</h2>
+
+  <nav class="menu" aria-label="Portal Menu">
+    <a href="/wifi" id="tab_wifi" class="menu-btn">WiFi</a>
+    <a href="/ai" id="tab_ai" class="menu-btn">AI</a>
+    <a href="/telegram" id="tab_telegram" class="menu-btn">Telegram</a>
+    <a href="/stocks" id="tab_stocks" class="menu-btn">Stocks</a>
+    <a href="/at_time" id="tab_at_time" class="menu-btn active">AtTime</a>
+    <a href="/interval" id="tab_interval" class="menu-btn">Interval</a>
+  </nav>
+
+  <div class="grid">
+    <div id="card_at_time" class="card section-card active">
+      <div class="section-notice">在指定時間觸發 AI：系統會組合「通用 Prompt + 這筆自定 Prompt」，並透過 Telegram 發送給目標使用者。</div>
+      <button type="button" onclick="addAtTimeRow()">Add Time</button>
+      <div id="at_time_list" class="at-time-list"></div>
+      <button type="button" class="btn-disabled" disabled>Save At Time Settings</button>
+      <div class="hint">流程：到點觸發 AI 產生內容 -> 合併通用/自定 Prompt -> Telegram 推送給使用者。</div>
+      <div class="hint">目前僅前端示意，尚未寫入裝置。</div>
+      <div id="at_time_msg" class="hint"></div>
+    </div>
+  </div>
+
+  <script>window.PORTAL_PAGE_TAB = "at_time";</script>
+  <script src="/assets/portal_bootstrap.js?v=2"></script>
+  <script src="/assets/tab_at_time.js?v=2"></script>
+</body>
+</html>

@@ -80,8 +80,21 @@ static char s_portal_ap_ssid[33] = WIFI_PORTAL_AP_SSID;
 static char s_portal_ap_password[65] = WIFI_PORTAL_AP_PASSWORD;
 static const char *s_portal_url = WIFI_PORTAL_URL;
 
-extern const uint8_t portal_html_start[] asm("_binary_index_html_start");
-extern const uint8_t portal_html_end[] asm("_binary_index_html_end");
+static const char *CACHE_HTML_NO_STORE = "no-store, max-age=0";
+static const char *CACHE_ASSET_PUBLIC = "public, max-age=86400";
+
+extern const uint8_t portal_wifi_html_start[] asm("_binary_wifi_html_start");
+extern const uint8_t portal_wifi_html_end[] asm("_binary_wifi_html_end");
+extern const uint8_t portal_ai_html_start[] asm("_binary_ai_html_start");
+extern const uint8_t portal_ai_html_end[] asm("_binary_ai_html_end");
+extern const uint8_t portal_telegram_html_start[] asm("_binary_telegram_html_start");
+extern const uint8_t portal_telegram_html_end[] asm("_binary_telegram_html_end");
+extern const uint8_t portal_stocks_html_start[] asm("_binary_stocks_html_start");
+extern const uint8_t portal_stocks_html_end[] asm("_binary_stocks_html_end");
+extern const uint8_t portal_at_time_html_start[] asm("_binary_at_time_html_start");
+extern const uint8_t portal_at_time_html_end[] asm("_binary_at_time_html_end");
+extern const uint8_t portal_interval_html_start[] asm("_binary_interval_html_start");
+extern const uint8_t portal_interval_html_end[] asm("_binary_interval_html_end");
 extern const uint8_t portal_css_start[] asm("_binary_portal_css_start");
 extern const uint8_t portal_css_end[] asm("_binary_portal_css_end");
 extern const uint8_t portal_bootstrap_js_start[] asm("_binary_portal_bootstrap_js_start");
@@ -1096,22 +1109,13 @@ static esp_err_t portal_telegram_chats_get_handler(httpd_req_t *req)
     return send_ret;
 }
 
-static esp_err_t portal_index_get_handler(httpd_req_t *req)
-{
-    size_t html_len = (size_t)(portal_html_end - portal_html_start);
-    if (html_len > 0 && portal_html_start[html_len - 1] == '\0') {
-        html_len--;
-    }
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
-    return httpd_resp_send(req, (const char *)portal_html_start, (ssize_t)html_len);
-}
-
 static esp_err_t send_embedded_asset(httpd_req_t *req,
                                      const uint8_t *start,
                                      const uint8_t *end,
-                                     const char *content_type)
+                                     const char *content_type,
+                                     const char *cache_control)
 {
-    if (!req || !start || !end || !content_type || end < start) {
+    if (!req || !start || !end || !content_type || !cache_control || end < start) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -1120,54 +1124,99 @@ static esp_err_t send_embedded_asset(httpd_req_t *req,
         len--;
     }
     httpd_resp_set_type(req, content_type);
+    httpd_resp_set_hdr(req, "Cache-Control", cache_control);
     return httpd_resp_send(req, (const char *)start, (ssize_t)len);
+}
+
+static esp_err_t send_portal_page(httpd_req_t *req, const uint8_t *start, const uint8_t *end)
+{
+    return send_embedded_asset(req, start, end, "text/html; charset=utf-8", CACHE_HTML_NO_STORE);
+}
+
+static esp_err_t portal_root_get_handler(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "/wifi");
+    httpd_resp_set_hdr(req, "Cache-Control", CACHE_HTML_NO_STORE);
+    return httpd_resp_send(req, NULL, 0);
+}
+
+static esp_err_t portal_wifi_page_get_handler(httpd_req_t *req)
+{
+    return send_portal_page(req, portal_wifi_html_start, portal_wifi_html_end);
+}
+
+static esp_err_t portal_ai_page_get_handler(httpd_req_t *req)
+{
+    return send_portal_page(req, portal_ai_html_start, portal_ai_html_end);
+}
+
+static esp_err_t portal_telegram_page_get_handler(httpd_req_t *req)
+{
+    return send_portal_page(req, portal_telegram_html_start, portal_telegram_html_end);
+}
+
+static esp_err_t portal_stocks_page_get_handler(httpd_req_t *req)
+{
+    return send_portal_page(req, portal_stocks_html_start, portal_stocks_html_end);
+}
+
+static esp_err_t portal_at_time_page_get_handler(httpd_req_t *req)
+{
+    return send_portal_page(req, portal_at_time_html_start, portal_at_time_html_end);
+}
+
+static esp_err_t portal_interval_page_get_handler(httpd_req_t *req)
+{
+    return send_portal_page(req, portal_interval_html_start, portal_interval_html_end);
 }
 
 static esp_err_t portal_css_get_handler(httpd_req_t *req)
 {
-    return send_embedded_asset(req, portal_css_start, portal_css_end, "text/css; charset=utf-8");
+    return send_embedded_asset(req, portal_css_start, portal_css_end,
+                               "text/css; charset=utf-8", CACHE_ASSET_PUBLIC);
 }
 
 static esp_err_t portal_bootstrap_js_get_handler(httpd_req_t *req)
 {
     return send_embedded_asset(req, portal_bootstrap_js_start, portal_bootstrap_js_end,
-                               "application/javascript; charset=utf-8");
+                               "application/javascript; charset=utf-8", CACHE_ASSET_PUBLIC);
 }
 
 static esp_err_t portal_tab_wifi_js_get_handler(httpd_req_t *req)
 {
     return send_embedded_asset(req, tab_wifi_js_start, tab_wifi_js_end,
-                               "application/javascript; charset=utf-8");
+                               "application/javascript; charset=utf-8", CACHE_ASSET_PUBLIC);
 }
 
 static esp_err_t portal_tab_ai_js_get_handler(httpd_req_t *req)
 {
     return send_embedded_asset(req, tab_ai_js_start, tab_ai_js_end,
-                               "application/javascript; charset=utf-8");
+                               "application/javascript; charset=utf-8", CACHE_ASSET_PUBLIC);
 }
 
 static esp_err_t portal_tab_telegram_js_get_handler(httpd_req_t *req)
 {
     return send_embedded_asset(req, tab_telegram_js_start, tab_telegram_js_end,
-                               "application/javascript; charset=utf-8");
+                               "application/javascript; charset=utf-8", CACHE_ASSET_PUBLIC);
 }
 
 static esp_err_t portal_tab_stocks_js_get_handler(httpd_req_t *req)
 {
     return send_embedded_asset(req, tab_stocks_js_start, tab_stocks_js_end,
-                               "application/javascript; charset=utf-8");
+                               "application/javascript; charset=utf-8", CACHE_ASSET_PUBLIC);
 }
 
 static esp_err_t portal_tab_at_time_js_get_handler(httpd_req_t *req)
 {
     return send_embedded_asset(req, tab_at_time_js_start, tab_at_time_js_end,
-                               "application/javascript; charset=utf-8");
+                               "application/javascript; charset=utf-8", CACHE_ASSET_PUBLIC);
 }
 
 static esp_err_t portal_tab_interval_js_get_handler(httpd_req_t *req)
 {
     return send_embedded_asset(req, tab_interval_js_start, tab_interval_js_end,
-                               "application/javascript; charset=utf-8");
+                               "application/javascript; charset=utf-8", CACHE_ASSET_PUBLIC);
 }
 
 static esp_err_t portal_wifi_post_handler(httpd_req_t *req)
@@ -1248,7 +1297,7 @@ static esp_err_t start_portal_http_server(void)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
-    config.max_uri_handlers = 28;
+    config.max_uri_handlers = 36;
     config.max_open_sockets = 8;
     config.backlog_conn = 4;
     config.lru_purge_enable = true;
@@ -1263,14 +1312,56 @@ static esp_err_t start_portal_http_server(void)
         return ret;
     }
 
-    httpd_uri_t index_uri = {
+    httpd_uri_t root_uri = {
         .uri = "/",
         .method = HTTP_GET,
-        .handler = portal_index_get_handler,
+        .handler = portal_root_get_handler,
         .user_ctx = NULL,
     };
 
-    httpd_uri_t wifi_uri = {
+    httpd_uri_t wifi_page_uri = {
+        .uri = "/wifi",
+        .method = HTTP_GET,
+        .handler = portal_wifi_page_get_handler,
+        .user_ctx = NULL,
+    };
+
+    httpd_uri_t ai_page_uri = {
+        .uri = "/ai",
+        .method = HTTP_GET,
+        .handler = portal_ai_page_get_handler,
+        .user_ctx = NULL,
+    };
+
+    httpd_uri_t telegram_page_uri = {
+        .uri = "/telegram",
+        .method = HTTP_GET,
+        .handler = portal_telegram_page_get_handler,
+        .user_ctx = NULL,
+    };
+
+    httpd_uri_t stocks_page_uri = {
+        .uri = "/stocks",
+        .method = HTTP_GET,
+        .handler = portal_stocks_page_get_handler,
+        .user_ctx = NULL,
+    };
+
+    httpd_uri_t at_time_page_uri = {
+        .uri = "/at_time",
+        .method = HTTP_GET,
+        .handler = portal_at_time_page_get_handler,
+        .user_ctx = NULL,
+    };
+
+    httpd_uri_t interval_page_uri = {
+        .uri = "/interval",
+        .method = HTTP_GET,
+        .handler = portal_interval_page_get_handler,
+        .user_ctx = NULL,
+    };
+
+    httpd_uri_t wifi_post_uri = {
         .uri = "/wifi",
         .method = HTTP_POST,
         .handler = portal_wifi_post_handler,
@@ -1334,63 +1425,69 @@ static esp_err_t start_portal_http_server(void)
     };
 
     httpd_uri_t scan_uri = {
-        .uri = "/scan",
+        .uri = "/api/scan",
         .method = HTTP_GET,
         .handler = portal_scan_get_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t ai_get_uri = {
-        .uri = "/ai",
+        .uri = "/api/ai",
         .method = HTTP_GET,
         .handler = portal_ai_get_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t ai_post_uri = {
-        .uri = "/ai",
+        .uri = "/api/ai",
         .method = HTTP_POST,
         .handler = portal_ai_post_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t ai_test_post_uri = {
-        .uri = "/ai/test",
+        .uri = "/api/ai/test",
         .method = HTTP_POST,
         .handler = portal_ai_test_post_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t telegram_get_uri = {
-        .uri = "/telegram",
+        .uri = "/api/telegram",
         .method = HTTP_GET,
         .handler = portal_telegram_get_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t telegram_post_uri = {
-        .uri = "/telegram",
+        .uri = "/api/telegram",
         .method = HTTP_POST,
         .handler = portal_telegram_post_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t telegram_test_post_uri = {
-        .uri = "/telegram/test",
+        .uri = "/api/telegram/test",
         .method = HTTP_POST,
         .handler = portal_telegram_test_post_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t telegram_chats_get_uri = {
-        .uri = "/telegram/chats",
+        .uri = "/api/telegram/chats",
         .method = HTTP_GET,
         .handler = portal_telegram_chats_get_handler,
         .user_ctx = NULL,
     };
 
-    httpd_register_uri_handler(s_httpd, &index_uri);
-    httpd_register_uri_handler(s_httpd, &wifi_uri);
+    httpd_register_uri_handler(s_httpd, &root_uri);
+    httpd_register_uri_handler(s_httpd, &wifi_page_uri);
+    httpd_register_uri_handler(s_httpd, &ai_page_uri);
+    httpd_register_uri_handler(s_httpd, &telegram_page_uri);
+    httpd_register_uri_handler(s_httpd, &stocks_page_uri);
+    httpd_register_uri_handler(s_httpd, &at_time_page_uri);
+    httpd_register_uri_handler(s_httpd, &interval_page_uri);
+    httpd_register_uri_handler(s_httpd, &wifi_post_uri);
     httpd_register_uri_handler(s_httpd, &css_uri);
     httpd_register_uri_handler(s_httpd, &bootstrap_js_uri);
     httpd_register_uri_handler(s_httpd, &tab_wifi_js_uri);

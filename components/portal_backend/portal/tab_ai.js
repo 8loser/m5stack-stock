@@ -1,5 +1,5 @@
 function loadAiConfig(generation) {
-  return fetch("/ai")
+  return fetch("/api/ai")
     .then(function (r) { return r.json(); })
     .then(function (c) {
       if (is_stale_generation(generation)) return;
@@ -42,7 +42,7 @@ function testAiProvider(provider) {
   var body = "provider=" + encodeURIComponent(provider || "") +
     "&api_key=" + encodeURIComponent(apiKey);
 
-  fetch("/ai/test", {
+  fetch("/api/ai/test", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body
@@ -89,7 +89,7 @@ function saveAiSettings() {
     "&openai_key=" + encodeURIComponent(openai) +
     "&global_prompt=" + encodeURIComponent(globalPrompt);
 
-  fetch("/ai", {
+  fetch("/api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body
@@ -119,7 +119,7 @@ function clearAiProvider(provider) {
   }
 
   var body = "provider=" + encodeURIComponent(selectedProvider) + "&" + fieldName + "=1";
-  fetch("/ai", {
+  fetch("/api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body

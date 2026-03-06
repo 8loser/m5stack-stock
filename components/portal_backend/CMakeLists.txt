@@ -4,7 +4,12 @@ idf_component_register(
         "stock_admin_service.c"
     INCLUDE_DIRS "include"
     EMBED_TXTFILES
-        "portal/index.html"
+        "portal/wifi.html"
+        "portal/ai.html"
+        "portal/telegram.html"
+        "portal/stocks.html"
+        "portal/at_time.html"
+        "portal/interval.html"
         "portal/portal.css"
         "portal/portal_bootstrap.js"
         "portal/tab_wifi.js"

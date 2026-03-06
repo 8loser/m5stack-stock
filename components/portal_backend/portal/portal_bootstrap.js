@@ -29,6 +29,16 @@ var s_tab_loading_promise = {
   interval: null
 };
 
+var PORTAL_TAB_IDS = ["wifi", "ai", "telegram", "stocks", "at_time", "interval"];
+var PORTAL_TAB_PATHS = {
+  wifi: "/wifi",
+  ai: "/ai",
+  telegram: "/telegram",
+  stocks: "/stocks",
+  at_time: "/at_time",
+  interval: "/interval"
+};
+
 function setInitOverlayState(state) {
   var overlay = document.getElementById("init_overlay");
   if (!overlay) return;
@@ -149,6 +159,11 @@ function loadTabData(tab, generation) {
   return Promise.reject(new Error("unknown tab"));
 }
 
+function getCurrentPageTab() {
+  var tab = window.PORTAL_PAGE_TAB || "wifi";
+  return PORTAL_TAB_IDS.indexOf(tab) >= 0 ? tab : "wifi";
+}
+
 function ensureTabLoaded(tab, generation, force_reload) {
   if (!force_reload && s_tab_loaded[tab]) {
     return Promise.resolve();
@@ -173,19 +188,29 @@ function ensureTabLoaded(tab, generation, force_reload) {
 }
 
 function showTab(tab, skip_auto_load) {
-  var ids = ["wifi", "ai", "telegram", "stocks", "at_time", "interval"];
-  ids.forEach(function (x) {
+  PORTAL_TAB_IDS.forEach(function (x) {
     var card = document.getElementById("card_" + x);
     var btn = document.getElementById("tab_" + x);
     if (card) card.className = "card section-card" + (x === tab ? " active" : "");
     if (btn) btn.className = "menu-btn" + (x === tab ? " active" : "");
   });
 
-  if (skip_auto_load) return;
+  if (tab !== getCurrentPageTab()) {
+    var nextPath = PORTAL_TAB_PATHS[tab];
+    if (nextPath) {
+      window.location.assign(nextPath);
+    }
+    return;
+  }
+
+  if (skip_auto_load) {
+    return;
+  }
   ensureTabLoaded(tab).catch(function () {});
 }
 
 function beginBootstrapInit() {
+  var tab = getCurrentPageTab();
   var generation = ++s_init_generation;
   var timed_out = false;
 
@@ -194,10 +219,10 @@ function beginBootstrapInit() {
     s_init_timeout_timer = 0;
   }
 
-  s_tab_loaded.wifi = false;
+  s_tab_loaded[tab] = false;
 
   setInitOverlayState("loading");
-  showTab("wifi", true);
+  showTab(tab, true);
 
   s_init_timeout_timer = setTimeout(function () {
     if (generation !== s_init_generation) return;
@@ -205,7 +230,7 @@ function beginBootstrapInit() {
     setInitOverlayState("timeout_error");
   }, PORTAL_INIT_TIMEOUT_MS);
 
-  ensureTabLoaded("wifi", generation, true)
+  ensureTabLoaded(tab, generation, true)
     .catch(function () {})
     .finally(function () {
       if (generation !== s_init_generation) return;

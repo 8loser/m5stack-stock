@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Core2 Portal - AI</title>
+  <link rel="stylesheet" href="/assets/portal.css?v=2">
+</head>
+<body>
+  <div id="init_overlay" class="init-overlay hidden" aria-live="polite">
+    <div class="init-loading">
+      <div class="init-spinner"></div>
+      <p class="init-loading-title">Initializing Portal</p>
+      <p class="init-loading-text">Loading AI settings...</p>
+    </div>
+    <div class="init-timeout-panel">
+      <p class="init-timeout-title">Initialization Timed Out</p>
+      <p class="init-timeout-text">Network may be slow or unavailable. Please retry.</p>
+      <button type="button" id="init_retry_btn">Retry</button>
+    </div>
+  </div>
+
+  <h2>M5Stack Core2 Portal</h2>
+
+  <nav class="menu" aria-label="Portal Menu">
+    <a href="/wifi" id="tab_wifi" class="menu-btn">WiFi</a>
+    <a href="/ai" id="tab_ai" class="menu-btn active">AI</a>
+    <a href="/telegram" id="tab_telegram" class="menu-btn">Telegram</a>
+    <a href="/stocks" id="tab_stocks" class="menu-btn">Stocks</a>
+    <a href="/at_time" id="tab_at_time" class="menu-btn">AtTime</a>
+    <a href="/interval" id="tab_interval" class="menu-btn">Interval</a>
+  </nav>
+
+  <div class="grid">
+    <div id="card_ai" class="card section-card active">
+      <div class="section-notice">設定 AI 供應商、金鑰與通用 Prompt：排程任務會以「通用 Prompt + 各任務自定 Prompt」組合送出。</div>
+      <form onsubmit="saveAiSettings(); return false;">
+        <label>Primary Provider</label>
+        <div class="ai-provider-pick">
+          <label><input type="radio" name="ai_provider" value="gemini" checked>Gemini</label>
+          <label><input type="radio" name="ai_provider" value="claude">Claude</label>
+          <label><input type="radio" name="ai_provider" value="openai">OpenAI</label>
+        </div>
+
+        <label>Gemini API Key</label>
+        <input id="gemini_key" name="gemini_key" maxlength="127" type="password" autocomplete="off">
+        <div id="ai_msg_gemini" class="hint"></div>
+        <div class="ai-provider-actions">
+          <button type="button" class="secondary" onclick="testAiProvider('gemini')">Test Gemini Key</button>
+          <button type="button" class="secondary" onclick="clearAiProvider('gemini')">Clear Gemini Key</button>
+        </div>
+
+        <label>Claude API Key</label>
+        <input id="claude_key" name="claude_key" maxlength="127" type="password" autocomplete="off">
+        <div id="ai_msg_claude" class="hint"></div>
+        <div class="ai-provider-actions">
+          <button type="button" class="secondary" onclick="testAiProvider('claude')">Test Claude Key</button>
+          <button type="button" class="secondary" onclick="clearAiProvider('claude')">Clear Claude Key</button>
+        </div>
+
+        <label>OpenAI API Key</label>
+        <input id="openai_key" name="openai_key" maxlength="127" type="password" autocomplete="off">
+        <div id="ai_msg_openai" class="hint"></div>
+        <div class="ai-provider-actions">
+          <button type="button" class="secondary" onclick="testAiProvider('openai')">Test OpenAI Key</button>
+          <button type="button" class="secondary" onclick="clearAiProvider('openai')">Clear OpenAI Key</button>
+        </div>
+
+        <label>Global Prompt</label>
+        <textarea id="ai_global_prompt" maxlength="100" placeholder="輸入通用分析 prompt（約 100 中文字，最多 300 bytes）"></textarea>
+        <div class="hint">通用 prompt 會儲存在裝置中，供後續分析流程使用。</div>
+
+        <div class="hint">Leave blank to keep existing key. Only providers with non-empty key will be used.</div>
+        <button type="submit">Save AI Settings</button>
+        <div class="hint">修改後需按 Save AI Settings 才會記錄到裝置。</div>
+      </form>
+      <div id="ai_msg" class="hint"></div>
+    </div>
+  </div>
+
+  <script>window.PORTAL_PAGE_TAB = "ai";</script>
+  <script src="/assets/portal_bootstrap.js?v=2"></script>
+  <script src="/assets/tab_ai.js?v=2"></script>
+</body>
+</html>

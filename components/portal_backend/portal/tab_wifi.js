@@ -8,7 +8,7 @@ function setScanLoadingState(text) {
 }
 
 function loadSavedAps(generation) {
-  return fetchWithTimeout("/saved_aps", null, PORTAL_API_TIMEOUT_MS)
+  return fetchWithTimeout("/api/saved_aps", null, PORTAL_API_TIMEOUT_MS)
     .then(function (r) { return r.json(); })
     .then(function (a) {
       if (is_stale_generation(generation)) return;
@@ -38,7 +38,7 @@ function loadSavedAps(generation) {
 }
 
 function loadScan(generation) {
-  return fetchWithTimeout("/scan", null, PORTAL_API_TIMEOUT_MS)
+  return fetchWithTimeout("/api/scan", null, PORTAL_API_TIMEOUT_MS)
     .then(function (r) { return r.json(); })
     .then(function (a) {
       if (is_stale_generation(generation)) return;
@@ -80,7 +80,7 @@ function scanWifiNow(generation) {
 
 function removeSavedAp(ssid) {
   var body = "ssid=" + encodeURIComponent(ssid || "");
-  fetch("/saved_aps/remove", {
+  fetch("/api/saved_aps/remove", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body

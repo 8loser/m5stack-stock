@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Core2 Portal - Stocks</title>
+  <link rel="stylesheet" href="/assets/portal.css?v=2">
+</head>
+<body>
+  <div id="init_overlay" class="init-overlay hidden" aria-live="polite">
+    <div class="init-loading">
+      <div class="init-spinner"></div>
+      <p class="init-loading-title">Initializing Portal</p>
+      <p class="init-loading-text">Loading Stocks settings...</p>
+    </div>
+    <div class="init-timeout-panel">
+      <p class="init-timeout-title">Initialization Timed Out</p>
+      <p class="init-timeout-text">Network may be slow or unavailable. Please retry.</p>
+      <button type="button" id="init_retry_btn">Retry</button>
+    </div>
+  </div>
+
+  <h2>M5Stack Core2 Portal</h2>
+
+  <nav class="menu" aria-label="Portal Menu">
+    <a href="/wifi" id="tab_wifi" class="menu-btn">WiFi</a>
+    <a href="/ai" id="tab_ai" class="menu-btn">AI</a>
+    <a href="/telegram" id="tab_telegram" class="menu-btn">Telegram</a>
+    <a href="/stocks" id="tab_stocks" class="menu-btn active">Stocks</a>
+    <a href="/at_time" id="tab_at_time" class="menu-btn">AtTime</a>
+    <a href="/interval" id="tab_interval" class="menu-btn">Interval</a>
+  </nav>
+
+  <div class="grid">
+    <div id="card_stocks" class="card section-card active">
+      <div class="section-notice">管理股票清單與 Alert Prompt：系統會依排程抓取報價並套用告警規則。</div>
+      <label>Symbol (4 digits)</label>
+      <input id="stock_symbol" maxlength="4" inputmode="numeric" placeholder="2330">
+      <button type="button" onclick="addStock()">Add</button>
+      <div class="hint">單位時間依使用者設定的報價間隔</div>
+      <div id="stocks_msg" class="hint"></div>
+      <div id="stocks_list" class="hint">Loading...</div>
+    </div>
+  </div>
+
+  <script>window.PORTAL_PAGE_TAB = "stocks";</script>
+  <script src="/assets/portal_bootstrap.js?v=2"></script>
+  <script src="/assets/tab_stocks.js?v=2"></script>
+</body>
+</html>

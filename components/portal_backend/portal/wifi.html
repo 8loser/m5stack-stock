@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Core2 Portal - WiFi</title>
+  <link rel="stylesheet" href="/assets/portal.css?v=2">
+</head>
+<body>
+  <div id="init_overlay" class="init-overlay hidden" aria-live="polite">
+    <div class="init-loading">
+      <div class="init-spinner"></div>
+      <p class="init-loading-title">Initializing Portal</p>
+      <p class="init-loading-text">Loading WiFi settings...</p>
+    </div>
+    <div class="init-timeout-panel">
+      <p class="init-timeout-title">Initialization Timed Out</p>
+      <p class="init-timeout-text">Network may be slow or unavailable. Please retry.</p>
+      <button type="button" id="init_retry_btn">Retry</button>
+    </div>
+  </div>
+
+  <h2>M5Stack Core2 Portal</h2>
+
+  <nav class="menu" aria-label="Portal Menu">
+    <a href="/wifi" id="tab_wifi" class="menu-btn active">WiFi</a>
+    <a href="/ai" id="tab_ai" class="menu-btn">AI</a>
+    <a href="/telegram" id="tab_telegram" class="menu-btn">Telegram</a>
+    <a href="/stocks" id="tab_stocks" class="menu-btn">Stocks</a>
+    <a href="/at_time" id="tab_at_time" class="menu-btn">AtTime</a>
+    <a href="/interval" id="tab_interval" class="menu-btn">Interval</a>
+  </nav>
+
+  <div class="grid">
+    <div id="card_wifi" class="card section-card active">
+      <div class="section-notice">設定裝置連線網路：儲存後 Core2 會切回 STA 模式，後續 Portal 入口可能改變。</div>
+      <form method="post" action="/wifi">
+        <label>SSID</label>
+        <select id="ss" name="ssid" onchange="chk(this)">
+          <option value="">Click "Scan WiFi" to load networks</option>
+        </select>
+        <button type="button" class="secondary" onclick="scanWifiNow()">Scan WiFi</button>
+
+        <div id="m" style="display:none">
+          <label>Manual SSID</label>
+          <input name="ssid_manual" maxlength="32">
+        </div>
+
+        <label>Password</label>
+        <input name="password" maxlength="64" type="password">
+        <button type="submit">Connect</button>
+        <div class="hint">Connect success will switch Core2 back to STA mode.</div>
+      </form>
+
+      <h3>Saved Networks</h3>
+      <div id="saved_aps_list">Loading...</div>
+    </div>
+  </div>
+
+  <script>window.PORTAL_PAGE_TAB = "wifi";</script>
+  <script src="/assets/portal_bootstrap.js?v=2"></script>
+  <script src="/assets/tab_wifi.js?v=2"></script>
+</body>
+</html>

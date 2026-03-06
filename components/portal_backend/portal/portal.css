@@ -210,6 +210,7 @@ button, .menu-btn { cursor: pointer; }
 
 .menu {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 8px 0 14px;
   padding: 6px;
@@ -220,48 +221,65 @@ button, .menu-btn { cursor: pointer; }
 }
 
 .menu-btn {
+  display: block;
   flex: 0 0 auto;
-  min-width: 100px;
+  min-width: 120px;
   width: auto;
   margin-top: 0;
   padding: 10px 8px;
   border-radius: 9px;
-  border: 1px solid #bacbdd;
-  background: #dde8f2;
-  color: #1c3044;
+  border: 1px solid #c7d3df;
+  background: #d7e2ec;
+  color: #263646;
   font-weight: 800;
   letter-spacing: 0.1px;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: none;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .menu-btn.active {
-  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  background: #129b74;
   color: #fff;
-  border-color: var(--accent-strong);
-  box-shadow: 0 4px 10px rgba(8, 137, 99, 0.3);
-}
-
-@media (min-width: 860px) {
-  .menu-btn { flex: 1 1 0; min-width: 0; }
+  border-color: #129b74;
 }
 
 @media (max-width: 859px) {
   .menu {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
+    gap: 5px;
     position: sticky;
     top: 0;
     z-index: 30;
     margin-top: 0;
-    border-radius: 10px;
-    padding: 8px;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .menu-btn {
     min-width: 0;
     width: 100%;
-    padding: 9px 6px;
-    font-size: 14px;
+    min-height: 34px;
+    padding: 5px 4px;
+    font-size: 12px;
+    white-space: normal;
+    line-height: 1.1;
+    border-radius: 8px;
+    background: #d1dde8;
+    border-color: #bfccd9;
+    color: #2a3a4a;
+  }
+
+  .menu-btn.active {
+    background: #13956f;
+    border-color: #13956f;
+    color: #fff;
   }
 }
 
@@ -305,7 +323,11 @@ button, .menu-btn { cursor: pointer; }
 }
 
 @media (max-width: 640px) {
-  h2 { font-size: 34px; }
+  h2 {
+    font-size: 30px;
+    line-height: 1.15;
+    margin-bottom: 8px;
+  }
   h3 { font-size: 30px; }
   .at-time-row-grid,
   .interval-row-grid { grid-template-columns: 1fr; }
