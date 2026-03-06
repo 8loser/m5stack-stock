@@ -10,8 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-- 指令細節由 `m5stack-core2-dev` 與 `m5stack-core2-flash-agent` 維護，`CLAUDE.md` 僅保留路由與共通規範。
-- 測試與驗證步驟細節同樣由 `m5stack-core2-dev` 與 `m5stack-core2-flash-agent` 維護。
+- 指令細節由 `m5stack-core2-dev` 與 `m5stack-core2-flash` 維護，`CLAUDE.md` 僅保留路由與共通規範。
+- 測試與驗證步驟細節同樣由 `m5stack-core2-dev` 與 `m5stack-core2-flash` 維護。
 - 程式風格與命名細節由 `m5stack-core2-dev` 維護。
 
 ## 安全與設定提醒
@@ -70,7 +70,7 @@ scheduler Timer（ai_ivl）
 ## Gotchas
 
 - 開發類 gotchas 由 `m5stack-core2-dev` 維護（避免與 `CLAUDE.md` 重複）。
-- 燒錄/連線類 gotchas 由 `m5stack-core2-flash-agent` 維護（例如 monitor 鎖 port）。
+- 燒錄/連線類 gotchas 由 `m5stack-core2-flash` 維護（例如 monitor 鎖 port）。
 - `CLAUDE.md` 僅保留分工與路由規則，不再重複列細節表。
 
 ## NVS 命名空間
@@ -87,12 +87,11 @@ scheduler Timer（ai_ivl）
 
 - 功能開發、程式修改與邏輯除錯一律使用 `m5stack-core2-dev`。
 - `components/portal_backend/portal` 網頁調整優先使用 `m5stack-portal-web-dev`；若需 firmware/API 行為變更再轉交 `m5stack-core2-dev`。
-- 連線、燒錄、監看與 log 取得一律使用 `m5stack-core2-flash-agent`。
-- `m5stack-core2-flash-agent` 在燒錄阻塞時可最小修改 `flash.sh`（限連線/燒錄路徑），不得延伸到韌體功能邏輯。
-- `m5stack-core2-dev` 需要實機 log 時，先切 `m5stack-core2-flash-agent` 取得結果，再回 `m5stack-core2-dev` 續修。
-- 具體流程與守則以各自的 skill/agent 文件為準，`CLAUDE.md` 不重複維護其細節。
+- 燒錄、flash、monitor、log 擷取一律透過 `Agent` tool spawn sub-agent 執行 `m5stack-core2-flash`，主對話只接收摘要。
+- `m5stack-core2-flash` 在燒錄阻塞時可最小修改 `flash.sh`（限連線/燒錄路徑），不得延伸到韌體功能邏輯。
+- 具體流程與守則以各自的 skill 文件為準，`CLAUDE.md` 不重複維護其細節。
 
 ## 路由可觀測性
 
 - 每個任務開始時，第一則進度訊息必須明確標示：`Routing: <skill-name>`。
-- 若任務中途改派（例如 `m5stack-core2-dev` 轉 `m5stack-core2-flash-agent`），需再補一則路由切換訊息。
+- 若任務中途改派（例如 `m5stack-core2-dev` spawn sub-agent 執行 `m5stack-core2-flash`），需再補一則路由切換訊息。
