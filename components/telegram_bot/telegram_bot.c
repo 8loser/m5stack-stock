@@ -4,6 +4,7 @@
 #include "network_portal.h"
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
@@ -25,6 +26,10 @@
 #define TG_CHAT_ID_MAX_LEN 40
 #define TG_INFO_STALE_SEC 1800
 #define TG_GET_UPDATES_TIMEOUT_SEC 3
+#define TG_RESTART_WAIT_MS 3000U
+#define TG_SEND_RETRY_MAX 3
+#define TG_SEND_RETRY_DELAY_MS 250U
+#define TG_INFO_MSG_BUF_SIZE 2048U
 
 static const char *TAG = "telegram_bot";
 
@@ -41,6 +46,8 @@ static bool s_polling_paused = false;
 static int64_t s_next_update_id = 0;
 static portMUX_TYPE s_http_lock = portMUX_INITIALIZER_UNLOCKED;
 static volatile uint32_t s_http_in_flight = 0;
+static esp_http_client_handle_t s_http_client = NULL;
+static volatile bool s_http_abort_requested = false;
 
 typedef struct {
     bool has_quote;
@@ -162,12 +169,22 @@ static esp_err_t tg_http_call(const char *url,
     }
 
     taskENTER_CRITICAL(&s_http_lock);
+    s_http_client = client;
     s_http_in_flight++;
+    s_http_abort_requested = false;
     taskEXIT_CRITICAL(&s_http_lock);
     esp_err_t ret = esp_http_client_perform(client);
+    bool abort_requested = false;
+    taskENTER_CRITICAL(&s_http_lock);
+    abort_requested = s_http_abort_requested;
+    taskEXIT_CRITICAL(&s_http_lock);
+    if (abort_requested && ret != ESP_OK) {
+        ESP_LOGI(TAG, "http call aborted: %s", esp_err_to_name(ret));
+    }
     int status_code = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
     taskENTER_CRITICAL(&s_http_lock);
+    s_http_client = NULL;
     if (s_http_in_flight > 0) {
         s_http_in_flight--;
     }
@@ -217,18 +234,37 @@ static esp_err_t tg_send_message(const char *token, const char *chat_id, const c
     snprintf(post_data, post_data_len, "chat_id=%s&text=%s", encoded_chat, encoded_text);
     snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/sendMessage", token);
 
-    ret = tg_http_call(url,
-                       HTTP_METHOD_POST,
-                       "application/x-www-form-urlencoded",
-                       post_data,
-                       &resp,
-                       &status_code);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
+    for (int attempt = 1; attempt <= TG_SEND_RETRY_MAX; attempt++) {
+        free(resp);
+        resp = NULL;
+        status_code = 0;
+        ret = tg_http_call(url,
+                           HTTP_METHOD_POST,
+                           "application/x-www-form-urlencoded",
+                           post_data,
+                           &resp,
+                           &status_code);
+        if (ret == ESP_OK) {
+            bool ok = (status_code == 200 && resp && strstr(resp, "\"ok\":true") != NULL);
+            if (ok) {
+                break;
+            }
+            ret = ESP_FAIL;
+        }
 
-    bool ok = (status_code == 200 && strstr(resp, "\"ok\":true") != NULL);
-    ret = ok ? ESP_OK : ESP_FAIL;
+        bool retryable = (ret == ESP_ERR_HTTP_CONNECT ||
+                          ret == ESP_ERR_NO_MEM ||
+                          status_code == 0 ||
+                          status_code >= 500);
+        if (!retryable || attempt >= TG_SEND_RETRY_MAX) {
+            ESP_LOGW(TAG, "sendMessage failed attempt=%d ret=%s status=%d",
+                     attempt, esp_err_to_name(ret), status_code);
+            break;
+        }
+        ESP_LOGW(TAG, "sendMessage retry attempt=%d ret=%s status=%d",
+                 attempt, esp_err_to_name(ret), status_code);
+        vTaskDelay(pdMS_TO_TICKS(TG_SEND_RETRY_DELAY_MS));
+    }
 
 cleanup:
     free(resp);
@@ -462,6 +498,18 @@ static const char *response_for_command(const char *text, char *scratch, size_t 
     return "Unknown command. Use /help";
 }
 
+static char *alloc_info_response_buffer(size_t size)
+{
+    if (size == 0) {
+        return NULL;
+    }
+    char *buf = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buf) {
+        return buf;
+    }
+    return malloc(size);
+}
+
 static void process_updates(const char *token, const char *allowed_chat_id, const char *json)
 {
     cJSON *root = cJSON_Parse(json);
@@ -521,11 +569,11 @@ static void process_updates(const char *token, const char *allowed_chat_id, cons
         const char *resp = NULL;
 
         if (is_info_cmd) {
-            response_buf = malloc(3072);
+            response_buf = alloc_info_response_buffer(TG_INFO_MSG_BUF_SIZE);
             if (!response_buf) {
                 resp = "OOM";
             } else {
-                resp = response_for_command(text->valuestring, response_buf, 3072);
+                resp = response_for_command(text->valuestring, response_buf, TG_INFO_MSG_BUF_SIZE);
             }
         } else {
             resp = response_for_command(text->valuestring, NULL, 0);
@@ -697,6 +745,7 @@ static void telegram_task(void *arg)
         int status_code = 0;
         esp_err_t ret = tg_http_call(url, HTTP_METHOD_GET, NULL, NULL, &resp, &status_code);
         if (ret != ESP_OK || !resp || status_code != 200) {
+            ESP_LOGW(TAG, "polling failed: ret=%s status=%d", esp_err_to_name(ret), status_code);
             free(resp);
             vTaskDelay(pdMS_TO_TICKS(3000));
             continue;
@@ -729,8 +778,23 @@ esp_err_t telegram_bot_init(void)
 
 esp_err_t telegram_bot_start(void)
 {
-    if (s_running || s_task_handle != NULL) {
+    if (s_running) {
+        ESP_LOGI(TAG, "telegram bot already running");
         return ESP_OK;
+    }
+    if (s_task_handle != NULL) {
+        esp_err_t wait_ret = telegram_bot_wait_stopped(TG_RESTART_WAIT_MS);
+        if (wait_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram bot restart blocked: previous task still stopping (%s)",
+                     esp_err_to_name(wait_ret));
+            telegram_bot_stop();
+            wait_ret = telegram_bot_wait_stopped(TG_RESTART_WAIT_MS);
+            if (wait_ret != ESP_OK) {
+                ESP_LOGW(TAG, "telegram bot restart failed after retry: %s",
+                         esp_err_to_name(wait_ret));
+                return wait_ret;
+            }
+        }
     }
     s_polling_paused = false;
     s_running = true;
@@ -738,13 +802,33 @@ esp_err_t telegram_bot_start(void)
         s_running = false;
         return ESP_FAIL;
     }
+    ESP_LOGI(TAG, "telegram bot start requested");
     return ESP_OK;
 }
 
 esp_err_t telegram_bot_stop(void)
 {
+    esp_http_client_handle_t client = NULL;
+    bool has_in_flight = false;
+
     s_running = false;
     s_polling_paused = false;
+    taskENTER_CRITICAL(&s_http_lock);
+    s_http_abort_requested = true;
+    client = s_http_client;
+    has_in_flight = (s_http_in_flight > 0);
+    taskEXIT_CRITICAL(&s_http_lock);
+
+    if (has_in_flight && client) {
+        esp_err_t abort_ret = esp_http_client_close(client);
+        if (abort_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram http abort failed: %s", esp_err_to_name(abort_ret));
+        } else {
+            ESP_LOGI(TAG, "telegram stop requested: aborted in-flight http");
+        }
+    } else {
+        ESP_LOGI(TAG, "telegram stop requested: no in-flight http");
+    }
     return ESP_OK;
 }
 

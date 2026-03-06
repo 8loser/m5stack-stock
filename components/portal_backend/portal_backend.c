@@ -363,10 +363,19 @@ static esp_err_t telegram_http_event_handler(esp_http_client_event_t *evt)
 
 static esp_err_t telegram_send_test_message(const char *token,
                                             const char *chat_id,
-                                            const char *text)
+                                            const char *text,
+                                            int *out_status_code,
+                                            char *out_detail,
+                                            size_t out_detail_size)
 {
     if (!token || !chat_id || !text || token[0] == '\0' || chat_id[0] == '\0' || text[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (out_status_code) {
+        *out_status_code = 0;
+    }
+    if (out_detail && out_detail_size > 0) {
+        out_detail[0] = '\0';
     }
 
     char encoded_chat[96] = {0};
@@ -407,13 +416,27 @@ static esp_err_t telegram_send_test_message(const char *token,
 
     esp_err_t ret = esp_http_client_perform(client);
     status_code = esp_http_client_get_status_code(client);
+    if (out_status_code) {
+        *out_status_code = status_code;
+    }
     esp_http_client_cleanup(client);
 
+    if (!ctx.overflow) {
+        ctx.buf[ctx.data_len] = '\0';
+    }
     bool success = false;
     if (ret == ESP_OK && !ctx.overflow && status_code == 200) {
-        ctx.buf[ctx.data_len] = '\0';
         resp_body = ctx.buf;
         success = (strstr(resp_body, "\"ok\":true") != NULL);
+    }
+    if (!success && out_detail && out_detail_size > 0) {
+        if (ctx.overflow) {
+            strlcpy(out_detail, "response_overflow", out_detail_size);
+        } else if (ctx.buf && ctx.buf[0] != '\0') {
+            snprintf(out_detail, out_detail_size, "%.96s", ctx.buf);
+        } else {
+            snprintf(out_detail, out_detail_size, "esp=%s", esp_err_to_name(ret));
+        }
     }
     if (resp_body == NULL) {
         free(ctx.buf);
@@ -1182,11 +1205,31 @@ static esp_err_t portal_telegram_test_post_handler(httpd_req_t *req)
 
     bool should_resume_tg = false;
     bool should_resume_sched = false;
+    int status_code = 0;
+    char detail[128] = {0};
+    char detail_escaped[192] = {0};
     begin_telegram_http_exclusive(&should_resume_tg, &should_resume_sched);
-    esp_err_t ret = telegram_send_test_message(token, chat_id, "Core2 Telegram test: settings OK");
+    esp_err_t ret = telegram_send_test_message(token, chat_id, "Core2 Telegram test: settings OK",
+                                               &status_code, detail, sizeof(detail));
     end_telegram_http_exclusive(should_resume_tg, should_resume_sched);
     if (ret != ESP_OK) {
-        return send_json_response(req, 502, "{\"ok\":false,\"error\":\"send_failed\"}");
+        json_escape(detail_escaped, sizeof(detail_escaped), detail);
+        char json[320] = {0};
+        if (status_code == 401 || status_code == 404) {
+            return send_json_response(req, 502, "{\"ok\":false,\"error\":\"invalid_token\"}");
+        }
+        if (status_code == 400 || status_code == 403) {
+            snprintf(json, sizeof(json),
+                     "{\"ok\":false,\"error\":\"send_failed\",\"detail\":\"http=%d %s\"}",
+                     status_code,
+                     detail_escaped[0] ? detail_escaped : "telegram_rejected");
+            return send_json_response(req, 502, json);
+        }
+        snprintf(json, sizeof(json),
+                 "{\"ok\":false,\"error\":\"send_failed\",\"detail\":\"http=%d %s\"}",
+                 status_code,
+                 detail_escaped[0] ? detail_escaped : esp_err_to_name(ret));
+        return send_json_response(req, 502, json);
     }
 
     return send_json_response(req, 200, "{\"ok\":true}");
