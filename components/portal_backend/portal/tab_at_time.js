@@ -70,11 +70,13 @@ function renderAtTimeList() {
     });
 
     html += "<div class='at-time-row'>" +
+      "<div class='at-time-head'>" +
       "<div class='hint'>Entry " + (idx + 1) + "</div>" +
       "<div class='at-time-meta'>" +
       "<label class='at-time-enabled'><input type='checkbox' " +
       (enabled ? "checked " : "") +
       "onchange=\"updateAtTimeField(" + item.id + ",'enabled',this.checked)\">Enable entry</label>" +
+      "</div>" +
       "</div>" +
       "<div class='at-time-row-grid'>" +
       "<label>Time (24h)<div class='at-time-time-picker'>" +

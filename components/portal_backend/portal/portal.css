@@ -361,6 +361,11 @@ button, .menu-btn { cursor: pointer; }
   .at-time-row-grid,
   .interval-row-grid { grid-template-columns: 1fr; }
   .weekday-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .at-time-head {
+    align-items: flex-start;
+    flex-direction: row;
+    gap: 8px;
+  }
 }
 
 .at-time-actions {
@@ -369,8 +374,15 @@ button, .menu-btn { cursor: pointer; }
   margin-top: 8px;
 }
 
+.at-time-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .at-time-meta {
-  margin: 6px 0 4px;
+  margin: 0 0 0 auto;
 }
 
 .at-time-enabled {
@@ -378,6 +390,7 @@ button, .menu-btn { cursor: pointer; }
   align-items: center;
   gap: 8px;
   margin-top: 0;
+  white-space: nowrap;
 }
 
 .at-time-enabled input[type="checkbox"] {
