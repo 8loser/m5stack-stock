@@ -14,6 +14,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 測試與驗證步驟細節同樣由 `m5stack-core2-dev` 與 `m5stack-core2-flash-agent` 維護。
 - 程式風格與命名細節由 `m5stack-core2-dev` 維護。
 
+## Portal 前端驗收基線
+
+- Portal UI 必須支援手機與桌面瀏覽（`360px` / `768px` / `1280px`）。
+- 在上述寬度下不得出現水平捲動、主要文案不可讀或主要按鈕不可操作。
+- 主要流程需可用鍵盤 `Tab` 操作（桌面）與觸控完成（手機）。
+- Portal UI 變更需附手機與桌面前後對照截圖，以及可重現的手動測試步驟。
+
 ## 安全與設定提醒
 
 - 不要提交真實 API Key、WiFi 密碼或私人 Token URL。
@@ -92,3 +99,4 @@ scheduler_service Timer
 - 每個任務開始時，第一則進度訊息必須明確標示：`Routing: <skill-name>`。
 - 若任務中途改派（例如 `m5stack-core2-dev` spawn sub-agent 執行 `m5stack-core2-flash-agent`），需再補一則路由切換訊息。
 - 計劃中的驗證步驟（build/flash/monitor）也需標記由哪個 skill 執行，避免實作時遺漏路由切換。
+- 當 `Routing: m5stack-portal-web-dev` 時，需補一行：`Scope: portal static files only; No firmware/API changes`。

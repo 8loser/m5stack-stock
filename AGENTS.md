@@ -21,6 +21,11 @@
 - 測試與驗證步驟細節由 `m5stack-core2-dev` 與 `m5stack-core2-flash-agent` 維護，`AGENTS.md` 僅保留路由與共通規範。
 - 若變更邏輯較大，PR 仍需附上可重現的手動測試清單。
 
+## Portal 前端驗收基線
+- Portal UI 必須支援手機與桌面瀏覽（`360px` / `768px` / `1280px`）。
+- 在上述寬度下不得出現水平捲動、主要文案不可讀或主要按鈕不可操作。
+- 主要流程需可用鍵盤 `Tab` 操作（桌面）與觸控完成（手機）。
+
 ## Commit 與 Pull Request 規範
 - Commit 建議使用前綴式訊息；目前歷史有 `init:`，建議採用 `feat:`、`fix:`、`refactor:`、`docs:`、`chore:`。
 - 每個 Commit 聚焦單一目的，避免把重構與行為變更混在一起。
@@ -28,6 +33,7 @@
 - PR 需列出已執行的軟硬體驗證步驟。
 - 有對應議題時請附上 issue 連結。
 - 涉及 UI 變更請附截圖或錄影。
+- Portal UI 變更需附手機與桌面前後對照截圖，以及可重現的手動測試步驟。
 
 ## 安全與設定提醒
 - 不要提交真實 API Key、WiFi 密碼或私人 Token URL。
@@ -60,3 +66,4 @@
 - 每個任務開始時，第一則進度訊息必須明確標示：`Routing: <skill-name>`。
 - 若任務中途改派（例如 `m5stack-core2-dev` 轉 `m5stack-core2-flash-agent`），需再補一則路由切換訊息。
 - 計劃中的驗證步驟（build/flash/monitor）也需標記由哪個 skill 執行，避免實作時遺漏路由切換。
+- 當 `Routing: m5stack-portal-web-dev` 時，需補一行：`Scope: portal static files only; No firmware/API changes`。

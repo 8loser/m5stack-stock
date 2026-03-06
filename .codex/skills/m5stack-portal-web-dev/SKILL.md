@@ -21,14 +21,30 @@ description: M5Stack Portal 前端網頁協作技能，專責 components/portal_
 
 - 允許：`components/portal_backend/portal` 內前端檔案與必要資源。
 - 不處理：`flash.sh`、燒錄、monitor、序列埠與連線問題（交給 `m5stack-core2-flash-agent`）。
-- 不主動承擔 firmware 核心邏輯與跨模組 API 行為變更。
+- 不得修改 firmware/API 行為；若需求依賴 firmware/API 變更，需輸出 handoff note 後轉交 `m5stack-core2-dev`。
 
 ## Workflow
 
 1. 先定位需求對應頁面與資源，確認是否能在 portal 前端內獨立完成。
-2. 採最小可行改動，避免順手重構無關區塊。
-3. 完成後提供可重現的手動驗證步驟（桌面/手機瀏覽、主要流程）。
-4. 若需跨到 firmware/API 才能完成，先交付前端可完成部分，再產出交接清單。
+2. 提出至少 2 個前端可行方案，列出取捨並推薦 1 個方案，再進行實作。
+3. 採最小可行改動，避免順手重構無關區塊。
+4. 完成後依 DoD 驗收，並提供可重現的手動驗證步驟（桌面/手機瀏覽、主要流程）。
+5. 若需跨到 firmware/API 才能完成，先交付前端可完成部分，再產出交接清單。
+
+## Definition of Done (DoD)
+
+- RWD：在 `360px`、`768px`、`1280px` 寬度下，主要流程可用且無水平捲動。
+- 可用性：桌面可用鍵盤 `Tab` 完成主要流程；手機可用觸控完成主要流程。
+- 狀態覆蓋：成功、載入中、錯誤至少有基本可理解的 UI 呈現。
+- 基本效能檢查：避免明顯阻塞主流程的前端行為（如不必要的大量同步運算）。
+
+## Response Template
+
+每次回覆需固定包含以下 4 段：
+- `變更檔案`
+- `互動行為`
+- `驗收步驟`
+- `風險與未完成項`
 
 ## Handoff
 
