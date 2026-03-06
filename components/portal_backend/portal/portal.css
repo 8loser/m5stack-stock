@@ -15,6 +15,16 @@
   --warning-text: #624a12;
   --shadow-card: 0 10px 30px rgba(15, 34, 53, 0.1);
   --shadow-soft: 0 4px 14px rgba(15, 34, 53, 0.08);
+  --nav-wrap-bg: rgba(245, 249, 253, 0.88);
+  --nav-wrap-border: rgba(186, 201, 216, 0.9);
+  --nav-wrap-shadow: 0 8px 18px rgba(22, 40, 61, 0.08);
+  --nav-btn-bg: #f6f9fc;
+  --nav-btn-border: #cad7e4;
+  --nav-btn-text: #2d4358;
+  --nav-btn-hover: #eef4fa;
+  --nav-active-bg: linear-gradient(135deg, #18a57c, #0c8765);
+  --nav-active-border: #0c8765;
+  --nav-active-shadow: 0 6px 14px rgba(14, 123, 95, 0.18);
 }
 
 body {
@@ -28,8 +38,9 @@ body {
 
 h2 {
   margin: 8px 0 10px;
-  font-size: 40px;
-  letter-spacing: 0.2px;
+  font-size: 34px;
+  letter-spacing: -0.6px;
+  line-height: 1.02;
 }
 
 h3 {
@@ -209,77 +220,84 @@ button, .menu-btn { cursor: pointer; }
 }
 
 .menu {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
   margin: 8px 0 14px;
-  padding: 6px;
-  border: 1px solid #c8d5e3;
-  border-radius: 12px;
-  background: #e9f0f7;
-  box-shadow: var(--shadow-soft);
+  padding: 7px;
+  border: 1px solid var(--nav-wrap-border);
+  border-radius: 14px;
+  background: var(--nav-wrap-bg);
+  box-shadow: var(--nav-wrap-shadow);
 }
 
 .menu-btn {
   display: block;
-  flex: 0 0 auto;
-  min-width: 120px;
-  width: auto;
+  box-sizing: border-box;
+  width: 100%;
   margin-top: 0;
-  padding: 10px 8px;
-  border-radius: 9px;
-  border: 1px solid #c7d3df;
-  background: #d7e2ec;
-  color: #263646;
-  font-weight: 800;
-  letter-spacing: 0.1px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--nav-btn-border);
+  background: var(--nav-btn-bg);
+  color: var(--nav-btn-text);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0;
   text-align: center;
   text-decoration: none;
   white-space: nowrap;
-  box-shadow: none;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  transition: transform 0.12s ease, background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.menu-btn:hover {
+  background: var(--nav-btn-hover);
+  border-color: #b8cada;
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 10px rgba(18, 37, 57, 0.08);
+}
+
+.menu-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(22, 125, 219, 0.18), 0 4px 10px rgba(18, 37, 57, 0.08);
+  border-color: #85b8e6;
 }
 
 .menu-btn.active {
-  background: #129b74;
+  background: var(--nav-active-bg);
   color: #fff;
-  border-color: #129b74;
+  border-color: var(--nav-active-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), var(--nav-active-shadow);
+}
+
+.menu-btn.active:hover {
+  transform: none;
+}
+
+@media (min-width: 860px) and (max-width: 1080px) {
+  .menu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 859px) {
   .menu {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 5px;
-    position: sticky;
-    top: 0;
-    z-index: 30;
-    margin-top: 0;
-    border: 0;
-    border-radius: 0;
-    padding: 0;
-    background: transparent;
-    box-shadow: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 6px;
+    margin: 6px 0 12px;
+    border-radius: 12px;
   }
 
   .menu-btn {
-    min-width: 0;
-    width: 100%;
-    min-height: 34px;
-    padding: 5px 4px;
+    min-height: 32px;
+    padding: 6px 6px;
     font-size: 12px;
     white-space: normal;
     line-height: 1.1;
-    border-radius: 8px;
-    background: #d1dde8;
-    border-color: #bfccd9;
-    color: #2a3a4a;
-  }
-
-  .menu-btn.active {
-    background: #13956f;
-    border-color: #13956f;
-    color: #fff;
+    border-radius: 9px;
   }
 }
 
@@ -325,8 +343,8 @@ button, .menu-btn { cursor: pointer; }
 @media (max-width: 640px) {
   h2 {
     font-size: 30px;
-    line-height: 1.15;
-    margin-bottom: 8px;
+    line-height: 1.08;
+    margin-bottom: 6px;
   }
   h3 { font-size: 30px; }
   .at-time-row-grid,
