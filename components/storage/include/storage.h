@@ -68,6 +68,22 @@ esp_err_t storage_stock_alert_config_save(const char *symbol, const stock_alert_
 esp_err_t storage_stock_alert_config_load(const char *symbol, stock_alert_config_t *config);
 esp_err_t storage_stock_alert_config_remove(const char *symbol);
 
+/* ====== AtTime 排程 ====== */
+typedef struct {
+    bool     enabled;
+    uint8_t  hour;       /* 0-23 */
+    uint8_t  minute;     /* 0-59 */
+    uint8_t  weekdays;   /* bitmask: bit0=Sun, bit1=Mon, ..., bit6=Sat */
+    char     prompt[AT_TIME_PROMPT_MAX_LEN + 1];
+} at_time_entry_t;
+
+esp_err_t storage_at_time_save_entry(uint8_t idx, const at_time_entry_t *entry);
+esp_err_t storage_at_time_load_entry(uint8_t idx, at_time_entry_t *entry);
+esp_err_t storage_at_time_remove_entry(uint8_t idx);
+esp_err_t storage_at_time_save_count(uint8_t count);
+uint8_t   storage_at_time_load_count(void);
+esp_err_t storage_at_time_load_all(at_time_entry_t *entries, uint8_t *count);
+
 /* ====== 排程設定 ====== */
 typedef struct {
     uint16_t quote_interval_s;   /* 報價更新間隔（秒）*/

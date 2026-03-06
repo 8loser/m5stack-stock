@@ -60,3 +60,8 @@ bool scheduler_service_is_quote_fetch_in_flight(void);
  * @param timeout_ms 最多等待毫秒數
  */
 esp_err_t scheduler_service_wait_quote_fetch_idle(uint32_t timeout_ms);
+
+/**
+ * @brief 重新載入 AtTime entries（API 儲存後呼叫）
+ */
+esp_err_t scheduler_service_reload_at_time(void);

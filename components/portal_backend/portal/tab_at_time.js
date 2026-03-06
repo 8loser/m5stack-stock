@@ -25,29 +25,35 @@ function normalizeAtTimeWeekdays(value) {
     uniq[n] = true;
     out.push(n);
   });
-
-  if (out.length === 0) {
-    return defaultAtTimeWeekdays();
-  }
-
+  if (out.length === 0) return defaultAtTimeWeekdays();
   return out;
 }
 
-function ensureAtTimeNotEmpty() {
-  if (s_at_time_items.length > 0) return;
-  s_at_time_items.push({
-    id: s_at_time_next_id++,
-    enabled: true,
-    time: "09:00",
-    weekdays: defaultAtTimeWeekdays(),
-    prompt: ""
+function weekdaysBitmaskToArray(mask) {
+  var arr = [];
+  for (var i = 0; i < 7; i++) {
+    if (mask & (1 << i)) arr.push(i);
+  }
+  return arr.length > 0 ? arr : defaultAtTimeWeekdays();
+}
+
+function weekdaysArrayToBitmask(arr) {
+  var mask = 0;
+  arr.forEach(function (day) {
+    var n = Number(day);
+    if (n >= 0 && n <= 6) mask |= (1 << n);
   });
+  return mask || 127;
 }
 
 function renderAtTimeList() {
   var box = document.getElementById("at_time_list");
   if (!box) return;
-  ensureAtTimeNotEmpty();
+
+  if (s_at_time_items.length === 0) {
+    box.innerHTML = "<div class='hint'>No entries. Click Add Time to create one.</div>";
+    return;
+  }
 
   var html = "";
   s_at_time_items.forEach(function (item, idx) {
@@ -69,9 +75,12 @@ function renderAtTimeList() {
         "</button>";
     });
 
+    var isNew = typeof item.serverIdx === "undefined";
+    var entryLabel = isNew ? "New entry" : "Entry " + (idx + 1);
+
     html += "<div class='at-time-row'>" +
       "<div class='at-time-head'>" +
-      "<div class='hint'>Entry " + (idx + 1) + "</div>" +
+      "<div class='hint'>" + entryLabel + "</div>" +
       "<div class='at-time-meta'>" +
       "<label class='at-time-enabled'><input type='checkbox' " +
       (enabled ? "checked " : "") +
@@ -95,6 +104,10 @@ function renderAtTimeList() {
 }
 
 function addAtTimeRow() {
+  if (s_at_time_items.length >= 8) {
+    setAtTimeMsg("Maximum 8 entries.", false);
+    return;
+  }
   s_at_time_items.push({
     id: s_at_time_next_id++,
     enabled: true,
@@ -103,29 +116,111 @@ function addAtTimeRow() {
     prompt: ""
   });
   renderAtTimeList();
-  setAtTimeMsg("Added one time entry.", true);
+  setAtTimeMsg("New entry added. Click Save to write to device.", true);
 }
 
 function removeAtTimeRow(id) {
-  var ok = window.confirm("Remove this entry?");
-  if (!ok) {
+  var item = null;
+  var itemIdx = -1;
+  s_at_time_items.forEach(function (it, i) {
+    if (it.id === id) { item = it; itemIdx = i; }
+  });
+  if (!item) return;
+
+  if (!window.confirm("Remove this entry?")) return;
+
+  if (typeof item.serverIdx === "undefined") {
+    s_at_time_items.splice(itemIdx, 1);
+    renderAtTimeList();
+    setAtTimeMsg("Entry removed (was unsaved).", true);
     return;
   }
-  s_at_time_items = s_at_time_items.filter(function (item) { return item.id !== id; });
-  ensureAtTimeNotEmpty();
-  renderAtTimeList();
-  setAtTimeMsg("Entry removed.", true);
+
+  setAtTimeMsg("Removing...", true);
+  fetchWithTimeout("/api/at_time/remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idx: item.serverIdx })
+  }).then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) {
+        setAtTimeMsg("Remove failed: " + (data.error || "unknown"), false);
+        return;
+      }
+      setAtTimeMsg("Entry removed.", true);
+      return reloadAtTimeFromServer();
+    })
+    .catch(function (err) {
+      setAtTimeMsg("Remove failed: " + err.message, false);
+    });
 }
 
 function saveAtTimeRow(id) {
-  var entryNo = -1;
-  s_at_time_items.forEach(function (item, idx) {
-    if (item.id === id) {
-      entryNo = idx + 1;
-    }
+  var item = null;
+  var itemIdx = -1;
+  s_at_time_items.forEach(function (it, i) {
+    if (it.id === id) { item = it; itemIdx = i; }
   });
-  if (entryNo < 0) return;
-  setAtTimeMsg("Entry " + entryNo + " saved (local preview).", true);
+  if (!item) return;
+
+  var timeParts = normalizeAtTimeValue(item.time || "").split(":");
+  var hour = parseInt(timeParts[0], 10);
+  var minute = parseInt(timeParts[1], 10);
+  var weekdays = weekdaysArrayToBitmask(normalizeAtTimeWeekdays(item.weekdays));
+
+  var serverIdx = typeof item.serverIdx === "undefined" ? itemIdx : item.serverIdx;
+
+  setAtTimeMsg("Saving entry " + (itemIdx + 1) + "...", true);
+  fetchWithTimeout("/api/at_time/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      idx: serverIdx,
+      enabled: item.enabled !== false,
+      hour: hour,
+      minute: minute,
+      weekdays: weekdays,
+      prompt: item.prompt || ""
+    })
+  }).then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) {
+        setAtTimeMsg("Save failed: " + (data.error || "unknown"), false);
+        return;
+      }
+      setAtTimeMsg("Entry " + (itemIdx + 1) + " saved.", true);
+      return reloadAtTimeFromServer();
+    })
+    .catch(function (err) {
+      setAtTimeMsg("Save failed: " + err.message, false);
+    });
+}
+
+function reloadAtTimeFromServer() {
+  return fetchWithTimeout("/api/at_time")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) return;
+      s_at_time_items = [];
+      s_at_time_next_id = 1;
+      var items = data.items || [];
+      for (var i = 0; i < items.length; i++) {
+        var entry = items[i];
+        var hh = String(entry.hour);
+        var mm = String(entry.minute);
+        if (hh.length < 2) hh = "0" + hh;
+        if (mm.length < 2) mm = "0" + mm;
+        s_at_time_items.push({
+          id: s_at_time_next_id++,
+          serverIdx: entry.idx,
+          enabled: entry.enabled,
+          time: hh + ":" + mm,
+          weekdays: weekdaysBitmaskToArray(entry.weekdays),
+          prompt: entry.prompt || ""
+        });
+      }
+      renderAtTimeList();
+    });
 }
 
 function updateAtTimeField(id, field, value) {
@@ -146,7 +241,6 @@ function updateAtTimeField(id, field, value) {
 function toggleAtTimeWeekday(id, weekday) {
   s_at_time_items.forEach(function (item) {
     if (item.id !== id) return;
-
     var weekdays = normalizeAtTimeWeekdays(item.weekdays);
     var idx = weekdays.indexOf(weekday);
     if (idx >= 0) {
@@ -167,9 +261,15 @@ function normalizeAtTimeValue(value) {
 function initAtTimePage() {
   s_at_time_items = [];
   s_at_time_next_id = 1;
-  ensureAtTimeNotEmpty();
-  renderAtTimeList();
-  setAtTimeMsg("", true);
+  setAtTimeMsg("Loading...", true);
+  return reloadAtTimeFromServer()
+    .then(function () {
+      setAtTimeMsg("", true);
+    })
+    .catch(function (err) {
+      setAtTimeMsg("Load failed: " + err.message, false);
+      renderAtTimeList();
+    });
 }
 
 initAtTimePage();

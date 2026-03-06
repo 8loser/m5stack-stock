@@ -1,5 +1,6 @@
 #include "portal_backend.h"
 #include "stock_admin_service.h"
+#include "at_time_admin_service.h"
 #include "wifi_manager.h"
 
 #include "storage.h"
@@ -451,16 +452,32 @@ static esp_err_t telegram_get_updates(const char *token, char **out_body, int *o
         .crt_bundle_attach = esp_crt_bundle_attach,
     };
 
-    esp_http_client_handle_t client = esp_http_client_init(&cfg);
-    if (!client) {
-        free(ctx.buf);
-        return ESP_FAIL;
-    }
-    esp_http_client_set_method(client, HTTP_METHOD_GET);
+    esp_err_t ret = ESP_FAIL;
+    int status_code = 0;
+    const int max_attempts = 2;
+    for (int attempt = 1; attempt <= max_attempts; attempt++) {
+        esp_http_client_handle_t client = esp_http_client_init(&cfg);
+        if (!client) {
+            free(ctx.buf);
+            return ESP_FAIL;
+        }
+        esp_http_client_set_method(client, HTTP_METHOD_GET);
 
-    esp_err_t ret = esp_http_client_perform(client);
-    int status_code = esp_http_client_get_status_code(client);
-    esp_http_client_cleanup(client);
+        ctx.data_len = 0;
+        ctx.overflow = false;
+        ret = esp_http_client_perform(client);
+        status_code = esp_http_client_get_status_code(client);
+        esp_http_client_cleanup(client);
+
+        if (ret == ESP_OK && !ctx.overflow) {
+            break;
+        }
+        if (attempt < max_attempts && ret == ESP_ERR_HTTP_CONNECT) {
+            vTaskDelay(pdMS_TO_TICKS(150));
+            continue;
+        }
+        break;
+    }
     if (out_status) {
         *out_status = status_code;
     }
@@ -955,6 +972,24 @@ static esp_err_t portal_telegram_post_handler(httpd_req_t *req)
     return send_json_response(req, 200, "{\"ok\":true}");
 }
 
+static bool is_sta_connected(void)
+{
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) != ESP_OK) {
+        return false;
+    }
+    /* Also verify STA has a valid IP (not just associated) */
+    esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (!sta) {
+        return false;
+    }
+    esp_netif_ip_info_t ip;
+    if (esp_netif_get_ip_info(sta, &ip) != ESP_OK || ip.ip.addr == 0) {
+        return false;
+    }
+    return true;
+}
+
 static esp_err_t portal_telegram_test_post_handler(httpd_req_t *req)
 {
     (void)req;
@@ -968,6 +1003,10 @@ static esp_err_t portal_telegram_test_post_handler(httpd_req_t *req)
 
     if (!enabled || token[0] == '\0' || chat_id[0] == '\0') {
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"missing_config\"}");
+    }
+
+    if (!is_sta_connected()) {
+        return send_json_response(req, 400, "{\"ok\":false,\"error\":\"no_internet\"}");
     }
 
     esp_err_t ret = telegram_send_test_message(token, chat_id, "Core2 Telegram test: settings OK");
@@ -1002,12 +1041,31 @@ static esp_err_t portal_telegram_chats_get_handler(httpd_req_t *req)
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"missing_token\"}");
     }
 
+    if (!is_sta_connected()) {
+        return send_json_response(req, 400, "{\"ok\":false,\"error\":\"no_internet\"}");
+    }
+
     int status_code = 0;
     char *resp_body = NULL;
     esp_err_t ret = telegram_get_updates(token, &resp_body, &status_code);
     if (ret != ESP_OK || !resp_body || status_code != 200) {
+        ESP_LOGW(TAG, "telegram getUpdates failed: ret=%s status=%d body=%s",
+                 esp_err_to_name(ret), status_code, resp_body ? resp_body : "(null)");
         free(resp_body);
-        return send_json_response(req, 502, "{\"ok\":false,\"error\":\"updates_failed\"}");
+        char err_buf[128];
+        if (status_code == 401) {
+            snprintf(err_buf, sizeof(err_buf),
+                     "{\"ok\":false,\"error\":\"invalid_token\"}");
+        } else if (ret == ESP_ERR_HTTP_CONNECT || status_code == 0) {
+            snprintf(err_buf, sizeof(err_buf),
+                     "{\"ok\":false,\"error\":\"no_internet\",\"detail\":\"http=%d esp=%s\"}",
+                     status_code, esp_err_to_name(ret));
+        } else {
+            snprintf(err_buf, sizeof(err_buf),
+                     "{\"ok\":false,\"error\":\"updates_failed\",\"detail\":\"http=%d esp=%s\"}",
+                     status_code, esp_err_to_name(ret));
+        }
+        return send_json_response(req, 502, err_buf);
     }
 
     cJSON *root = cJSON_Parse(resp_body);
@@ -1297,10 +1355,11 @@ static esp_err_t start_portal_http_server(void)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
-    config.max_uri_handlers = 36;
-    config.max_open_sockets = 8;
+    config.max_uri_handlers = 40;
+    config.max_open_sockets = 3;
     config.backlog_conn = 4;
     config.lru_purge_enable = true;
+    config.keep_alive_enable = false;
     config.recv_wait_timeout = 5;
     config.send_wait_timeout = 5;
     /* Portal handlers include JSON assembly and multiple local buffers; keep headroom. */
@@ -1505,6 +1564,7 @@ static esp_err_t start_portal_http_server(void)
     httpd_register_uri_handler(s_httpd, &telegram_test_post_uri);
     httpd_register_uri_handler(s_httpd, &telegram_chats_get_uri);
     stock_admin_service_register_handlers(s_httpd);
+    at_time_admin_service_register_handlers(s_httpd);
 
     return ESP_OK;
 }

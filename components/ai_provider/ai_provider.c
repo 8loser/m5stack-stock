@@ -182,6 +182,33 @@ esp_err_t ai_provider_analyze_sync(const stock_quote_t *quote,
     return ret;
 }
 
+esp_err_t ai_provider_analyze_prompt_sync(const char *prompt,
+                                           const char *api_key,
+                                           ai_analysis_result_t *result)
+{
+    if (!prompt || !result) return ESP_ERR_INVALID_ARG;
+
+    stock_context_t empty_ctx = {0};
+    char active_key[128] = {0};
+    if (api_key && api_key[0] != '\0') {
+        strlcpy(active_key, api_key, sizeof(active_key));
+    } else {
+        ai_provider_get_active_api_key(active_key, sizeof(active_key));
+    }
+
+    if (active_key[0] == '\0') {
+        strlcpy(result->analysis, "No API key configured", AI_ANALYSIS_MAX_LEN);
+        result->error_code = ESP_ERR_NOT_FOUND;
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    memset(result, 0, sizeof(*result));
+    esp_err_t ret = s_providers[s_current_type]->analyze(
+                        &empty_ctx, prompt, active_key, result);
+    result->error_code = ret;
+    return ret;
+}
+
 esp_err_t ai_provider_test_key(ai_provider_type_t type,
                                const char *api_key,
                                int *out_status_code)

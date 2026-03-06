@@ -22,6 +22,11 @@ typedef struct {
     bool              quote_polling_paused;
     volatile bool     quote_fetch_in_flight;
     stock_list_t      stock_list;
+    /* --- AtTime (heap-allocated to save ~4KB .bss) --- */
+    at_time_entry_t  *at_time_entries;
+    uint8_t           at_time_count;
+    uint8_t           at_time_fired_bitmask;
+    int8_t            at_time_prev_minute;
 } scheduler_service_ctx_t;
 
 scheduler_service_ctx_t *scheduler_service_ctx(void);
@@ -40,3 +45,4 @@ void scheduler_service_publish_quote_fetch_round(const scheduler_service_ctx_t *
 bool scheduler_service_is_wifi_connected(void);
 void scheduler_service_init_sntp(scheduler_service_ctx_t *ctx);
 void scheduler_service_do_fetch_quotes(scheduler_service_ctx_t *ctx, bool force_fetch);
+void scheduler_service_check_at_time(scheduler_service_ctx_t *ctx);

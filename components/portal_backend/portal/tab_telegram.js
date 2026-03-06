@@ -1,3 +1,15 @@
+function tgErr(code) {
+  var m = {
+    missing_config: "Please configure and save Telegram settings first",
+    missing_token: "Please set Bot Token first",
+    no_internet: "Device not connected to WiFi",
+    invalid_token: "Bot Token is invalid (401 Unauthorized)",
+    send_failed: "Send failed (check network or Telegram config)",
+    updates_failed: "Failed to fetch chats (check network or bot token)"
+  };
+  return m[code] || ("Error: " + (code || "unknown"));
+}
+
 function loadTelegram(generation) {
   return fetch("/api/telegram")
     .then(function (r) { return r.json(); })
@@ -25,7 +37,7 @@ function loadTelegramChats() {
     })
     .then(function (x) {
       if (!x.ok || !x.body.ok) {
-        setTelegramMsg("Load chats failed: " + ((x.body && x.body.error) || "unknown"), false);
+        setTelegramMsg(tgErr((x.body && x.body.error) || "unknown"), false);
         return;
       }
       var items = (x.body.items || []);
@@ -92,7 +104,7 @@ function sendTelegramTest() {
     })
     .then(function (x) {
       if (!x.ok || !x.body.ok) {
-        setTelegramMsg("Test failed: " + ((x.body && x.body.error) || "unknown"), false);
+        setTelegramMsg(tgErr((x.body && x.body.error) || "unknown"), false);
         return;
       }
       setTelegramMsg("Test message sent", true);

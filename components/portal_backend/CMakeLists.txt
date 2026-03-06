@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "portal_backend.c"
         "stock_admin_service.c"
+        "at_time_admin_service.c"
     INCLUDE_DIRS "include"
     EMBED_TXTFILES
         "portal/wifi.html"
