@@ -6,6 +6,8 @@
 #include "storage.h"
 #include "app_config.h"
 #include "ai_provider.h"
+#include "scheduler_service.h"
+#include "telegram_bot.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
@@ -28,6 +30,8 @@
 #define TELEGRAM_HTTP_BUF_INIT_SIZE 512
 #define AI_TEST_RESP_MAX_LEN 1536
 #define PORTAL_SCAN_CACHE_TTL_MS 15000
+#define TELEGRAM_HTTP_DRAIN_TIMEOUT_MS 1200
+#define SCHED_HTTP_DRAIN_TIMEOUT_MS 1200
 
 static bool parse_ai_provider(const char *name, int *out_provider)
 {
@@ -488,6 +492,113 @@ static esp_err_t telegram_get_updates(const char *token, char **out_body, int *o
     }
     ctx.buf[ctx.data_len] = '\0';
     *out_body = ctx.buf;
+    return ESP_OK;
+}
+
+static esp_err_t telegram_get_me(const char *token, char *bot_name, size_t bot_name_len,
+                                 char *bot_username, size_t bot_username_len, int *out_status)
+{
+    if (!token || token[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!bot_name || bot_name_len == 0 || !bot_username || bot_username_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    bot_name[0] = '\0';
+    bot_username[0] = '\0';
+    if (out_status) {
+        *out_status = 0;
+    }
+
+    char url[320] = {0};
+    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/getMe", token);
+
+    telegram_http_ctx_t ctx = {0};
+    ctx.buf = malloc(TELEGRAM_HTTP_BUF_INIT_SIZE);
+    if (!ctx.buf) {
+        return ESP_ERR_NO_MEM;
+    }
+    ctx.capacity = TELEGRAM_HTTP_BUF_INIT_SIZE;
+
+    esp_http_client_config_t cfg = {
+        .url = url,
+        .event_handler = telegram_http_event_handler,
+        .user_data = &ctx,
+        .timeout_ms = HTTP_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+
+    esp_err_t ret = ESP_FAIL;
+    int status_code = 0;
+    const int max_attempts = 2;
+    for (int attempt = 1; attempt <= max_attempts; attempt++) {
+        esp_http_client_handle_t client = esp_http_client_init(&cfg);
+        if (!client) {
+            free(ctx.buf);
+            return ESP_FAIL;
+        }
+        esp_http_client_set_method(client, HTTP_METHOD_GET);
+
+        ctx.data_len = 0;
+        ctx.overflow = false;
+        ret = esp_http_client_perform(client);
+        status_code = esp_http_client_get_status_code(client);
+        esp_http_client_cleanup(client);
+
+        if (ret == ESP_OK && !ctx.overflow) {
+            break;
+        }
+        if (attempt < max_attempts && ret == ESP_ERR_HTTP_CONNECT) {
+            vTaskDelay(pdMS_TO_TICKS(150));
+            continue;
+        }
+        break;
+    }
+    if (out_status) {
+        *out_status = status_code;
+    }
+
+    if (ret != ESP_OK || ctx.overflow) {
+        free(ctx.buf);
+        return (ret == ESP_OK) ? ESP_FAIL : ret;
+    }
+
+    ctx.buf[ctx.data_len] = '\0';
+    cJSON *root = cJSON_Parse(ctx.buf);
+    free(ctx.buf);
+    if (!root) {
+        return ESP_FAIL;
+    }
+
+    cJSON *ok = cJSON_GetObjectItem(root, "ok");
+    cJSON *result = cJSON_GetObjectItem(root, "result");
+    cJSON *first_name = cJSON_IsObject(result) ? cJSON_GetObjectItem(result, "first_name") : NULL;
+    cJSON *username = cJSON_IsObject(result) ? cJSON_GetObjectItem(result, "username") : NULL;
+    bool api_ok = cJSON_IsTrue(ok);
+
+    if (!api_ok) {
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+
+    bool parse_ok = false;
+    if (cJSON_IsString(first_name) && first_name->valuestring && first_name->valuestring[0] != '\0') {
+        strlcpy(bot_name, first_name->valuestring, bot_name_len);
+        parse_ok = true;
+    } else if (cJSON_IsString(username) && username->valuestring && username->valuestring[0] != '\0') {
+        strlcpy(bot_name, username->valuestring, bot_name_len);
+        parse_ok = true;
+    }
+
+    if (cJSON_IsString(username) && username->valuestring) {
+        strlcpy(bot_username, username->valuestring, bot_username_len);
+    }
+
+    cJSON_Delete(root);
+
+    if (!parse_ok) {
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 
@@ -990,6 +1101,66 @@ static bool is_sta_connected(void)
     return true;
 }
 
+static bool begin_telegram_http_exclusive(bool *out_should_resume_tg,
+                                          bool *out_should_resume_sched)
+{
+    if (out_should_resume_tg) {
+        *out_should_resume_tg = false;
+    }
+    if (out_should_resume_sched) {
+        *out_should_resume_sched = false;
+    }
+
+    esp_err_t sched_pause_ret = scheduler_service_pause_quote_polling();
+    if (sched_pause_ret == ESP_OK) {
+        if (out_should_resume_sched) {
+            *out_should_resume_sched = true;
+        }
+    } else {
+        ESP_LOGW(TAG, "scheduler quote pause failed: %s", esp_err_to_name(sched_pause_ret));
+    }
+    esp_err_t sched_idle_ret = scheduler_service_wait_quote_fetch_idle(SCHED_HTTP_DRAIN_TIMEOUT_MS);
+    if (sched_idle_ret != ESP_OK) {
+        ESP_LOGW(TAG, "scheduler quote fetch not idle: %s", esp_err_to_name(sched_idle_ret));
+    }
+
+    if (!telegram_bot_is_running()) {
+        return true;
+    }
+
+    bool was_paused = telegram_bot_is_polling_paused();
+    if (!was_paused) {
+        esp_err_t pause_ret = telegram_bot_pause_polling();
+        if (pause_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram polling pause failed: %s", esp_err_to_name(pause_ret));
+        } else if (out_should_resume_tg) {
+            *out_should_resume_tg = true;
+        }
+    }
+
+    esp_err_t idle_ret = telegram_bot_wait_http_idle(TELEGRAM_HTTP_DRAIN_TIMEOUT_MS);
+    if (idle_ret != ESP_OK) {
+        ESP_LOGW(TAG, "telegram http not idle before portal request: %s", esp_err_to_name(idle_ret));
+    }
+    return true;
+}
+
+static void end_telegram_http_exclusive(bool should_resume_tg, bool should_resume_sched)
+{
+    if (should_resume_tg) {
+        esp_err_t resume_ret = telegram_bot_resume_polling();
+        if (resume_ret != ESP_OK) {
+            ESP_LOGW(TAG, "telegram polling resume failed: %s", esp_err_to_name(resume_ret));
+        }
+    }
+    if (should_resume_sched) {
+        esp_err_t sched_resume_ret = scheduler_service_resume_quote_polling();
+        if (sched_resume_ret != ESP_OK) {
+            ESP_LOGW(TAG, "scheduler quote resume failed: %s", esp_err_to_name(sched_resume_ret));
+        }
+    }
+}
+
 static esp_err_t portal_telegram_test_post_handler(httpd_req_t *req)
 {
     (void)req;
@@ -1009,12 +1180,79 @@ static esp_err_t portal_telegram_test_post_handler(httpd_req_t *req)
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"no_internet\"}");
     }
 
+    bool should_resume_tg = false;
+    bool should_resume_sched = false;
+    begin_telegram_http_exclusive(&should_resume_tg, &should_resume_sched);
     esp_err_t ret = telegram_send_test_message(token, chat_id, "Core2 Telegram test: settings OK");
+    end_telegram_http_exclusive(should_resume_tg, should_resume_sched);
     if (ret != ESP_OK) {
         return send_json_response(req, 502, "{\"ok\":false,\"error\":\"send_failed\"}");
     }
 
     return send_json_response(req, 200, "{\"ok\":true}");
+}
+
+static esp_err_t portal_telegram_check_post_handler(httpd_req_t *req)
+{
+    char token[TELEGRAM_TOKEN_MAX_LEN] = {0};
+    if (req->content_len > 0) {
+        char *body = NULL;
+        if (read_request_body_alloc(req, &body) != ESP_OK) {
+            return send_json_response(req, 400, "{\"ok\":false,\"error\":\"invalid_request\"}");
+        }
+        get_form_value(body, "bot_token", token, sizeof(token));
+        free(body);
+    }
+
+    if (token[0] == '\0') {
+        storage_tg_load_bot_token(token, sizeof(token));
+    }
+
+    if (token[0] == '\0') {
+        return send_json_response(req, 400, "{\"ok\":false,\"error\":\"missing_token\"}");
+    }
+
+    if (!is_sta_connected()) {
+        return send_json_response(req, 400, "{\"ok\":false,\"error\":\"no_internet\"}");
+    }
+
+    char bot_name[64] = {0};
+    char bot_username[64] = {0};
+    int status_code = 0;
+    bool should_resume_tg = false;
+    bool should_resume_sched = false;
+    begin_telegram_http_exclusive(&should_resume_tg, &should_resume_sched);
+    esp_err_t ret = telegram_get_me(token, bot_name, sizeof(bot_name), bot_username, sizeof(bot_username), &status_code);
+    end_telegram_http_exclusive(should_resume_tg, should_resume_sched);
+    if (ret != ESP_OK) {
+        if (status_code == 401 || status_code == 404) {
+            return send_json_response(req, 502, "{\"ok\":false,\"error\":\"invalid_token\"}");
+        }
+        if (ret == ESP_ERR_HTTP_CONNECT || status_code == 0) {
+            char err_buf[128] = {0};
+            snprintf(err_buf, sizeof(err_buf),
+                     "{\"ok\":false,\"error\":\"connect_failed\",\"detail\":\"http=%d esp=%s\"}",
+                     status_code, esp_err_to_name(ret));
+            return send_json_response(req, 502, err_buf);
+        }
+        ESP_LOGW(TAG, "telegram getMe failed: ret=%s status=%d", esp_err_to_name(ret), status_code);
+        char err_buf[128] = {0};
+        snprintf(err_buf, sizeof(err_buf),
+                 "{\"ok\":false,\"error\":\"check_failed\",\"detail\":\"http=%d esp=%s\"}",
+                 status_code, esp_err_to_name(ret));
+        return send_json_response(req, 502, err_buf);
+    }
+
+    char e_name[96] = {0};
+    char e_username[96] = {0};
+    json_escape(e_name, sizeof(e_name), bot_name);
+    json_escape(e_username, sizeof(e_username), bot_username);
+
+    char json[320] = {0};
+    snprintf(json, sizeof(json),
+             "{\"ok\":true,\"bot_name\":\"%s\",\"username\":\"%s\"}",
+             e_name, e_username);
+    return send_json_response(req, 200, json);
 }
 
 static cJSON *extract_chat_obj_from_update(cJSON *update_item)
@@ -1047,7 +1285,11 @@ static esp_err_t portal_telegram_chats_get_handler(httpd_req_t *req)
 
     int status_code = 0;
     char *resp_body = NULL;
+    bool should_resume_tg = false;
+    bool should_resume_sched = false;
+    begin_telegram_http_exclusive(&should_resume_tg, &should_resume_sched);
     esp_err_t ret = telegram_get_updates(token, &resp_body, &status_code);
+    end_telegram_http_exclusive(should_resume_tg, should_resume_sched);
     if (ret != ESP_OK || !resp_body || status_code != 200) {
         ESP_LOGW(TAG, "telegram getUpdates failed: ret=%s status=%d body=%s",
                  esp_err_to_name(ret), status_code, resp_body ? resp_body : "(null)");
@@ -1532,6 +1774,13 @@ static esp_err_t start_portal_http_server(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t telegram_check_post_uri = {
+        .uri = "/api/telegram/check",
+        .method = HTTP_POST,
+        .handler = portal_telegram_check_post_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_uri_t telegram_chats_get_uri = {
         .uri = "/api/telegram/chats",
         .method = HTTP_GET,
@@ -1562,6 +1811,7 @@ static esp_err_t start_portal_http_server(void)
     httpd_register_uri_handler(s_httpd, &telegram_get_uri);
     httpd_register_uri_handler(s_httpd, &telegram_post_uri);
     httpd_register_uri_handler(s_httpd, &telegram_test_post_uri);
+    httpd_register_uri_handler(s_httpd, &telegram_check_post_uri);
     httpd_register_uri_handler(s_httpd, &telegram_chats_get_uri);
     stock_admin_service_register_handlers(s_httpd);
     at_time_admin_service_register_handlers(s_httpd);

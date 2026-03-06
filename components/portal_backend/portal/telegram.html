@@ -41,6 +41,8 @@
       <label>Bot Token</label>
       <input id="tg_bot_token" maxlength="159" placeholder="123456789:AA...">
       <div class="hint">Leave empty to keep existing token.</div>
+      <button type="button" class="secondary" style="margin-top:8px;" onclick="checkTelegramBotToken()">Check Token</button>
+      <div id="tg_bot_identity" class="hint">Bot: (not verified)</div>
 
       <label>Chat ID</label>
       <input id="tg_chat_id" maxlength="39" placeholder="-1001234567890">

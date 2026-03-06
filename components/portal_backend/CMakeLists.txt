@@ -19,5 +19,5 @@ idf_component_register(
         "portal/tab_stocks.js"
         "portal/tab_at_time.js"
         "portal/tab_interval.js"
-    REQUIRES esp_wifi esp_netif esp_http_server esp_http_client mbedtls storage scheduler_service twse_client ai_provider json log freertos wifi_manager
+    REQUIRES esp_wifi esp_netif esp_http_server esp_http_client mbedtls storage scheduler_service twse_client ai_provider telegram_bot json log freertos wifi_manager
 )

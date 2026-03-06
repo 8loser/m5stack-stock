@@ -3,9 +3,11 @@ function tgErr(code) {
     missing_config: "Please configure and save Telegram settings first",
     missing_token: "Please set Bot Token first",
     no_internet: "Device not connected to WiFi",
+    connect_failed: "Telegram connection failed (check DNS/TLS/network)",
     invalid_token: "Bot Token is invalid (401 Unauthorized)",
     send_failed: "Send failed (check network or Telegram config)",
-    updates_failed: "Failed to fetch chats (check network or bot token)"
+    updates_failed: "Failed to fetch chats (check network or bot token)",
+    check_failed: "Token check failed (check network)"
   };
   return m[code] || ("Error: " + (code || "unknown"));
 }
@@ -22,6 +24,7 @@ function loadTelegram(generation) {
       document.getElementById("tg_chat_id").value = chat;
       document.getElementById("tg_bot_token").value = "";
       document.getElementById("tg_bot_token").placeholder = masked || "123456789:AA...";
+      setTelegramBotIdentity("", "");
     })
     .catch(function () {
       if (is_stale_generation(generation)) return;
@@ -95,6 +98,57 @@ function saveTelegram() {
     .catch(function (e) {
       setTelegramMsg("Save failed: " + (e && e.message ? e.message : "network"), false);
     });
+}
+
+function checkTelegramBotToken() {
+  var token = (document.getElementById("tg_bot_token").value || "").trim();
+  var body = "bot_token=" + encodeURIComponent(token);
+
+  fetch("/api/telegram/check", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body
+  })
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, body: j }; });
+    })
+    .then(function (x) {
+      if (!x.ok || !x.body.ok) {
+        setTelegramBotIdentity("", "");
+        var code = (x.body && x.body.error) || "unknown";
+        var msg = tgErr(code);
+        if (code === "check_failed" && x.body && x.body.detail) {
+          msg += " (" + x.body.detail + ")";
+        }
+        setTelegramMsg(msg, false);
+        return;
+      }
+
+      var botName = (x.body.bot_name || "").trim();
+      var username = (x.body.username || "").trim();
+      setTelegramBotIdentity(botName, username);
+      setTelegramMsg("Token verified", true);
+    })
+    .catch(function (e) {
+      setTelegramBotIdentity("", "");
+      setTelegramMsg("Token check failed: " + (e && e.message ? e.message : "network"), false);
+    });
+}
+
+function setTelegramBotIdentity(botName, username) {
+  var el = document.getElementById("tg_bot_identity");
+  if (!el) return;
+
+  if (!botName) {
+    el.textContent = "Bot: (not verified)";
+    return;
+  }
+
+  if (username) {
+    el.textContent = "Bot: " + botName + " (@" + username + ")";
+    return;
+  }
+  el.textContent = "Bot: " + botName;
 }
 
 function sendTelegramTest() {
