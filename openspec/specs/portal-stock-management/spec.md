@@ -19,7 +19,7 @@ TBD - created by archiving change twse-portal-stock-management. Update Purpose a
 - **THEN** 該項目 `industry` SHALL 為空字串，且請求仍回傳 HTTP 200
 
 ### Requirement: POST /stocks/add 新增股票含驗證
-`POST /stocks/add` SHALL 依序執行：格式驗證（4 位數字）→ 查重 → 上限（15 檔）→ WiFi 連線確認 → TWSE API 驗證（market=tse）。全部通過後儲存至 NVS，呼叫 `scheduler_reload_stock_list()`，並快取 meta（name / abbr）。系統同時 SHALL 觸發股票清單變更通知，將最新股票數量同步給 dashboard card count。
+`POST /stocks/add` SHALL 依序執行：格式驗證（4 位數字）→ 查重 → 上限（15 檔）→ WiFi 連線確認 → TWSE API 驗證（market=tse）。全部通過後儲存至 NVS，呼叫 `scheduler_service_reload_stock_list()`，並快取 meta（name / abbr）。系統同時 SHALL 觸發股票清單變更通知，將最新股票數量同步給 dashboard card count。
 
 #### Scenario: 新增成功
 - **WHEN** 送出 `{"symbol":"2330"}` 且驗證全部通過
@@ -50,7 +50,7 @@ TBD - created by archiving change twse-portal-stock-management. Update Purpose a
 - **THEN** 系統 SHALL NOT 觸發股票清單變更通知，dashboard card count 維持原值
 
 ### Requirement: POST /stocks/remove 刪除股票
-`POST /stocks/remove` SHALL 從 NVS 清單中移除指定 symbol，並呼叫 `scheduler_reload_stock_list()`。同一路徑 SHALL 刪除該 symbol 對應的 metadata（name / abbr / industry）。若 symbol 不在清單中回傳 404。
+`POST /stocks/remove` SHALL 從 NVS 清單中移除指定 symbol，並呼叫 `scheduler_service_reload_stock_list()`。同一路徑 SHALL 刪除該 symbol 對應的 metadata（name / abbr / industry）。若 symbol 不在清單中回傳 404。
 
 #### Scenario: 刪除成功
 - **WHEN** 送出 `{"symbol":"2330"}` 且 symbol 在清單中

@@ -264,7 +264,7 @@ status_bar SHALL 使用繁體中文顯示時段和狀態資訊，且中央標題
 - **THEN** 標題啟用向左滾動顯示
 
 ### Requirement: 主流程心跳 API
-`ui_manager` SHALL 提供主流程心跳 API，供 `main` 與 `scheduler` 任務更新活性時間戳，並提供查詢目前主流程是否存活的介面。
+`ui_manager` SHALL 提供主流程心跳 API，供 `main` 與 `scheduler service` 任務更新活性時間戳，並提供查詢目前主流程是否存活的介面。
 
 API 包含：
 - `void ui_manager_heartbeat_feed_main(void)`
@@ -275,8 +275,8 @@ API 包含：
 - **WHEN** `main` 主迴圈呼叫 `ui_manager_heartbeat_feed_main()`
 - **THEN** `ui_manager` 更新 main 心跳時間戳為當前時間
 
-#### Scenario: scheduler 任務餵心跳
-- **WHEN** `scheduler_task` 呼叫 `ui_manager_heartbeat_feed_scheduler()`
+#### Scenario: scheduler service 任務餵心跳
+- **WHEN** `scheduler_service_task` 呼叫 `ui_manager_heartbeat_feed_scheduler()`
 - **THEN** `ui_manager` 更新 scheduler 心跳時間戳為當前時間
 
 ### Requirement: 主流程存活判定門檻

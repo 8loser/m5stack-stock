@@ -3,22 +3,22 @@
 ## Purpose
 TBD - created by archiving change twse-portal-stock-management. Update Purpose after archive.
 ## Requirements
-### Requirement: scheduler_init 不接受 AI queue 參數
-`scheduler_init()` SHALL 只接受 `quote_queue` 一個 queue 參數，不再接受 `ai_result_queue`。
+### Requirement: scheduler_service_init 不接受 AI queue 參數
+`scheduler_service_init()` SHALL 只接受 `quote_queue` 一個 queue 參數，不再接受 `ai_result_queue`。
 
 #### Scenario: 初始化排程器
-- **WHEN** `scheduler_init(g_quote_queue)` 被呼叫
+- **WHEN** `scheduler_service_init(g_quote_queue)` 被呼叫
 - **THEN** 排程器正常啟動，只建立 quote timer，不建立 AI timer
 
-### Requirement: scheduler_reload_stock_list 熱重載股票清單
-`scheduler_reload_stock_list()` SHALL 從 NVS 重新載入股票清單，在下個排程週期開始時生效，不立即觸發報價抓取。
+### Requirement: scheduler_service_reload_stock_list 熱重載股票清單
+`scheduler_service_reload_stock_list()` SHALL 從 NVS 重新載入股票清單，在下個排程週期開始時生效，不立即觸發報價抓取。
 
 #### Scenario: 新增股票後熱重載
-- **WHEN** `POST /stocks/add` 成功後呼叫 `scheduler_reload_stock_list()`
+- **WHEN** `POST /stocks/add` 成功後呼叫 `scheduler_service_reload_stock_list()`
 - **THEN** 下個排程週期的 `twse_client_fetch()` 包含新代號，不觸發立即抓取
 
 #### Scenario: 刪除股票後熱重載
-- **WHEN** `POST /stocks/remove` 成功後呼叫 `scheduler_reload_stock_list()`
+- **WHEN** `POST /stocks/remove` 成功後呼叫 `scheduler_service_reload_stock_list()`
 - **THEN** 下個排程週期的 `twse_client_fetch()` 不包含已刪除代號
 
 ### Requirement: market_only 設定控制報價抓取時段
@@ -44,21 +44,20 @@ TBD - created by archiving change twse-portal-stock-management. Update Purpose a
 - **WHEN** `s_sntp_synced == true` 且 `s_config.market_only == true` 且 `rtc_bm8563_is_market_open()` 為 true
 - **THEN** 報價抓取正常執行
 
-### Requirement: scheduler_task 提供週期性活性心跳
-`scheduler_task` SHALL 每輪主迴圈呼叫 `ui_manager_heartbeat_feed_scheduler()`，使 UI 可判斷排程器仍存活。
+### Requirement: scheduler_service_task 提供週期性活性心跳
+`scheduler_service_task` SHALL 每輪主迴圈呼叫 `ui_manager_heartbeat_feed_scheduler()`，使 UI 可判斷排程器仍存活。
 
-#### Scenario: scheduler 正常運行時持續餵心跳
-- **WHEN** `scheduler_task` 持續執行主迴圈
+#### Scenario: scheduler service 正常運行時持續餵心跳
+- **WHEN** `scheduler_service_task` 持續執行主迴圈
 - **THEN** 每輪都呼叫 `ui_manager_heartbeat_feed_scheduler()` 一次
 
-### Requirement: scheduler_task 等待粒度上限為 1 秒
-`scheduler_task` 在等待通知時 SHALL 使用不超過 1000ms 的 timeout，以避免心跳更新間隔過長造成假性故障判定。
+### Requirement: scheduler_service_task 等待粒度上限為 1 秒
+`scheduler_service_task` 在等待通知時 SHALL 使用不超過 1000ms 的 timeout，以避免心跳更新間隔過長造成假性故障判定。
 
 #### Scenario: 無通知時仍定期醒來
-- **WHEN** `scheduler_task` 在該秒內未收到 `NOTIFY_QUOTE_BIT`
+- **WHEN** `scheduler_service_task` 在該秒內未收到 `NOTIFY_QUOTE_BIT`
 - **THEN** 任務最晚於 1000ms 內醒來，完成一次心跳更新與睡眠條件檢查
 
 #### Scenario: 有通知時立即處理
-- **WHEN** `scheduler_task` 在 timeout 前收到 `NOTIFY_QUOTE_BIT`
+- **WHEN** `scheduler_service_task` 在 timeout 前收到 `NOTIFY_QUOTE_BIT`
 - **THEN** 任務立即處理報價抓取，且該輪仍會更新心跳
-

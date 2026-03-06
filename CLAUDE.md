@@ -10,8 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-- 指令細節由 `m5stack-core2-dev` 與 `m5stack-core2-flash` 維護，`CLAUDE.md` 僅保留路由與共通規範。
-- 測試與驗證步驟細節同樣由 `m5stack-core2-dev` 與 `m5stack-core2-flash` 維護。
+- 指令細節由 `m5stack-core2-dev` 與 `m5stack-core2-flash-agent` 維護，`CLAUDE.md` 僅保留路由與共通規範。
+- 測試與驗證步驟細節同樣由 `m5stack-core2-dev` 與 `m5stack-core2-flash-agent` 維護。
 - 程式風格與命名細節由 `m5stack-core2-dev` 維護。
 
 ## 安全與設定提醒
@@ -45,32 +45,27 @@ components/
   storage/               # NVS 讀寫，唯一持久化介面
   twse_client/           # TWSE API → cJSON → stock_quote_t
   ai_provider/           # vtable 模式三 Provider（Gemini/Claude/OpenAI）
-  scheduler/             # FreeRTOS Timer 驅動，整合 SNTP + DeepSleep（透過 event bus 回報 heartbeat）
+  scheduler_service/     # FreeRTOS Timer 驅動，整合 SNTP + DeepSleep（透過 event bus 回報 heartbeat）
   ui/                    # LVGL 頁面與 widgets，單一 ui_mutex 保護
 ```
 
 ## 關鍵資料流
 
 ```
-scheduler Timer
+scheduler_service Timer
   → twse_client_fetch()
   → xQueueSend(g_quote_queue)
   → ui_manager_update_quote()      # Dashboard 顯示
-
-scheduler Timer（ai_ivl）
-  → ai_provider_analyze_async()    # 建立獨立 FreeRTOS task
-  → xQueueOverwrite(g_ai_result_queue)
-  → ui_manager_update_ai_result()  # AI 分析頁面顯示
 ```
 
 ## 開機初始化順序
 
-`nvs_flash_init` → `app_event_bus_init` → `board_init` → `ui_manager_init` → `storage_init` → `network_portal_init` → `twse_client_init` → `scheduler_init`
+`nvs_flash_init` → `app_event_bus_init` → `board_init` → `ui_manager_init` → `storage_init` → `network_portal_init` → `twse_client_init` → `scheduler_service_init`
 
 ## Gotchas
 
 - 開發類 gotchas 由 `m5stack-core2-dev` 維護（避免與 `CLAUDE.md` 重複）。
-- 燒錄/連線類 gotchas 由 `m5stack-core2-flash` 維護（例如 monitor 鎖 port）。
+- 燒錄/連線類 gotchas 由 `m5stack-core2-flash-agent` 維護（例如 monitor 鎖 port）。
 - `CLAUDE.md` 僅保留分工與路由規則，不再重複列細節表。
 
 ## NVS 命名空間
@@ -87,12 +82,12 @@ scheduler Timer（ai_ivl）
 
 - 功能開發、程式修改與邏輯除錯一律使用 `m5stack-core2-dev`。
 - `components/portal_backend/portal` 網頁調整優先使用 `m5stack-portal-web-dev`；若需 firmware/API 行為變更再轉交 `m5stack-core2-dev`。
-- 燒錄、flash、monitor、log 擷取一律透過 `Agent` tool spawn sub-agent 執行 `m5stack-core2-flash`，主對話只接收摘要。
-- `m5stack-core2-flash` 在燒錄阻塞時可最小修改 `flash.sh`（限連線/燒錄路徑），不得延伸到韌體功能邏輯。
+- 燒錄、flash、monitor、log 擷取一律透過 `Agent` tool spawn sub-agent 執行 `m5stack-core2-flash-agent`，主對話只接收摘要。
+- `m5stack-core2-flash-agent` 在燒錄阻塞時可最小修改 `flash.sh`（限連線/燒錄路徑），不得延伸到韌體功能邏輯。
 - 具體流程與守則以各自的 skill 文件為準，`CLAUDE.md` 不重複維護其細節。
 
 ## 路由可觀測性
 
 - 每個任務開始時，第一則進度訊息必須明確標示：`Routing: <skill-name>`。
-- 若任務中途改派（例如 `m5stack-core2-dev` spawn sub-agent 執行 `m5stack-core2-flash`），需再補一則路由切換訊息。
+- 若任務中途改派（例如 `m5stack-core2-dev` spawn sub-agent 執行 `m5stack-core2-flash-agent`），需再補一則路由切換訊息。
 - 計劃中的驗證步驟（build/flash/monitor）也需標記由哪個 skill 執行，避免實作時遺漏路由切換。

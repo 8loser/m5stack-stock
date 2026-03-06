@@ -1,6 +1,6 @@
 #include "screen_settings.h"
 #include "app_config.h"
-#include "scheduler.h"
+#include "scheduler_service.h"
 #include "storage.h"
 #include "board.h"
 #include "ui_compat.h"
@@ -59,11 +59,11 @@ static void persist_selected_interval(void)
         idx = 1;
     }
 
-    scheduler_get_config(&cfg);
+    scheduler_service_get_config(&cfg);
     cfg.quote_interval_s = INTERVAL_VALUES[idx];
     cfg.market_only = true;
 
-    apply_ret = scheduler_apply_config(&cfg);
+    apply_ret = scheduler_service_apply_config(&cfg);
     save_ret = storage_schedule_save(&cfg);
     if (apply_ret == ESP_OK && save_ret == ESP_OK) {
         lv_label_set_text(s_feedback_lbl, "儲存成功");
@@ -138,7 +138,7 @@ void screen_settings_load(void)
         return;
     }
 
-    scheduler_get_config(&cfg);
+    scheduler_service_get_config(&cfg);
 
     for (i = 0; i < 3; i++) {
         uint16_t diff = abs_diff_u16(INTERVAL_VALUES[i], cfg.quote_interval_s);

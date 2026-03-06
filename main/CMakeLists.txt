@@ -8,7 +8,7 @@ idf_component_register(
         network_portal
         telegram_bot
         twse_client
-        scheduler
+        scheduler_service
         ui
         nvs_flash
         esp_wifi

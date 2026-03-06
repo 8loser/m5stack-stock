@@ -1,6 +1,6 @@
 #include "stock_admin_service.h"
 #include "storage.h"
-#include "scheduler.h"
+#include "scheduler_service.h"
 #include "twse_client.h"
 #include "app_config.h"
 #include "esp_wifi.h"
@@ -590,8 +590,8 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
         return send_json_error(req, 500, "save_failed");
     }
 
-    scheduler_reload_stock_list();
-    scheduler_trigger_quote_now();
+    scheduler_service_reload_stock_list();
+    scheduler_service_trigger_quote_now();
     cache_stock_meta(symbol, info.name, info.short_name, info.industry);
     if (s_stock_list_changed_cb) {
         s_stock_list_changed_cb(list.count);
@@ -795,7 +795,7 @@ static esp_err_t portal_stocks_remove_post_handler(httpd_req_t *req)
         return send_json_error(req, 500, "save_failed");
     }
 
-    scheduler_reload_stock_list();
+    scheduler_service_reload_stock_list();
     clear_stock_meta(symbol);
     if (s_stock_list_changed_cb) {
         s_stock_list_changed_cb(list.count);

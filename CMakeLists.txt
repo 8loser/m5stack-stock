@@ -8,7 +8,7 @@ set(EXTRA_COMPONENT_DIRS
     components/network_portal
     components/telegram_bot
     components/twse_client
-    components/scheduler
+    components/scheduler_service
     components/ui
 )
 set(EXCLUDE_COMPONENTS ai_provider)

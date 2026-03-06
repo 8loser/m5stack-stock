@@ -1,6 +1,6 @@
 #include "screen_dashboard.h"
 #include "app_config.h"
-#include "scheduler.h"
+#include "scheduler_service.h"
 #include "twse_models.h"
 #include "ui_compat.h"
 #include "esp_log.h"
@@ -367,7 +367,7 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
     snprintf(time_str, sizeof(time_str), "Updated %s", q->trade_time);
     lv_label_set_text(s_update_label, time_str);
 
-    uint32_t remaining_s = scheduler_get_seconds_to_next_quote();
+    uint32_t remaining_s = scheduler_service_get_seconds_to_next_quote();
     time_t now = time(NULL);
     time_t next_time = (now > 0) ? (now + (time_t)remaining_s) : 0;
     struct tm next_tm;

@@ -13,7 +13,7 @@
 #include "screen_hw_test.h"
 #include "status_bar.h"
 #include "loading_spinner.h"
-#include "scheduler.h"
+#include "scheduler_service.h"
 #include "telegram_bot.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -409,7 +409,7 @@ void ui_manager_switch_screen(screen_id_t id)
         if (tg_resume_ret != ESP_OK) {
             ESP_LOGW(TAG, "telegram bot resume polling failed: %s", esp_err_to_name(tg_resume_ret));
         }
-        esp_err_t resume_ret = scheduler_resume_quote_polling();
+        esp_err_t resume_ret = scheduler_service_resume_quote_polling();
         if (resume_ret != ESP_OK) {
             ESP_LOGW(TAG, "resume quote polling failed: %s", esp_err_to_name(resume_ret));
         }
@@ -457,11 +457,11 @@ void ui_manager_switch_screen(screen_id_t id)
             ESP_LOGW(TAG, "telegram task not stopped before portal: %s", esp_err_to_name(tg_stopped_ret));
             net_drained = false;
         }
-        esp_err_t pause_ret = scheduler_pause_quote_polling();
+        esp_err_t pause_ret = scheduler_service_pause_quote_polling();
         if (pause_ret != ESP_OK) {
             ESP_LOGW(TAG, "pause quote polling failed: %s", esp_err_to_name(pause_ret));
         }
-        esp_err_t sched_idle_ret = scheduler_wait_quote_fetch_idle(PORTAL_NET_DRAIN_TIMEOUT_MS);
+        esp_err_t sched_idle_ret = scheduler_service_wait_quote_fetch_idle(PORTAL_NET_DRAIN_TIMEOUT_MS);
         if (sched_idle_ret != ESP_OK) {
             ESP_LOGW(TAG, "scheduler fetch not idle before portal: %s", esp_err_to_name(sched_idle_ret));
             net_drained = false;

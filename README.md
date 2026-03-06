@@ -151,10 +151,10 @@ Stocks API 驗證規則：
 
 ## 排程與資料流
 
-- Scheduler 依設定定時抓取 TWSE 報價
+- Scheduler Service 依設定定時抓取 TWSE 報價
 - 報價資料推送到 UI queue 後更新 Dashboard
 - AI 分析任務會依排程觸發，結果寫入 log queue
-- 股票清單由 NVS 保存，Portal 異動後會 reload 到 scheduler
+- 股票清單由 NVS 保存，Portal 異動後會 reload 到 scheduler service
 
 ## 專案結構
 
@@ -167,7 +167,7 @@ Stocks API 驗證規則：
 - `components/portal_backend/`：SoftAP + Portal HTTP 服務
 - `components/twse_client/`：TWSE API 抓價與代號驗證
 - `components/ai_provider/`：AI provider 封裝
-- `components/scheduler/`：報價/AI 排程與睡眠策略
+- `components/scheduler_service/`：報價排程與休市睡眠策略
 - `components/storage/`：NVS 設定儲存
 - `openspec/`：需求與變更規格（OpenSpec）
 

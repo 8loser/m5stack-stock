@@ -15,7 +15,7 @@
 #include "network_portal.h"
 #include "telegram_bot.h"
 #include "twse_client.h"
-#include "scheduler.h"
+#include "scheduler_service.h"
 #include "ui_manager.h"
 
 static const char *TAG = "main";
@@ -178,7 +178,7 @@ void app_main(void)
 
     /* Phase 5: 排程器 */
     ESP_LOGI(TAG, "初始化 Scheduler...");
-    ESP_ERROR_CHECK(scheduler_init(g_quote_queue));
+    ESP_ERROR_CHECK(scheduler_service_init(g_quote_queue));
 
     ESP_LOGI(TAG, "=== 系統啟動完成 ===");
     ui_manager_log_sys(LOG_LEVEL_INFO, "System ready");

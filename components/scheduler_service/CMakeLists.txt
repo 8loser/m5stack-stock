@@ -1,6 +1,9 @@
 idf_component_register(
     SRCS
-        "scheduler.c"
+        "core.c"
+        "event_bridge.c"
+        "quote_worker.c"
+        "time_sync.c"
         "sleep_manager.c"
     INCLUDE_DIRS "include"
     REQUIRES
