@@ -21,6 +21,12 @@
 - 測試與驗證步驟細節由 `m5stack-core2-dev` 與 `m5stack-core2-flash-agent` 維護，`AGENTS.md` 僅保留路由與共通規範。
 - 若變更邏輯較大，PR 仍需附上可重現的手動測試清單。
 
+## Firmware 併發與資源基線
+- 韌體功能預設採非阻塞設計：耗時流程應放在獨立 task，模組間以 queue/event bus 解耦；避免在 UI 主迴圈或高頻控制路徑執行長時間同步網路呼叫。
+- 週期性工作需控制輪詢頻率，避免過高 polling；timeout/retry/backoff 必須可設定或可觀測。
+- 外部訊息與 JSON 處理需設定大小上限（request/response buffer、解析長度、欄位長度），避免無界成長造成記憶體壓力。
+- 需保留基本記憶體可觀測性：至少監控 heap 可用量趨勢與任務 stack high-water mark，並在效能調校/回歸時附前後對照。
+
 ## Portal 前端驗收基線
 - Portal UI 必須支援手機與桌面瀏覽（`360px` / `768px` / `1280px`）。
 - 在上述寬度下不得出現水平捲動、主要文案不可讀或主要按鈕不可操作。
