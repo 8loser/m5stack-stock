@@ -4,7 +4,7 @@
 
 - 台股（TWSE）報價輪詢
 - AI 分析（Gemini / Claude / OpenAI）
-- 手機配網 Portal（SoftAP + Web）
+- 手機配網 / 設定 Portal（STA 或 AP 雙模式）
 - 觸控 UI（Dashboard / Portal / Log / Resource / Settings / HW Test）
 
 ## 硬體需求
@@ -101,7 +101,7 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
 ### 頁面
 
 - `Dashboard`：顯示最多 5 檔股票卡片（代號/名稱、價格、漲跌幅、最後更新時間）
-- `Portal`：顯示配網 QRCode 與 AP 資訊，進入頁面時會啟動配網 Portal，離開時會關閉
+- `Portal`：已連 WiFi 時顯示 STA IP（手機同網路開啟）；未連 WiFi 時顯示配網 QRCode 與 AP 資訊。進入頁面時啟動 Portal，離開時關閉
 - `Log`：顯示系統事件（STOCK / WIFI / AI / SYS）
 - `Resource`：顯示 Heap current 與 Stack peak（LVGL）使用率 progress bar
 - `Settings`：切換報價更新間隔（1 / 5 / 10 分鐘）
@@ -120,17 +120,24 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
 - WiFi 圖示（連線/連線中/離線）
 - 電量百分比
 
-## Provisioning Portal（手機配網）
+## Portal（設定與配網）
 
-Portal 啟動後會提供：
+Portal 依 WiFi 連線狀態自動選擇模式：
 
-- AP SSID：`Core2-Setup`
-- 密碼：`core2wifi`
-- URL：`http://192.168.4.1`
+- **STA（Station）**：裝置作為客戶端連到外部 WiFi（家用路由器等）
+- **AP（Access Point）**：裝置自己當熱點，讓手機連進來
+
+| WiFi 狀態 | Portal 模式 | 存取方式 |
+|-----------|------------|---------|
+| 已連線 | STA（不切換 WiFi） | 手機連同一 WiFi，開啟 `http://<裝置 STA IP>` |
+| 未連線 | 純 AP | 手機掃 QR 加入 AP `Core2-Setup`（密碼 `core2wifi`），開啟 `http://192.168.4.1` |
+
+STA 模式下裝置保持外網連線，Telegram 測試訊息等功能可正常使用。
+AP 模式僅供配網，無外網功能。
 
 狀態判讀提醒：
 
-- `WiFi connected`（STA 有內網 IP）不代表 Portal 一定已啟動；Portal 是否可用應另外確認 `AP/HTTP` 是否 active。
+- `WiFi connected`（STA 有內網 IP）不代表 Portal 一定已啟動；Portal 是否可用應另外確認 HTTP server 是否 active。
 
 Web Portal 分成 6 個分頁：
 
@@ -169,7 +176,7 @@ Stocks API 驗證規則：
 - `components/ui/`：LVGL UI（screens/widgets/ui manager）
 - `components/network_portal/`：對外 façade（統一 network API）
 - `components/wifi_manager/`：STA 連線、狀態機、AP 掃描
-- `components/portal_backend/`：SoftAP + Portal HTTP 服務
+- `components/portal_backend/`：Portal HTTP 服務（STA / 純 AP 雙模式）
 - `components/twse_client/`：TWSE API 抓價與代號驗證
 - `components/ai_provider/`：AI provider 封裝
 - `components/scheduler_service/`：報價排程與休市睡眠策略
