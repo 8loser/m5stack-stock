@@ -21,6 +21,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 外部訊息與 JSON 處理需設定大小上限（request/response buffer、解析長度、欄位長度），避免無界成長造成記憶體壓力。
 - 需保留基本記憶體可觀測性：至少監控 heap 可用量趨勢與任務 stack high-water mark，並在效能調校/回歸時附前後對照。
 
+### Internal DRAM 限制（Core2 硬體紅線）
+
+| 限制 | 說明 |
+|------|------|
+| Task stack 預設用 internal DRAM | 新增 task 前必須確認剩餘 internal DRAM 夠用 |
+| PSRAM 不可作 task stack | NVS/SPI flash 操作時 cache 關閉，PSRAM 不可存取（assert crash） |
+| APSTA 模式不可用 | WiFi AP+STA 同時運行需要大量 internal DRAM，Core2 上會 crash（`ieee80211_hostap_attach`） |
+| HTTPD handler 大 buffer 需移 heap | HTTPD task stack 僅 4KB，>128B 的 local array 應 malloc |
+| `esp_http_client` 非 thread-safe | 不可從其他 thread 呼叫 `esp_http_client_close/cleanup`；stop 只設 flag，讓 owner task 自行清理 |
+| TCP TIME_WAIT 佔 socket slot | `CONFIG_LWIP_TCP_MSL=3000`（6s TIME_WAIT）；portal server 用 SO_LINGER 送 RST |
+
+### Portal 雙模式架構
+
+| WiFi 狀態 | Portal 模式 | Bot task | 說明 |
+|-----------|------------|----------|------|
+| 已連線 | STA（不切 WiFi） | pause + cmd queue | 非阻塞，外網可用 |
+| 未連線 | 純 AP | stop（釋放 DRAM） | 配網用，無外網 |
+
 ## Portal 前端驗收基線
 
 - Portal UI 必須支援手機與桌面瀏覽（`360px` / `768px` / `1280px`）。
@@ -60,7 +78,7 @@ components/
   board/                 # HAL 層，所有硬體抽象
   network_portal/        # 對外 façade（統一 network API）
   wifi_manager/          # STA 連線管理、狀態機、AP 掃描
-  portal_backend/        # SoftAP + Portal HTTP + Stocks 管理 API
+  portal_backend/        # Portal HTTP server（STA 或純 AP 雙模式）+ Stocks 管理 API
   storage/               # NVS 讀寫，唯一持久化介面
   twse_client/           # TWSE API → cJSON → stock_quote_t
   ai_provider/           # vtable 模式三 Provider（Gemini/Claude/OpenAI）
@@ -87,6 +105,7 @@ scheduler_service Timer
 - 燒錄/連線類 gotchas 由 `m5stack-core2-flash-agent` 維護（例如 monitor 鎖 port）。
 - `CLAUDE.md` 僅保留分工與路由規則，不再重複列細節表。
 - 連線判讀規則：`WiFi connected (STA)` 不等於 `Provisioning Portal active (AP/HTTP)`；診斷 Portal 頁面時不得只憑 STA 已連線判定正常。
+- Portal 現為 STA/AP 雙模式：已連 WiFi 時不切換 WiFi 模式（STA 直接服務），未連 WiFi 時用純 AP。**不可使用 APSTA 模式**。
 
 ## NVS 命名空間
 
