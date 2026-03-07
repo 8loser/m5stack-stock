@@ -1289,8 +1289,8 @@ static esp_err_t start_portal_http_server(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.max_uri_handlers = 40;
-    config.max_open_sockets = 5;
-    config.backlog_conn = 5;
+    config.max_open_sockets = 3;
+    config.backlog_conn = 4;
     config.lru_purge_enable = true;
     config.keep_alive_enable = false;
     config.recv_wait_timeout = 5;
