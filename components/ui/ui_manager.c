@@ -15,6 +15,7 @@
 #include "loading_spinner.h"
 #include "scheduler_service.h"
 #include "telegram_bot.h"
+#include "network_portal.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_lcd_panel_io.h"
@@ -398,16 +399,16 @@ void ui_manager_switch_screen(screen_id_t id)
     ESP_LOGI(TAG, "[%u ms] switch_screen %d -> %d",
              (unsigned)esp_log_timestamp(), (int)prev, (int)id);
 
-    /* 離開 Portal 頁面時關閉 provisioning portal（含 SoftAP） */
+    /* 離開 Portal 頁面時關閉 provisioning portal */
     if (prev == SCREEN_PORTAL && id != SCREEN_PORTAL) {
+        bool was_sta_mode = network_portal_is_portal_sta_mode();
         screen_portal_close_portal();
-        esp_err_t tg_start_ret = telegram_bot_start();
-        if (tg_start_ret != ESP_OK) {
-            ESP_LOGW(TAG, "telegram bot start failed: %s", esp_err_to_name(tg_start_ret));
-        }
-        esp_err_t tg_resume_ret = telegram_bot_resume_polling();
-        if (tg_resume_ret != ESP_OK) {
-            ESP_LOGW(TAG, "telegram bot resume polling failed: %s", esp_err_to_name(tg_resume_ret));
+        if (was_sta_mode) {
+            /* STA mode: bot was paused, resume polling */
+            telegram_bot_resume_polling();
+        } else {
+            /* AP mode: bot was stopped, restart it */
+            telegram_bot_start();
         }
         esp_err_t resume_ret = scheduler_service_resume_quote_polling();
         if (resume_ret != ESP_OK) {
@@ -444,33 +445,36 @@ void ui_manager_switch_screen(screen_id_t id)
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
 
-    /* 進入 Portal 頁面時自動啟動 provisioning portal（含 SoftAP） */
+    /* 進入 Portal 頁面時自動啟動 provisioning portal */
     if (id == SCREEN_PORTAL && prev != SCREEN_PORTAL) {
-        /* Drain STA 網路活動以釋放 heap，SoftAP 啟動需要足夠記憶體 */
-        bool net_drained = true;
-        esp_err_t tg_stop_ret = telegram_bot_stop();
-        if (tg_stop_ret != ESP_OK) {
-            ESP_LOGW(TAG, "telegram bot stop failed: %s", esp_err_to_name(tg_stop_ret));
+        bool sta_connected = network_portal_is_connected();
+
+        if (sta_connected) {
+            /* STA mode: WiFi connected, no AP switch needed.
+             * Bot stays alive (paused) for cmd queue, no DRAM pressure. */
+            telegram_bot_pause_polling();
+            esp_err_t tg_idle_ret = telegram_bot_wait_http_idle(PORTAL_TG_DRAIN_TIMEOUT_MS);
+            if (tg_idle_ret != ESP_OK) {
+                ESP_LOGW(TAG, "telegram http not idle: %s", esp_err_to_name(tg_idle_ret));
+            }
+        } else {
+            /* AP mode: no WiFi, stop bot to free DRAM for pure AP. */
+            telegram_bot_stop();
+            esp_err_t tg_wait_ret = telegram_bot_wait_stopped(PORTAL_TG_DRAIN_TIMEOUT_MS);
+            if (tg_wait_ret != ESP_OK) {
+                ESP_LOGW(TAG, "telegram bot not stopped: %s", esp_err_to_name(tg_wait_ret));
+            }
         }
-        esp_err_t tg_stopped_ret = telegram_bot_wait_stopped(PORTAL_TG_DRAIN_TIMEOUT_MS);
-        if (tg_stopped_ret != ESP_OK) {
-            ESP_LOGW(TAG, "telegram task not stopped before portal: %s", esp_err_to_name(tg_stopped_ret));
-            net_drained = false;
-        }
+
         esp_err_t pause_ret = scheduler_service_pause_quote_polling();
         if (pause_ret != ESP_OK) {
             ESP_LOGW(TAG, "pause quote polling failed: %s", esp_err_to_name(pause_ret));
         }
         esp_err_t sched_idle_ret = scheduler_service_wait_quote_fetch_idle(PORTAL_NET_DRAIN_TIMEOUT_MS);
         if (sched_idle_ret != ESP_OK) {
-            ESP_LOGW(TAG, "scheduler fetch not idle before portal: %s", esp_err_to_name(sched_idle_ret));
-            net_drained = false;
+            ESP_LOGW(TAG, "scheduler fetch not idle: %s", esp_err_to_name(sched_idle_ret));
         }
 
-        if (!net_drained) {
-            ESP_LOGW(TAG, "net drain incomplete, starting portal anyway");
-            ui_manager_log_wifi(LOG_LEVEL_WARN, "Portal: net drain partial");
-        }
         screen_portal_open_portal();
     }
 

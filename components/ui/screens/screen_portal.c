@@ -73,7 +73,21 @@ static void refresh_network_info_labels(void)
 
 static void update_portal_ui(bool active)
 {
-    if (active) {
+    if (active && network_portal_is_portal_sta_mode()) {
+        /* STA mode: no AP, show URL instead of QR */
+        if (s_qr_obj) {
+            lv_obj_add_flag(s_qr_obj, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (s_qr_hint_lbl) {
+            const char *ip = network_portal_get_ip();
+            char buf[80];
+            snprintf(buf, sizeof(buf), "STA Portal\n\nhttp://%s\n\n同網路開啟",
+                     (ip && ip[0]) ? ip : "?.?.?.?");
+            lv_label_set_text(s_qr_hint_lbl, buf);
+            lv_obj_clear_flag(s_qr_hint_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
+    } else if (active) {
+        /* AP mode: show WiFi QR */
         if (s_qr_obj) {
             lv_obj_clear_flag(s_qr_obj, LV_OBJ_FLAG_HIDDEN);
         }
@@ -85,6 +99,8 @@ static void update_portal_ui(bool active)
             lv_obj_add_flag(s_qr_obj, LV_OBJ_FLAG_HIDDEN);
         }
         if (s_qr_hint_lbl) {
+            lv_label_set_text(s_qr_hint_lbl,
+                              "入口未啟動\n\n等待自動啟動，\n再掃描 QR。");
             lv_obj_clear_flag(s_qr_hint_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }

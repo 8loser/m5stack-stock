@@ -19,17 +19,19 @@
 #include <string.h>
 #include <stdarg.h>
 
-#define TG_TASK_STACK 12288
+#define TG_TASK_STACK 8192
 #define TG_TASK_PRIO  3
 #define TG_HTTP_BUF_INIT_SIZE 512
 #define TG_TOKEN_MAX_LEN 160
 #define TG_CHAT_ID_MAX_LEN 40
 #define TG_INFO_STALE_SEC 1800
 #define TG_GET_UPDATES_TIMEOUT_SEC 3
+#define TG_HTTP_TIMEOUT_MS 5000
 #define TG_RESTART_WAIT_MS 3000U
 #define TG_SEND_RETRY_MAX 3
 #define TG_SEND_RETRY_DELAY_MS 250U
 #define TG_INFO_MSG_BUF_SIZE 2048U
+#define TG_CMD_QUEUE_DEPTH 1
 
 static const char *TAG = "telegram_bot";
 
@@ -40,6 +42,20 @@ typedef struct {
     bool overflow;
 } tg_http_ctx_t;
 
+/* --- Command queue types --- */
+typedef enum {
+    TG_CMD_SEND_TEST,
+    TG_CMD_GET_ME,
+    TG_CMD_GET_UPDATES,
+} tg_cmd_type_t;
+
+typedef struct {
+    tg_cmd_type_t type;
+    char token[TG_TOKEN_MAX_LEN];
+    void *result;
+    SemaphoreHandle_t done;
+} tg_cmd_item_t;
+
 static TaskHandle_t s_task_handle = NULL;
 static bool s_running = false;
 static bool s_polling_paused = false;
@@ -48,6 +64,7 @@ static portMUX_TYPE s_http_lock = portMUX_INITIALIZER_UNLOCKED;
 static volatile uint32_t s_http_in_flight = 0;
 static esp_http_client_handle_t s_http_client = NULL;
 static volatile bool s_http_abort_requested = false;
+static QueueHandle_t s_cmd_queue = NULL;
 
 typedef struct {
     bool has_quote;
@@ -151,7 +168,7 @@ static esp_err_t tg_http_call(const char *url,
         .url = url,
         .event_handler = tg_http_event_handler,
         .user_data = &ctx,
-        .timeout_ms = HTTP_TIMEOUT_MS,
+        .timeout_ms = TG_HTTP_TIMEOUT_MS,
         .crt_bundle_attach = esp_crt_bundle_attach,
     };
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
@@ -689,6 +706,150 @@ static esp_err_t tg_bootstrap_sync_next_update_id(const char *token)
     return ESP_OK;
 }
 
+/* --- Command execution (runs on telegram_task) --- */
+
+static void exec_cmd_send_test(tg_cmd_item_t *cmd)
+{
+    tg_cmd_send_test_result_t *r = (tg_cmd_send_test_result_t *)cmd->result;
+    char token[TG_TOKEN_MAX_LEN] = {0};
+    char chat_id[TG_CHAT_ID_MAX_LEN] = {0};
+
+    storage_tg_load_bot_token(token, sizeof(token));
+    storage_tg_load_chat_id(chat_id, sizeof(chat_id));
+    if (token[0] == '\0' || chat_id[0] == '\0') {
+        r->err = ESP_ERR_INVALID_STATE;
+        strlcpy(r->detail, "missing_config", sizeof(r->detail));
+        return;
+    }
+
+    char encoded_chat[96] = {0};
+    char encoded_text[384] = {0};
+    char post_data[512] = {0};
+    char url[320] = {0};
+
+    url_encode_component(chat_id, encoded_chat, sizeof(encoded_chat));
+    url_encode_component("Core2 Telegram test: settings OK", encoded_text, sizeof(encoded_text));
+    snprintf(post_data, sizeof(post_data), "chat_id=%s&text=%s", encoded_chat, encoded_text);
+    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/sendMessage", token);
+
+    char *resp = NULL;
+    r->err = tg_http_call(url, HTTP_METHOD_POST,
+                          "application/x-www-form-urlencoded",
+                          post_data, &resp, &r->status_code);
+    if (r->err == ESP_OK && resp) {
+        bool ok = (r->status_code == 200 && strstr(resp, "\"ok\":true") != NULL);
+        if (!ok) {
+            snprintf(r->detail, sizeof(r->detail), "%.96s", resp);
+            r->err = ESP_FAIL;
+        }
+    } else if (r->err != ESP_OK) {
+        snprintf(r->detail, sizeof(r->detail), "esp=%s", esp_err_to_name(r->err));
+    }
+    free(resp);
+}
+
+static void exec_cmd_get_me(tg_cmd_item_t *cmd)
+{
+    tg_cmd_get_me_result_t *r = (tg_cmd_get_me_result_t *)cmd->result;
+    const char *token = cmd->token;
+    char stored_token[TG_TOKEN_MAX_LEN] = {0};
+
+    if (token[0] == '\0') {
+        storage_tg_load_bot_token(stored_token, sizeof(stored_token));
+        token = stored_token;
+    }
+    if (token[0] == '\0') {
+        r->err = ESP_ERR_INVALID_STATE;
+        return;
+    }
+
+    char url[320] = {0};
+    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/getMe", token);
+
+    char *resp = NULL;
+    r->err = tg_http_call(url, HTTP_METHOD_GET, NULL, NULL, &resp, &r->status_code);
+    if (r->err != ESP_OK || !resp) {
+        free(resp);
+        if (r->err == ESP_OK) {
+            r->err = ESP_FAIL;
+        }
+        return;
+    }
+
+    cJSON *root = cJSON_Parse(resp);
+    free(resp);
+    if (!root) {
+        r->err = ESP_FAIL;
+        return;
+    }
+
+    cJSON *ok = cJSON_GetObjectItem(root, "ok");
+    cJSON *result = cJSON_GetObjectItem(root, "result");
+    if (!cJSON_IsTrue(ok) || !cJSON_IsObject(result)) {
+        cJSON_Delete(root);
+        r->err = ESP_FAIL;
+        return;
+    }
+
+    cJSON *first_name = cJSON_GetObjectItem(result, "first_name");
+    cJSON *username = cJSON_GetObjectItem(result, "username");
+    if (cJSON_IsString(first_name) && first_name->valuestring) {
+        strlcpy(r->bot_name, first_name->valuestring, sizeof(r->bot_name));
+    }
+    if (cJSON_IsString(username) && username->valuestring) {
+        strlcpy(r->bot_username, username->valuestring, sizeof(r->bot_username));
+    }
+    cJSON_Delete(root);
+}
+
+static void exec_cmd_get_updates(tg_cmd_item_t *cmd)
+{
+    tg_cmd_get_updates_result_t *r = (tg_cmd_get_updates_result_t *)cmd->result;
+    char token[TG_TOKEN_MAX_LEN] = {0};
+
+    storage_tg_load_bot_token(token, sizeof(token));
+    if (token[0] == '\0') {
+        r->err = ESP_ERR_INVALID_STATE;
+        return;
+    }
+
+    char url[384] = {0};
+    snprintf(url, sizeof(url),
+             "https://api.telegram.org/bot%s/getUpdates?limit=20&timeout=1", token);
+
+    r->err = tg_http_call(url, HTTP_METHOD_GET, NULL, NULL, &r->body, &r->status_code);
+}
+
+static void execute_tg_cmd(tg_cmd_item_t *cmd)
+{
+    switch (cmd->type) {
+    case TG_CMD_SEND_TEST:
+        exec_cmd_send_test(cmd);
+        break;
+    case TG_CMD_GET_ME:
+        exec_cmd_get_me(cmd);
+        break;
+    case TG_CMD_GET_UPDATES:
+        exec_cmd_get_updates(cmd);
+        break;
+    default:
+        ESP_LOGW(TAG, "unknown cmd type %d", (int)cmd->type);
+        break;
+    }
+}
+
+static bool process_cmd_queue(TickType_t wait_ticks)
+{
+    tg_cmd_item_t cmd;
+    if (xQueueReceive(s_cmd_queue, &cmd, wait_ticks) != pdTRUE) {
+        return false;
+    }
+    ESP_LOGI(TAG, "executing cmd type=%d", (int)cmd.type);
+    execute_tg_cmd(&cmd);
+    xSemaphoreGive(cmd.done);
+    return true;
+}
+
 static void telegram_task(void *arg)
 {
     (void)arg;
@@ -696,8 +857,14 @@ static void telegram_task(void *arg)
     bool bootstrap_done = false;
 
     while (s_running) {
+        /* Always check command queue first (non-blocking) */
+        if (process_cmd_queue(0)) {
+            continue;
+        }
+
         if (s_polling_paused) {
-            vTaskDelay(pdMS_TO_TICKS(200));
+            /* When paused, wait for commands with a longer block */
+            process_cmd_queue(pdMS_TO_TICKS(200));
             continue;
         }
 
@@ -708,7 +875,9 @@ static void telegram_task(void *arg)
         if (storage_tg_load_enabled(&enabled) != ESP_OK || !enabled) {
             bootstrap_done = false;
             s_next_update_id = 0;
-            vTaskDelay(pdMS_TO_TICKS(3000));
+            if (!process_cmd_queue(pdMS_TO_TICKS(3000))) {
+                /* no cmd arrived during wait */
+            }
             continue;
         }
         storage_tg_load_bot_token(token, sizeof(token));
@@ -716,13 +885,17 @@ static void telegram_task(void *arg)
         if (token[0] == '\0' || chat_id[0] == '\0') {
             bootstrap_done = false;
             s_next_update_id = 0;
-            vTaskDelay(pdMS_TO_TICKS(3000));
+            if (!process_cmd_queue(pdMS_TO_TICKS(3000))) {
+                /* no cmd arrived during wait */
+            }
             continue;
         }
 
         if (!is_wifi_connected()) {
             bootstrap_done = false;
-            vTaskDelay(pdMS_TO_TICKS(2000));
+            if (!process_cmd_queue(pdMS_TO_TICKS(2000))) {
+                /* no cmd arrived during wait */
+            }
             continue;
         }
 
@@ -730,7 +903,9 @@ static void telegram_task(void *arg)
             esp_err_t bootstrap_ret = tg_bootstrap_sync_next_update_id(token);
             if (bootstrap_ret != ESP_OK) {
                 ESP_LOGW(TAG, "bootstrap sync failed: %s", esp_err_to_name(bootstrap_ret));
-                vTaskDelay(pdMS_TO_TICKS(3000));
+                if (!process_cmd_queue(pdMS_TO_TICKS(3000))) {
+                    /* no cmd arrived during wait */
+                }
                 continue;
             }
             bootstrap_done = true;
@@ -747,12 +922,21 @@ static void telegram_task(void *arg)
         if (ret != ESP_OK || !resp || status_code != 200) {
             ESP_LOGW(TAG, "polling failed: ret=%s status=%d", esp_err_to_name(ret), status_code);
             free(resp);
-            vTaskDelay(pdMS_TO_TICKS(3000));
+            if (!process_cmd_queue(pdMS_TO_TICKS(3000))) {
+                /* no cmd arrived during wait */
+            }
             continue;
         }
 
         process_updates(token, chat_id, resp);
         free(resp);
+    }
+
+    /* Drain pending commands on shutdown */
+    tg_cmd_item_t cmd;
+    while (xQueueReceive(s_cmd_queue, &cmd, 0) == pdTRUE) {
+        *(esp_err_t *)cmd.result = ESP_ERR_INVALID_STATE;
+        xSemaphoreGive(cmd.done);
     }
 
     ESP_LOGI(TAG, "telegram bot task stopped");
@@ -765,6 +949,12 @@ esp_err_t telegram_bot_init(void)
     if (s_cache_mutex == NULL) {
         s_cache_mutex = xSemaphoreCreateMutex();
         if (s_cache_mutex == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    if (s_cmd_queue == NULL) {
+        s_cmd_queue = xQueueCreate(TG_CMD_QUEUE_DEPTH, sizeof(tg_cmd_item_t));
+        if (s_cmd_queue == NULL) {
             return ESP_ERR_NO_MEM;
         }
     }
@@ -798,6 +988,10 @@ esp_err_t telegram_bot_start(void)
     }
     s_polling_paused = false;
     s_running = true;
+    taskENTER_CRITICAL(&s_http_lock);
+    s_http_abort_requested = false;
+    taskEXIT_CRITICAL(&s_http_lock);
+
     if (xTaskCreate(telegram_task, "telegram_bot", TG_TASK_STACK, NULL, TG_TASK_PRIO, &s_task_handle) != pdPASS) {
         s_running = false;
         return ESP_FAIL;
@@ -808,27 +1002,17 @@ esp_err_t telegram_bot_start(void)
 
 esp_err_t telegram_bot_stop(void)
 {
-    esp_http_client_handle_t client = NULL;
-    bool has_in_flight = false;
-
+    /* Only set flags. Do NOT touch s_http_client from this thread --
+     * esp_http_client is not thread-safe and closing concurrently with
+     * esp_http_client_perform() causes crashes in mbedtls.
+     * The task will finish its current HTTP call naturally (within
+     * TG_HTTP_TIMEOUT_MS) and then exit because s_running == false. */
     s_running = false;
     s_polling_paused = false;
     taskENTER_CRITICAL(&s_http_lock);
     s_http_abort_requested = true;
-    client = s_http_client;
-    has_in_flight = (s_http_in_flight > 0);
     taskEXIT_CRITICAL(&s_http_lock);
-
-    if (has_in_flight && client) {
-        esp_err_t abort_ret = esp_http_client_close(client);
-        if (abort_ret != ESP_OK) {
-            ESP_LOGW(TAG, "telegram http abort failed: %s", esp_err_to_name(abort_ret));
-        } else {
-            ESP_LOGI(TAG, "telegram stop requested: aborted in-flight http");
-        }
-    } else {
-        ESP_LOGI(TAG, "telegram stop requested: no in-flight http");
-    }
+    ESP_LOGI(TAG, "telegram stop requested");
     return ESP_OK;
 }
 
@@ -913,4 +1097,64 @@ esp_err_t telegram_bot_wait_stopped(uint32_t timeout_ms)
     }
 
     return ESP_OK;
+}
+
+/* --- Public command API (called from portal handlers) --- */
+
+static esp_err_t submit_cmd(tg_cmd_type_t type, const char *token,
+                            void *result, uint32_t timeout_ms)
+{
+    if (!s_running || !s_cmd_queue) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    SemaphoreHandle_t done = xSemaphoreCreateBinary();
+    if (!done) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    tg_cmd_item_t item = {
+        .type = type,
+        .result = result,
+        .done = done,
+    };
+    if (token && token[0] != '\0') {
+        strlcpy(item.token, token, sizeof(item.token));
+    }
+
+    if (xQueueSend(s_cmd_queue, &item, pdMS_TO_TICKS(500)) != pdTRUE) {
+        vSemaphoreDelete(done);
+        return ESP_ERR_TIMEOUT;
+    }
+
+    bool got = (xSemaphoreTake(done, pdMS_TO_TICKS(timeout_ms)) == pdTRUE);
+    vSemaphoreDelete(done);
+    return got ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+esp_err_t telegram_bot_cmd_send_test(tg_cmd_send_test_result_t *out, uint32_t timeout_ms)
+{
+    if (!out) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out, 0, sizeof(*out));
+    return submit_cmd(TG_CMD_SEND_TEST, NULL, out, timeout_ms);
+}
+
+esp_err_t telegram_bot_cmd_get_me(const char *token_override, tg_cmd_get_me_result_t *out, uint32_t timeout_ms)
+{
+    if (!out) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out, 0, sizeof(*out));
+    return submit_cmd(TG_CMD_GET_ME, token_override, out, timeout_ms);
+}
+
+esp_err_t telegram_bot_cmd_get_updates(tg_cmd_get_updates_result_t *out, uint32_t timeout_ms)
+{
+    if (!out) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out, 0, sizeof(*out));
+    return submit_cmd(TG_CMD_GET_UPDATES, NULL, out, timeout_ms);
 }

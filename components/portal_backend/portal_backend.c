@@ -6,13 +6,11 @@
 #include "storage.h"
 #include "app_config.h"
 #include "ai_provider.h"
-#include "scheduler_service.h"
 #include "telegram_bot.h"
 #include "esp_wifi.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_http_client.h"
 #include "esp_http_server.h"
-#include "esp_crt_bundle.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "cJSON.h"
@@ -22,16 +20,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/socket.h>
 
 #define PORTAL_BODY_MAX_LEN 4096
 #define PORTAL_SCAN_MAX_APS 20
 #define TELEGRAM_TOKEN_MAX_LEN 160
 #define TELEGRAM_CHAT_ID_MAX_LEN 40
-#define TELEGRAM_HTTP_BUF_INIT_SIZE 512
+/* TELEGRAM_HTTP_BUF_INIT_SIZE removed: telegram HTTPS moved to telegram_task */
 #define AI_TEST_RESP_MAX_LEN 1536
 #define PORTAL_SCAN_CACHE_TTL_MS 15000
-#define TELEGRAM_HTTP_DRAIN_TIMEOUT_MS 1200
-#define SCHED_HTTP_DRAIN_TIMEOUT_MS 1200
+/* TELEGRAM_HTTP_DRAIN_TIMEOUT_MS removed: no longer needed with cmd queue */
+/* SCHED_HTTP_DRAIN_TIMEOUT_MS removed: scheduler drain handled at portal entry */
 
 static bool parse_ai_provider(const char *name, int *out_provider)
 {
@@ -76,6 +75,7 @@ static const char *TAG = "portal_backend";
 static esp_netif_t *s_ap_netif = NULL;
 static httpd_handle_t s_httpd = NULL;
 static bool s_portal_active = false;
+static bool s_portal_sta_mode = false;  /* true = STA-only (no AP), false = AP mode */
 static bool s_connecting_busy = false;
 static wifi_ap_info_t s_scan_cache[PORTAL_SCAN_MAX_APS];
 static uint16_t s_scan_cache_count = 0;
@@ -295,335 +295,14 @@ static void mask_secret_tail4(const char *src, char *out, size_t out_size)
     snprintf(out, out_size, "****%s", tail);
 }
 
-static size_t url_encode_component(const char *src, char *dst, size_t dst_size)
-{
-    static const char *hex = "0123456789ABCDEF";
-    size_t di = 0;
+/* Telegram HTTP helpers removed: all Telegram API calls now go through
+ * telegram_bot_cmd_*() which routes them to the telegram_task. */
 
-    if (!src || !dst || dst_size == 0) {
-        return 0;
-    }
+/* telegram_send_test_message removed: now via telegram_bot_cmd_send_test() */
 
-    for (size_t i = 0; src[i] != '\0' && di + 1 < dst_size; i++) {
-        unsigned char c = (unsigned char)src[i];
-        bool safe = (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~');
-        if (safe) {
-            dst[di++] = (char)c;
-            continue;
-        }
+/* telegram_get_updates removed: now via telegram_bot_cmd_get_updates() */
 
-        if (di + 3 >= dst_size) {
-            break;
-        }
-        dst[di++] = '%';
-        dst[di++] = hex[(c >> 4) & 0x0F];
-        dst[di++] = hex[c & 0x0F];
-    }
-    dst[di] = '\0';
-    return di;
-}
-
-typedef struct {
-    char *buf;
-    size_t capacity;
-    size_t data_len;
-    bool overflow;
-} telegram_http_ctx_t;
-
-static esp_err_t telegram_http_event_handler(esp_http_client_event_t *evt)
-{
-    telegram_http_ctx_t *ctx = (telegram_http_ctx_t *)evt->user_data;
-    if (!ctx || evt->event_id != HTTP_EVENT_ON_DATA) {
-        return ESP_OK;
-    }
-
-    size_t needed = ctx->data_len + (size_t)evt->data_len + 1;
-    if (needed > ctx->capacity) {
-        size_t new_cap = ctx->capacity;
-        while (new_cap < needed && new_cap < 4096U) {
-            new_cap *= 2U;
-        }
-        if (new_cap < needed || new_cap > 4096U) {
-            ctx->overflow = true;
-            return ESP_OK;
-        }
-        char *new_buf = realloc(ctx->buf, new_cap);
-        if (!new_buf) {
-            ctx->overflow = true;
-            return ESP_OK;
-        }
-        ctx->buf = new_buf;
-        ctx->capacity = new_cap;
-    }
-
-    memcpy(ctx->buf + ctx->data_len, evt->data, (size_t)evt->data_len);
-    ctx->data_len += (size_t)evt->data_len;
-    return ESP_OK;
-}
-
-static esp_err_t telegram_send_test_message(const char *token,
-                                            const char *chat_id,
-                                            const char *text,
-                                            int *out_status_code,
-                                            char *out_detail,
-                                            size_t out_detail_size)
-{
-    if (!token || !chat_id || !text || token[0] == '\0' || chat_id[0] == '\0' || text[0] == '\0') {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (out_status_code) {
-        *out_status_code = 0;
-    }
-    if (out_detail && out_detail_size > 0) {
-        out_detail[0] = '\0';
-    }
-
-    char encoded_chat[96] = {0};
-    char encoded_text[384] = {0};
-    char post_data[512] = {0};
-    char url[320] = {0};
-    int status_code = 0;
-    char *resp_body = NULL;
-
-    url_encode_component(chat_id, encoded_chat, sizeof(encoded_chat));
-    url_encode_component(text, encoded_text, sizeof(encoded_text));
-    snprintf(post_data, sizeof(post_data), "chat_id=%s&text=%s", encoded_chat, encoded_text);
-    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/sendMessage", token);
-
-    telegram_http_ctx_t ctx = {0};
-    ctx.buf = malloc(TELEGRAM_HTTP_BUF_INIT_SIZE);
-    if (!ctx.buf) {
-        return ESP_ERR_NO_MEM;
-    }
-    ctx.capacity = TELEGRAM_HTTP_BUF_INIT_SIZE;
-
-    esp_http_client_config_t cfg = {
-        .url = url,
-        .event_handler = telegram_http_event_handler,
-        .user_data = &ctx,
-        .timeout_ms = HTTP_TIMEOUT_MS,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-    };
-    esp_http_client_handle_t client = esp_http_client_init(&cfg);
-    if (!client) {
-        free(ctx.buf);
-        return ESP_FAIL;
-    }
-
-    esp_http_client_set_method(client, HTTP_METHOD_POST);
-    esp_http_client_set_header(client, "Content-Type", "application/x-www-form-urlencoded");
-    esp_http_client_set_post_field(client, post_data, (int)strlen(post_data));
-
-    esp_err_t ret = esp_http_client_perform(client);
-    status_code = esp_http_client_get_status_code(client);
-    if (out_status_code) {
-        *out_status_code = status_code;
-    }
-    esp_http_client_cleanup(client);
-
-    if (!ctx.overflow) {
-        ctx.buf[ctx.data_len] = '\0';
-    }
-    bool success = false;
-    if (ret == ESP_OK && !ctx.overflow && status_code == 200) {
-        resp_body = ctx.buf;
-        success = (strstr(resp_body, "\"ok\":true") != NULL);
-    }
-    if (!success && out_detail && out_detail_size > 0) {
-        if (ctx.overflow) {
-            strlcpy(out_detail, "response_overflow", out_detail_size);
-        } else if (ctx.buf && ctx.buf[0] != '\0') {
-            snprintf(out_detail, out_detail_size, "%.96s", ctx.buf);
-        } else {
-            snprintf(out_detail, out_detail_size, "esp=%s", esp_err_to_name(ret));
-        }
-    }
-    if (resp_body == NULL) {
-        free(ctx.buf);
-    }
-    free(resp_body);
-
-    if (!success) {
-        ESP_LOGW(TAG, "telegram test failed ret=%s status=%d overflow=%d",
-                 esp_err_to_name(ret), status_code, ctx.overflow ? 1 : 0);
-        return (ret == ESP_OK) ? ESP_FAIL : ret;
-    }
-    return ESP_OK;
-}
-
-static esp_err_t telegram_get_updates(const char *token, char **out_body, int *out_status)
-{
-    if (!token || token[0] == '\0' || !out_body) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    *out_body = NULL;
-    if (out_status) {
-        *out_status = 0;
-    }
-
-    char url[384] = {0};
-    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/getUpdates?limit=20&timeout=1", token);
-
-    telegram_http_ctx_t ctx = {0};
-    ctx.buf = malloc(TELEGRAM_HTTP_BUF_INIT_SIZE);
-    if (!ctx.buf) {
-        return ESP_ERR_NO_MEM;
-    }
-    ctx.capacity = TELEGRAM_HTTP_BUF_INIT_SIZE;
-
-    esp_http_client_config_t cfg = {
-        .url = url,
-        .event_handler = telegram_http_event_handler,
-        .user_data = &ctx,
-        .timeout_ms = HTTP_TIMEOUT_MS,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-    };
-
-    esp_err_t ret = ESP_FAIL;
-    int status_code = 0;
-    const int max_attempts = 2;
-    for (int attempt = 1; attempt <= max_attempts; attempt++) {
-        esp_http_client_handle_t client = esp_http_client_init(&cfg);
-        if (!client) {
-            free(ctx.buf);
-            return ESP_FAIL;
-        }
-        esp_http_client_set_method(client, HTTP_METHOD_GET);
-
-        ctx.data_len = 0;
-        ctx.overflow = false;
-        ret = esp_http_client_perform(client);
-        status_code = esp_http_client_get_status_code(client);
-        esp_http_client_cleanup(client);
-
-        if (ret == ESP_OK && !ctx.overflow) {
-            break;
-        }
-        if (attempt < max_attempts && ret == ESP_ERR_HTTP_CONNECT) {
-            vTaskDelay(pdMS_TO_TICKS(150));
-            continue;
-        }
-        break;
-    }
-    if (out_status) {
-        *out_status = status_code;
-    }
-
-    if (ret != ESP_OK || ctx.overflow) {
-        free(ctx.buf);
-        return (ret == ESP_OK) ? ESP_FAIL : ret;
-    }
-    ctx.buf[ctx.data_len] = '\0';
-    *out_body = ctx.buf;
-    return ESP_OK;
-}
-
-static esp_err_t telegram_get_me(const char *token, char *bot_name, size_t bot_name_len,
-                                 char *bot_username, size_t bot_username_len, int *out_status)
-{
-    if (!token || token[0] == '\0') {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (!bot_name || bot_name_len == 0 || !bot_username || bot_username_len == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    bot_name[0] = '\0';
-    bot_username[0] = '\0';
-    if (out_status) {
-        *out_status = 0;
-    }
-
-    char url[320] = {0};
-    snprintf(url, sizeof(url), "https://api.telegram.org/bot%s/getMe", token);
-
-    telegram_http_ctx_t ctx = {0};
-    ctx.buf = malloc(TELEGRAM_HTTP_BUF_INIT_SIZE);
-    if (!ctx.buf) {
-        return ESP_ERR_NO_MEM;
-    }
-    ctx.capacity = TELEGRAM_HTTP_BUF_INIT_SIZE;
-
-    esp_http_client_config_t cfg = {
-        .url = url,
-        .event_handler = telegram_http_event_handler,
-        .user_data = &ctx,
-        .timeout_ms = HTTP_TIMEOUT_MS,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-    };
-
-    esp_err_t ret = ESP_FAIL;
-    int status_code = 0;
-    const int max_attempts = 2;
-    for (int attempt = 1; attempt <= max_attempts; attempt++) {
-        esp_http_client_handle_t client = esp_http_client_init(&cfg);
-        if (!client) {
-            free(ctx.buf);
-            return ESP_FAIL;
-        }
-        esp_http_client_set_method(client, HTTP_METHOD_GET);
-
-        ctx.data_len = 0;
-        ctx.overflow = false;
-        ret = esp_http_client_perform(client);
-        status_code = esp_http_client_get_status_code(client);
-        esp_http_client_cleanup(client);
-
-        if (ret == ESP_OK && !ctx.overflow) {
-            break;
-        }
-        if (attempt < max_attempts && ret == ESP_ERR_HTTP_CONNECT) {
-            vTaskDelay(pdMS_TO_TICKS(150));
-            continue;
-        }
-        break;
-    }
-    if (out_status) {
-        *out_status = status_code;
-    }
-
-    if (ret != ESP_OK || ctx.overflow) {
-        free(ctx.buf);
-        return (ret == ESP_OK) ? ESP_FAIL : ret;
-    }
-
-    ctx.buf[ctx.data_len] = '\0';
-    cJSON *root = cJSON_Parse(ctx.buf);
-    free(ctx.buf);
-    if (!root) {
-        return ESP_FAIL;
-    }
-
-    cJSON *ok = cJSON_GetObjectItem(root, "ok");
-    cJSON *result = cJSON_GetObjectItem(root, "result");
-    cJSON *first_name = cJSON_IsObject(result) ? cJSON_GetObjectItem(result, "first_name") : NULL;
-    cJSON *username = cJSON_IsObject(result) ? cJSON_GetObjectItem(result, "username") : NULL;
-    bool api_ok = cJSON_IsTrue(ok);
-
-    if (!api_ok) {
-        cJSON_Delete(root);
-        return ESP_FAIL;
-    }
-
-    bool parse_ok = false;
-    if (cJSON_IsString(first_name) && first_name->valuestring && first_name->valuestring[0] != '\0') {
-        strlcpy(bot_name, first_name->valuestring, bot_name_len);
-        parse_ok = true;
-    } else if (cJSON_IsString(username) && username->valuestring && username->valuestring[0] != '\0') {
-        strlcpy(bot_name, username->valuestring, bot_name_len);
-        parse_ok = true;
-    }
-
-    if (cJSON_IsString(username) && username->valuestring) {
-        strlcpy(bot_username, username->valuestring, bot_username_len);
-    }
-
-    cJSON_Delete(root);
-
-    if (!parse_ok) {
-        return ESP_FAIL;
-    }
-    return ESP_OK;
-}
+/* telegram_get_me removed: now via telegram_bot_cmd_get_me() */
 
 static void wifi_connect_task(void *arg)
 {
@@ -716,41 +395,51 @@ static esp_err_t portal_scan_get_handler(httpd_req_t *req)
 
 static esp_err_t portal_ai_get_handler(httpd_req_t *req)
 {
-    char gemini_key[128] = {0};
-    char claude_key[128] = {0};
-    char openai_key[128] = {0};
-    char global_prompt[513] = {0};
-    uint8_t provider = (uint8_t)AI_PROVIDER_GEMINI;
-    char gemini_masked[24] = {0};
-    char claude_masked[24] = {0};
-    char openai_masked[24] = {0};
-    char e_gemini_masked[64] = {0};
-    char e_claude_masked[64] = {0};
-    char e_openai_masked[64] = {0};
-    char e_global_prompt[1100] = {0};
+    /* Large buffers on heap to keep HTTPD task stack small */
+    typedef struct {
+        char gemini_key[128];
+        char claude_key[128];
+        char openai_key[128];
+        char global_prompt[513];
+        char gemini_masked[24];
+        char claude_masked[24];
+        char openai_masked[24];
+        char e_gemini_masked[64];
+        char e_claude_masked[64];
+        char e_openai_masked[64];
+        char e_global_prompt[1100];
+    } ai_get_ctx_t;
 
-    storage_ai_load_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key, sizeof(gemini_key));
-    if (gemini_key[0] == '\0') {
-        storage_ai_load_key(gemini_key, sizeof(gemini_key));
+    ai_get_ctx_t *ctx = calloc(1, sizeof(ai_get_ctx_t));
+    if (!ctx) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
+        return ESP_ERR_NO_MEM;
     }
-    storage_ai_load_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key, sizeof(claude_key));
-    storage_ai_load_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key, sizeof(openai_key));
-    storage_ai_load_global_prompt(global_prompt, sizeof(global_prompt));
+
+    uint8_t provider = (uint8_t)AI_PROVIDER_GEMINI;
+    storage_ai_load_provider_key((uint8_t)AI_PROVIDER_GEMINI, ctx->gemini_key, sizeof(ctx->gemini_key));
+    if (ctx->gemini_key[0] == '\0') {
+        storage_ai_load_key(ctx->gemini_key, sizeof(ctx->gemini_key));
+    }
+    storage_ai_load_provider_key((uint8_t)AI_PROVIDER_CLAUDE, ctx->claude_key, sizeof(ctx->claude_key));
+    storage_ai_load_provider_key((uint8_t)AI_PROVIDER_OPENAI, ctx->openai_key, sizeof(ctx->openai_key));
+    storage_ai_load_global_prompt(ctx->global_prompt, sizeof(ctx->global_prompt));
     storage_ai_load_provider(&provider);
     if (provider > (uint8_t)AI_PROVIDER_OPENAI) {
         provider = (uint8_t)AI_PROVIDER_GEMINI;
     }
 
-    mask_secret_tail4(gemini_key, gemini_masked, sizeof(gemini_masked));
-    mask_secret_tail4(claude_key, claude_masked, sizeof(claude_masked));
-    mask_secret_tail4(openai_key, openai_masked, sizeof(openai_masked));
-    json_escape(e_gemini_masked, sizeof(e_gemini_masked), gemini_masked);
-    json_escape(e_claude_masked, sizeof(e_claude_masked), claude_masked);
-    json_escape(e_openai_masked, sizeof(e_openai_masked), openai_masked);
-    json_escape(e_global_prompt, sizeof(e_global_prompt), global_prompt);
+    mask_secret_tail4(ctx->gemini_key, ctx->gemini_masked, sizeof(ctx->gemini_masked));
+    mask_secret_tail4(ctx->claude_key, ctx->claude_masked, sizeof(ctx->claude_masked));
+    mask_secret_tail4(ctx->openai_key, ctx->openai_masked, sizeof(ctx->openai_masked));
+    json_escape(ctx->e_gemini_masked, sizeof(ctx->e_gemini_masked), ctx->gemini_masked);
+    json_escape(ctx->e_claude_masked, sizeof(ctx->e_claude_masked), ctx->claude_masked);
+    json_escape(ctx->e_openai_masked, sizeof(ctx->e_openai_masked), ctx->openai_masked);
+    json_escape(ctx->e_global_prompt, sizeof(ctx->e_global_prompt), ctx->global_prompt);
 
     char *json = malloc(1800);
     if (!json) {
+        free(ctx);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
         return ESP_ERR_NO_MEM;
     }
@@ -759,13 +448,14 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
                      "{\"gemini_configured\":%s,\"claude_configured\":%s,\"openai_configured\":%s,"
                      "\"gemini_key_masked\":\"%s\",\"claude_key_masked\":\"%s\",\"openai_key_masked\":\"%s\","
                      "\"provider\":\"%s\",\"global_prompt\":\"%s\"}",
-                     gemini_key[0] != '\0' ? "true" : "false",
-                     claude_key[0] != '\0' ? "true" : "false",
-                     openai_key[0] != '\0' ? "true" : "false",
-                     e_gemini_masked, e_claude_masked, e_openai_masked,
+                     ctx->gemini_key[0] != '\0' ? "true" : "false",
+                     ctx->claude_key[0] != '\0' ? "true" : "false",
+                     ctx->openai_key[0] != '\0' ? "true" : "false",
+                     ctx->e_gemini_masked, ctx->e_claude_masked, ctx->e_openai_masked,
                      ai_provider_name_from_id((int)provider),
-                     e_global_prompt);
+                     ctx->e_global_prompt);
 
+    free(ctx);
     httpd_resp_set_type(req, "application/json");
     esp_err_t ret = httpd_resp_send(req, json, n);
     free(json);
@@ -780,77 +470,95 @@ static esp_err_t portal_ai_post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    char gemini_key[128] = {0};
-    char claude_key[128] = {0};
-    char openai_key[128] = {0};
-    char global_prompt[1025] = {0};
-    char provider_name[16] = {0};
+    typedef struct {
+        char gemini_key[128];
+        char claude_key[128];
+        char openai_key[128];
+        char global_prompt[1025];
+        char provider_name[16];
+    } ai_post_ctx_t;
+    ai_post_ctx_t *ctx = calloc(1, sizeof(ai_post_ctx_t));
+    if (!ctx) {
+        free(body);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
+        return ESP_ERR_NO_MEM;
+    }
     int selected_provider = -1;
 
-    bool has_provider = get_form_value(body, "provider", provider_name, sizeof(provider_name));
-    bool has_gemini = get_form_value(body, "gemini_key", gemini_key, sizeof(gemini_key));
-    bool has_claude = get_form_value(body, "claude_key", claude_key, sizeof(claude_key));
-    bool has_openai = get_form_value(body, "openai_key", openai_key, sizeof(openai_key));
-    bool has_global_prompt = get_form_value(body, "global_prompt", global_prompt, sizeof(global_prompt));
+    bool has_provider = get_form_value(body, "provider", ctx->provider_name, sizeof(ctx->provider_name));
+    bool has_gemini = get_form_value(body, "gemini_key", ctx->gemini_key, sizeof(ctx->gemini_key));
+    bool has_claude = get_form_value(body, "claude_key", ctx->claude_key, sizeof(ctx->claude_key));
+    bool has_openai = get_form_value(body, "openai_key", ctx->openai_key, sizeof(ctx->openai_key));
+    bool has_global_prompt = get_form_value(body, "global_prompt", ctx->global_prompt, sizeof(ctx->global_prompt));
     bool clear_gemini = form_flag_enabled(body, "clear_gemini");
     bool clear_claude = form_flag_enabled(body, "clear_claude");
     bool clear_openai = form_flag_enabled(body, "clear_openai");
 
     if (!has_provider) {
-        free(body);
+        free(body); free(ctx);
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"missing_provider\"}");
     }
-    if (!parse_ai_provider(provider_name, &selected_provider)) {
-        free(body);
+    if (!parse_ai_provider(ctx->provider_name, &selected_provider)) {
+        free(body); free(ctx);
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"invalid_provider\"}");
     }
-    if (has_global_prompt && strlen(global_prompt) > 300) {
-        free(body);
+    if (has_global_prompt && strlen(ctx->global_prompt) > 300) {
+        free(body); free(ctx);
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"prompt_too_long\"}");
     }
     free(body);
 
-    if ((clear_gemini && has_gemini && gemini_key[0] != '\0') ||
-        (clear_claude && has_claude && claude_key[0] != '\0') ||
-        (clear_openai && has_openai && openai_key[0] != '\0')) {
+    if ((clear_gemini && has_gemini && ctx->gemini_key[0] != '\0') ||
+        (clear_claude && has_claude && ctx->claude_key[0] != '\0') ||
+        (clear_openai && has_openai && ctx->openai_key[0] != '\0')) {
+        free(ctx);
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"conflict_clear_and_set\"}");
     }
 
     if (clear_gemini) {
         if (storage_ai_clear_provider_key((uint8_t)AI_PROVIDER_GEMINI) != ESP_OK ||
             storage_ai_clear_legacy_key() != ESP_OK) {
+            free(ctx);
             return send_json_response(req, 500, "{\"ok\":false,\"error\":\"clear_failed_gemini\"}");
         }
     }
     if (clear_claude) {
         if (storage_ai_clear_provider_key((uint8_t)AI_PROVIDER_CLAUDE) != ESP_OK) {
+            free(ctx);
             return send_json_response(req, 500, "{\"ok\":false,\"error\":\"clear_failed_claude\"}");
         }
     }
     if (clear_openai) {
         if (storage_ai_clear_provider_key((uint8_t)AI_PROVIDER_OPENAI) != ESP_OK) {
+            free(ctx);
             return send_json_response(req, 500, "{\"ok\":false,\"error\":\"clear_failed_openai\"}");
         }
     }
 
-    if (has_gemini && gemini_key[0] != '\0' &&
-        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_GEMINI, gemini_key) != ESP_OK) {
+    if (has_gemini && ctx->gemini_key[0] != '\0' &&
+        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_GEMINI, ctx->gemini_key) != ESP_OK) {
+        free(ctx);
         return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed_gemini\"}");
     }
-    if (has_claude && claude_key[0] != '\0' &&
-        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_CLAUDE, claude_key) != ESP_OK) {
+    if (has_claude && ctx->claude_key[0] != '\0' &&
+        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_CLAUDE, ctx->claude_key) != ESP_OK) {
+        free(ctx);
         return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed_claude\"}");
     }
-    if (has_openai && openai_key[0] != '\0' &&
-        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_OPENAI, openai_key) != ESP_OK) {
+    if (has_openai && ctx->openai_key[0] != '\0' &&
+        storage_ai_save_provider_key((uint8_t)AI_PROVIDER_OPENAI, ctx->openai_key) != ESP_OK) {
+        free(ctx);
         return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed_openai\"}");
     }
     if (storage_ai_save_provider((uint8_t)selected_provider) != ESP_OK) {
+        free(ctx);
         return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed_provider\"}");
     }
-    if (has_global_prompt && storage_ai_save_global_prompt(global_prompt) != ESP_OK) {
+    if (has_global_prompt && storage_ai_save_global_prompt(ctx->global_prompt) != ESP_OK) {
+        free(ctx);
         return send_json_response(req, 500, "{\"ok\":false,\"error\":\"save_failed_prompt\"}");
     }
+    free(ctx);
 
     char json[224] = {0};
     snprintf(json, sizeof(json),
@@ -1124,72 +832,15 @@ static bool is_sta_connected(void)
     return true;
 }
 
-static bool begin_telegram_http_exclusive(bool *out_should_resume_tg,
-                                          bool *out_should_resume_sched)
-{
-    if (out_should_resume_tg) {
-        *out_should_resume_tg = false;
-    }
-    if (out_should_resume_sched) {
-        *out_should_resume_sched = false;
-    }
-
-    esp_err_t sched_pause_ret = scheduler_service_pause_quote_polling();
-    if (sched_pause_ret == ESP_OK) {
-        if (out_should_resume_sched) {
-            *out_should_resume_sched = true;
-        }
-    } else {
-        ESP_LOGW(TAG, "scheduler quote pause failed: %s", esp_err_to_name(sched_pause_ret));
-    }
-    esp_err_t sched_idle_ret = scheduler_service_wait_quote_fetch_idle(SCHED_HTTP_DRAIN_TIMEOUT_MS);
-    if (sched_idle_ret != ESP_OK) {
-        ESP_LOGW(TAG, "scheduler quote fetch not idle: %s", esp_err_to_name(sched_idle_ret));
-    }
-
-    if (!telegram_bot_is_running()) {
-        return true;
-    }
-
-    bool was_paused = telegram_bot_is_polling_paused();
-    if (!was_paused) {
-        esp_err_t pause_ret = telegram_bot_pause_polling();
-        if (pause_ret != ESP_OK) {
-            ESP_LOGW(TAG, "telegram polling pause failed: %s", esp_err_to_name(pause_ret));
-        } else if (out_should_resume_tg) {
-            *out_should_resume_tg = true;
-        }
-    }
-
-    esp_err_t idle_ret = telegram_bot_wait_http_idle(TELEGRAM_HTTP_DRAIN_TIMEOUT_MS);
-    if (idle_ret != ESP_OK) {
-        ESP_LOGW(TAG, "telegram http not idle before portal request: %s", esp_err_to_name(idle_ret));
-    }
-    return true;
-}
-
-static void end_telegram_http_exclusive(bool should_resume_tg, bool should_resume_sched)
-{
-    if (should_resume_tg) {
-        esp_err_t resume_ret = telegram_bot_resume_polling();
-        if (resume_ret != ESP_OK) {
-            ESP_LOGW(TAG, "telegram polling resume failed: %s", esp_err_to_name(resume_ret));
-        }
-    }
-    if (should_resume_sched) {
-        esp_err_t sched_resume_ret = scheduler_service_resume_quote_polling();
-        if (sched_resume_ret != ESP_OK) {
-            ESP_LOGW(TAG, "scheduler quote resume failed: %s", esp_err_to_name(sched_resume_ret));
-        }
-    }
-}
+/* begin/end_telegram_http_exclusive removed: telegram commands now go through
+ * the telegram_task command queue, no exclusive access needed. */
 
 static esp_err_t portal_telegram_test_post_handler(httpd_req_t *req)
 {
     (void)req;
+    bool enabled = false;
     char token[TELEGRAM_TOKEN_MAX_LEN] = {0};
     char chat_id[TELEGRAM_CHAT_ID_MAX_LEN] = {0};
-    bool enabled = false;
 
     storage_tg_load_enabled(&enabled);
     storage_tg_load_bot_token(token, sizeof(token));
@@ -1203,32 +854,25 @@ static esp_err_t portal_telegram_test_post_handler(httpd_req_t *req)
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"no_internet\"}");
     }
 
-    bool should_resume_tg = false;
-    bool should_resume_sched = false;
-    int status_code = 0;
-    char detail[128] = {0};
-    char detail_escaped[192] = {0};
-    begin_telegram_http_exclusive(&should_resume_tg, &should_resume_sched);
-    esp_err_t ret = telegram_send_test_message(token, chat_id, "Core2 Telegram test: settings OK",
-                                               &status_code, detail, sizeof(detail));
-    end_telegram_http_exclusive(should_resume_tg, should_resume_sched);
-    if (ret != ESP_OK) {
-        json_escape(detail_escaped, sizeof(detail_escaped), detail);
+    tg_cmd_send_test_result_t r;
+    esp_err_t submit = telegram_bot_cmd_send_test(&r, 10000);
+    if (submit == ESP_ERR_TIMEOUT) {
+        return send_json_response(req, 504, "{\"ok\":false,\"error\":\"timeout\"}");
+    }
+    if (submit != ESP_OK) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"bot_unavailable\"}");
+    }
+    if (r.err != ESP_OK) {
+        char detail_escaped[192] = {0};
+        json_escape(detail_escaped, sizeof(detail_escaped), r.detail);
         char json[320] = {0};
-        if (status_code == 401 || status_code == 404) {
+        if (r.status_code == 401 || r.status_code == 404) {
             return send_json_response(req, 502, "{\"ok\":false,\"error\":\"invalid_token\"}");
-        }
-        if (status_code == 400 || status_code == 403) {
-            snprintf(json, sizeof(json),
-                     "{\"ok\":false,\"error\":\"send_failed\",\"detail\":\"http=%d %s\"}",
-                     status_code,
-                     detail_escaped[0] ? detail_escaped : "telegram_rejected");
-            return send_json_response(req, 502, json);
         }
         snprintf(json, sizeof(json),
                  "{\"ok\":false,\"error\":\"send_failed\",\"detail\":\"http=%d %s\"}",
-                 status_code,
-                 detail_escaped[0] ? detail_escaped : esp_err_to_name(ret));
+                 r.status_code,
+                 detail_escaped[0] ? detail_escaped : esp_err_to_name(r.err));
         return send_json_response(req, 502, json);
     }
 
@@ -1259,37 +903,29 @@ static esp_err_t portal_telegram_check_post_handler(httpd_req_t *req)
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"no_internet\"}");
     }
 
-    char bot_name[64] = {0};
-    char bot_username[64] = {0};
-    int status_code = 0;
-    bool should_resume_tg = false;
-    bool should_resume_sched = false;
-    begin_telegram_http_exclusive(&should_resume_tg, &should_resume_sched);
-    esp_err_t ret = telegram_get_me(token, bot_name, sizeof(bot_name), bot_username, sizeof(bot_username), &status_code);
-    end_telegram_http_exclusive(should_resume_tg, should_resume_sched);
-    if (ret != ESP_OK) {
-        if (status_code == 401 || status_code == 404) {
+    tg_cmd_get_me_result_t r;
+    esp_err_t submit = telegram_bot_cmd_get_me(token, &r, 10000);
+    if (submit == ESP_ERR_TIMEOUT) {
+        return send_json_response(req, 504, "{\"ok\":false,\"error\":\"timeout\"}");
+    }
+    if (submit != ESP_OK) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"bot_unavailable\"}");
+    }
+    if (r.err != ESP_OK) {
+        if (r.status_code == 401 || r.status_code == 404) {
             return send_json_response(req, 502, "{\"ok\":false,\"error\":\"invalid_token\"}");
         }
-        if (ret == ESP_ERR_HTTP_CONNECT || status_code == 0) {
-            char err_buf[128] = {0};
-            snprintf(err_buf, sizeof(err_buf),
-                     "{\"ok\":false,\"error\":\"connect_failed\",\"detail\":\"http=%d esp=%s\"}",
-                     status_code, esp_err_to_name(ret));
-            return send_json_response(req, 502, err_buf);
-        }
-        ESP_LOGW(TAG, "telegram getMe failed: ret=%s status=%d", esp_err_to_name(ret), status_code);
         char err_buf[128] = {0};
         snprintf(err_buf, sizeof(err_buf),
                  "{\"ok\":false,\"error\":\"check_failed\",\"detail\":\"http=%d esp=%s\"}",
-                 status_code, esp_err_to_name(ret));
+                 r.status_code, esp_err_to_name(r.err));
         return send_json_response(req, 502, err_buf);
     }
 
     char e_name[96] = {0};
     char e_username[96] = {0};
-    json_escape(e_name, sizeof(e_name), bot_name);
-    json_escape(e_username, sizeof(e_username), bot_username);
+    json_escape(e_name, sizeof(e_name), r.bot_name);
+    json_escape(e_username, sizeof(e_username), r.bot_username);
 
     char json[320] = {0};
     snprintf(json, sizeof(json),
@@ -1326,35 +962,36 @@ static esp_err_t portal_telegram_chats_get_handler(httpd_req_t *req)
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"no_internet\"}");
     }
 
-    int status_code = 0;
-    char *resp_body = NULL;
-    bool should_resume_tg = false;
-    bool should_resume_sched = false;
-    begin_telegram_http_exclusive(&should_resume_tg, &should_resume_sched);
-    esp_err_t ret = telegram_get_updates(token, &resp_body, &status_code);
-    end_telegram_http_exclusive(should_resume_tg, should_resume_sched);
-    if (ret != ESP_OK || !resp_body || status_code != 200) {
-        ESP_LOGW(TAG, "telegram getUpdates failed: ret=%s status=%d body=%s",
-                 esp_err_to_name(ret), status_code, resp_body ? resp_body : "(null)");
-        free(resp_body);
+    tg_cmd_get_updates_result_t r;
+    esp_err_t submit = telegram_bot_cmd_get_updates(&r, 10000);
+    if (submit == ESP_ERR_TIMEOUT) {
+        return send_json_response(req, 504, "{\"ok\":false,\"error\":\"timeout\"}");
+    }
+    if (submit != ESP_OK) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"bot_unavailable\"}");
+    }
+    if (r.err != ESP_OK || !r.body || r.status_code != 200) {
+        ESP_LOGW(TAG, "telegram getUpdates failed: ret=%s status=%d",
+                 esp_err_to_name(r.err), r.status_code);
+        free(r.body);
         char err_buf[128];
-        if (status_code == 401) {
+        if (r.status_code == 401) {
             snprintf(err_buf, sizeof(err_buf),
                      "{\"ok\":false,\"error\":\"invalid_token\"}");
-        } else if (ret == ESP_ERR_HTTP_CONNECT || status_code == 0) {
+        } else if (r.status_code == 0) {
             snprintf(err_buf, sizeof(err_buf),
                      "{\"ok\":false,\"error\":\"no_internet\",\"detail\":\"http=%d esp=%s\"}",
-                     status_code, esp_err_to_name(ret));
+                     r.status_code, esp_err_to_name(r.err));
         } else {
             snprintf(err_buf, sizeof(err_buf),
                      "{\"ok\":false,\"error\":\"updates_failed\",\"detail\":\"http=%d esp=%s\"}",
-                     status_code, esp_err_to_name(ret));
+                     r.status_code, esp_err_to_name(r.err));
         }
         return send_json_response(req, 502, err_buf);
     }
 
-    cJSON *root = cJSON_Parse(resp_body);
-    free(resp_body);
+    cJSON *root = cJSON_Parse(r.body);
+    free(r.body);
     if (!root) {
         return send_json_response(req, 502, "{\"ok\":false,\"error\":\"bad_json\"}");
     }
@@ -1632,6 +1269,17 @@ static esp_err_t portal_wifi_post_handler(httpd_req_t *req)
                               "<p>成功後 Core2 會自動切回 STA 模式。</p></body></html>");
 }
 
+/* Set SO_LINGER on accepted portal sockets so close() sends RST instead of
+ * entering TIME_WAIT.  With TCP_MSL=60s each TIME_WAIT socket occupies one of
+ * the 16 lwIP socket slots for 120s; after a page load (~9 resources) this
+ * quickly exhausts available sockets for outbound HTTPS calls. */
+static esp_err_t portal_open_fn(httpd_handle_t hd, int sockfd)
+{
+    struct linger so_linger = { .l_onoff = 1, .l_linger = 0 };
+    setsockopt(sockfd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
+    return ESP_OK;
+}
+
 static esp_err_t start_portal_http_server(void)
 {
     if (s_httpd) {
@@ -1641,14 +1289,16 @@ static esp_err_t start_portal_http_server(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.max_uri_handlers = 40;
-    config.max_open_sockets = 3;
-    config.backlog_conn = 4;
+    config.max_open_sockets = 5;
+    config.backlog_conn = 5;
     config.lru_purge_enable = true;
     config.keep_alive_enable = false;
     config.recv_wait_timeout = 5;
     config.send_wait_timeout = 5;
-    /* Portal handlers include JSON assembly and multiple local buffers; keep headroom. */
-    config.stack_size = 8192;
+    /* Reduced from 8192: large handler buffers moved to heap so bot task
+     * (8KB) and HTTPD task can coexist within internal DRAM limits. */
+    config.stack_size = 4096;
+    config.open_fn = portal_open_fn;
 
     esp_err_t ret = httpd_start(&s_httpd, &config);
     if (ret != ESP_OK) {
@@ -1880,35 +1530,52 @@ esp_err_t portal_backend_start(void)
         return ESP_OK;
     }
 
-    ESP_LOGI(TAG, "[%u ms] portal_start begin", (unsigned)esp_log_timestamp());
+    ESP_LOGI(TAG, "[%u ms] portal_start begin — free internal DRAM: %u bytes",
+             (unsigned)esp_log_timestamp(),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
-    if (!s_ap_netif) {
-        s_ap_netif = esp_netif_create_default_wifi_ap();
+    bool sta_connected = wifi_manager_is_connected();
+    esp_err_t ret;
+
+    if (sta_connected) {
+        /* STA mode: WiFi already connected, serve portal on STA interface.
+         * No AP needed, no WiFi mode switch, no DRAM pressure. */
+        s_portal_sta_mode = true;
+        ESP_LOGI(TAG, "WiFi connected, starting portal in STA mode (no AP)");
+    } else {
+        /* AP mode: no WiFi connection, start pure AP for provisioning.
+         * Pure AP (not APSTA) avoids internal DRAM exhaustion. */
+        s_portal_sta_mode = false;
+
         if (!s_ap_netif) {
-            ESP_LOGE(TAG, "建立 AP netif 失敗");
-            return ESP_FAIL;
+            s_ap_netif = esp_netif_create_default_wifi_ap();
+            if (!s_ap_netif) {
+                ESP_LOGE(TAG, "建立 AP netif 失敗");
+                return ESP_FAIL;
+            }
         }
-    }
 
-    wifi_config_t ap_cfg = {0};
-    strlcpy((char *)ap_cfg.ap.ssid, s_portal_ap_ssid, sizeof(ap_cfg.ap.ssid));
-    strlcpy((char *)ap_cfg.ap.password, s_portal_ap_password, sizeof(ap_cfg.ap.password));
-    ap_cfg.ap.ssid_len = strlen((const char *)ap_cfg.ap.ssid);
-    ap_cfg.ap.channel = WIFI_PORTAL_AP_CHANNEL;
-    ap_cfg.ap.max_connection = WIFI_PORTAL_MAX_STA;
-    ap_cfg.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
+        wifi_config_t ap_cfg = {0};
+        strlcpy((char *)ap_cfg.ap.ssid, s_portal_ap_ssid, sizeof(ap_cfg.ap.ssid));
+        strlcpy((char *)ap_cfg.ap.password, s_portal_ap_password, sizeof(ap_cfg.ap.password));
+        ap_cfg.ap.ssid_len = strlen((const char *)ap_cfg.ap.ssid);
+        ap_cfg.ap.channel = WIFI_PORTAL_AP_CHANNEL;
+        ap_cfg.ap.max_connection = WIFI_PORTAL_MAX_STA;
+        ap_cfg.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
 
-    /* Keep STA online while portal is active so LAN IP access still works. */
-    esp_err_t ret = esp_wifi_set_mode(WIFI_MODE_APSTA);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "切換 APSTA 模式失敗: %s", esp_err_to_name(ret));
-        return ret;
-    }
+        ret = esp_wifi_set_mode(WIFI_MODE_AP);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "切換 AP 模式失敗: %s", esp_err_to_name(ret));
+            return ret;
+        }
 
-    ret = esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "設定 AP 參數失敗: %s", esp_err_to_name(ret));
-        return ret;
+        ret = esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "設定 AP 參數失敗: %s", esp_err_to_name(ret));
+            return ret;
+        }
+
+        ESP_LOGI(TAG, "No WiFi, starting portal in AP mode: %s", s_portal_ap_ssid);
     }
 
     ret = start_portal_http_server();
@@ -1917,7 +1584,13 @@ esp_err_t portal_backend_start(void)
     }
 
     s_portal_active = true;
-    ESP_LOGI(TAG, "Portal 已啟動 AP=%s URL=%s", s_portal_ap_ssid, s_portal_url);
+    if (s_portal_sta_mode) {
+        ESP_LOGI(TAG, "Portal started (STA mode) URL=http://%s",
+                 wifi_manager_get_ip());
+    } else {
+        ESP_LOGI(TAG, "Portal started (AP mode) AP=%s URL=%s",
+                 s_portal_ap_ssid, s_portal_url);
+    }
     return ESP_OK;
 }
 
@@ -1927,16 +1600,25 @@ esp_err_t portal_backend_stop(void)
         return ESP_OK;
     }
 
-    esp_err_t ret = esp_wifi_set_mode(WIFI_MODE_STA);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "切換 STA 模式失敗: %s", esp_err_to_name(ret));
-        return ret;
+    stop_portal_http_server();
+
+    if (!s_portal_sta_mode) {
+        /* Was in AP mode, switch back to STA */
+        esp_err_t ret = esp_wifi_set_mode(WIFI_MODE_STA);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "切換 STA 模式失敗: %s", esp_err_to_name(ret));
+        }
     }
 
-    stop_portal_http_server();
     s_portal_active = false;
+    s_portal_sta_mode = false;
     ESP_LOGI(TAG, "Portal 已停止");
     return ESP_OK;
+}
+
+bool portal_backend_is_sta_mode(void)
+{
+    return s_portal_active && s_portal_sta_mode;
 }
 
 bool portal_backend_is_active(void)

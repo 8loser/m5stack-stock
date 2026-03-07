@@ -60,6 +60,11 @@ bool network_portal_is_provisioning_portal_active(void)
     return portal_backend_is_active();
 }
 
+bool network_portal_is_portal_sta_mode(void)
+{
+    return portal_backend_is_sta_mode();
+}
+
 const char *network_portal_get_provisioning_ap_ssid(void)
 {
     return portal_backend_get_ap_ssid();

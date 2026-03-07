@@ -18,6 +18,7 @@ const char *network_portal_get_connected_ssid(void);
 esp_err_t network_portal_start_provisioning_portal(void);
 esp_err_t network_portal_stop_provisioning_portal(void);
 bool network_portal_is_provisioning_portal_active(void);
+bool network_portal_is_portal_sta_mode(void);
 const char *network_portal_get_provisioning_ap_ssid(void);
 const char *network_portal_get_provisioning_ap_password(void);
 const char *network_portal_get_provisioning_url(void);
