@@ -341,6 +341,10 @@ button, .menu-btn { cursor: pointer; }
   align-items: start;
 }
 
+.at-time-prompt {
+  grid-column: 1 / -1;
+}
+
 .interval-row-grid {
   display: grid;
   grid-template-columns: 220px 1fr;

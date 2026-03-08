@@ -91,7 +91,7 @@ function renderAtTimeList() {
       "<label>Time<div class='at-time-time-picker'>" +
       "<input class='at-time-input' type='time' step='60' value='" + safeTime + "' oninput=\"updateAtTimeField(" + item.id + ",'time',this.value)\"></div></label>" +
       "<label>Weekdays<div class='weekday-grid'>" + weekdaysHtml + "</div></label>" +
-      "<label>Prompt<textarea maxlength='512' oninput=\"updateAtTimeField(" + item.id + ",'prompt',this.value)\">" +
+      "<label class='at-time-prompt'>Prompt<textarea maxlength='512' oninput=\"updateAtTimeField(" + item.id + ",'prompt',this.value)\">" +
       safePrompt + "</textarea></label>" +
       "</div>" +
       "<div class='at-time-actions'>" +
