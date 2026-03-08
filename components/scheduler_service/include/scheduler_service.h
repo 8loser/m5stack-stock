@@ -4,6 +4,7 @@
 #include "freertos/queue.h"
 #include "storage.h"
 #include <stdint.h>
+#include <stddef.h>
 
 /**
  * @brief 初始化排程器（含 SNTP 時間同步）
@@ -65,3 +66,10 @@ esp_err_t scheduler_service_wait_quote_fetch_idle(uint32_t timeout_ms);
  * @brief 重新載入 AtTime entries（API 儲存後呼叫）
  */
 esp_err_t scheduler_service_reload_at_time(void);
+
+/**
+ * @brief 取得 AtTime 固定全域 prompt 陣列（唯讀）
+ * @param out_prompts 輸出陣列指標（可為 NULL）
+ * @return 陣列元素數量
+ */
+size_t scheduler_service_get_at_time_fixed_global_prompts(const char *const **out_prompts);

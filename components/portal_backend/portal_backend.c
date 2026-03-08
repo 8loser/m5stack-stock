@@ -6,6 +6,7 @@
 #include "storage.h"
 #include "app_config.h"
 #include "ai_provider.h"
+#include "scheduler_service.h"
 #include "telegram_bot.h"
 #include "esp_wifi.h"
 #include "esp_heap_caps.h"
@@ -389,6 +390,8 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
         char e_claude_masked[64];
         char e_openai_masked[64];
         char e_global_prompt[1100];
+        char e_fixed_prompt[1100];
+        char fixed_prompt_json[1400];
     } ai_get_ctx_t;
 
     ai_get_ctx_t *ctx = calloc(1, sizeof(ai_get_ctx_t));
@@ -418,23 +421,46 @@ static esp_err_t portal_ai_get_handler(httpd_req_t *req)
     json_escape(ctx->e_openai_masked, sizeof(ctx->e_openai_masked), ctx->openai_masked);
     json_escape(ctx->e_global_prompt, sizeof(ctx->e_global_prompt), ctx->global_prompt);
 
-    char *json = malloc(1800);
+    const char *const *fixed_prompts = NULL;
+    size_t fixed_prompt_count = scheduler_service_get_at_time_fixed_global_prompts(&fixed_prompts);
+    size_t fixed_pos = 0;
+    ctx->fixed_prompt_json[fixed_pos++] = '[';
+    for (size_t i = 0; i < fixed_prompt_count && fixed_pos + 4 < sizeof(ctx->fixed_prompt_json); ++i) {
+        if (!fixed_prompts || !fixed_prompts[i] || fixed_prompts[i][0] == '\0') {
+            continue;
+        }
+        json_escape(ctx->e_fixed_prompt, sizeof(ctx->e_fixed_prompt), fixed_prompts[i]);
+        int n = snprintf(ctx->fixed_prompt_json + fixed_pos,
+                         sizeof(ctx->fixed_prompt_json) - fixed_pos,
+                         "%s\"%s\"",
+                         fixed_pos > 1 ? "," : "",
+                         ctx->e_fixed_prompt);
+        if (n <= 0 || (size_t)n >= (sizeof(ctx->fixed_prompt_json) - fixed_pos)) {
+            break;
+        }
+        fixed_pos += (size_t)n;
+    }
+    ctx->fixed_prompt_json[fixed_pos++] = ']';
+    ctx->fixed_prompt_json[fixed_pos] = '\0';
+
+    char *json = malloc(3200);
     if (!json) {
         free(ctx);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
         return ESP_ERR_NO_MEM;
     }
 
-    int n = snprintf(json, 1800,
+    int n = snprintf(json, 3200,
                      "{\"gemini_configured\":%s,\"claude_configured\":%s,\"openai_configured\":%s,"
                      "\"gemini_key_masked\":\"%s\",\"claude_key_masked\":\"%s\",\"openai_key_masked\":\"%s\","
-                     "\"provider\":\"%s\",\"global_prompt\":\"%s\"}",
+                     "\"provider\":\"%s\",\"global_prompt\":\"%s\",\"fixed_global_prompt\":%s}",
                      ctx->gemini_key[0] != '\0' ? "true" : "false",
                      ctx->claude_key[0] != '\0' ? "true" : "false",
                      ctx->openai_key[0] != '\0' ? "true" : "false",
                      ctx->e_gemini_masked, ctx->e_claude_masked, ctx->e_openai_masked,
                      ai_provider_name_from_id((int)provider),
-                     ctx->e_global_prompt);
+                     ctx->e_global_prompt,
+                     ctx->fixed_prompt_json);
 
     free(ctx);
     httpd_resp_set_type(req, "application/json");

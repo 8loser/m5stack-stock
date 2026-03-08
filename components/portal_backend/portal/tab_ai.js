@@ -1,3 +1,21 @@
+function renderAiFixedPromptList(list) {
+  var el = document.getElementById("ai_fixed_prompt_list");
+  if (!el) return;
+
+  var fallback = [
+    "簡短回覆在320字以內，不要用冗詞。",
+    "用純文字回覆，不要使用任何 Markdown 格式。"
+  ];
+  var prompts = Array.isArray(list) && list.length > 0 ? list : fallback;
+  el.innerHTML = "";
+  prompts.forEach(function (text) {
+    if (!text) return;
+    var li = document.createElement("li");
+    li.textContent = text;
+    el.appendChild(li);
+  });
+}
+
 function loadAiConfig(generation) {
   return fetch("/api/ai")
     .then(function (r) { return r.json(); })
@@ -15,9 +33,11 @@ function loadAiConfig(generation) {
       claude.placeholder = c.claude_key_masked || "";
       openai.placeholder = c.openai_key_masked || "";
       document.getElementById("ai_global_prompt").value = c.global_prompt || "";
+      renderAiFixedPromptList(c.fixed_global_prompt);
       setAiProviderSelection((c && c.provider) ? c.provider : "gemini");
     })
     .catch(function () {
+      renderAiFixedPromptList(null);
       throw new Error("load_ai_config_failed");
     });
 }
