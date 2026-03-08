@@ -47,6 +47,7 @@ static void fire_at_time_entry(scheduler_service_ctx_t *ctx, uint8_t idx)
     ai_provider_get_active_api_key(api_key, sizeof(api_key));
 
     ai_analysis_result_t result = {0};
+    ESP_LOGI(TAG, "entry %u AI prompt:\n%s", (unsigned)idx, combined);
     ESP_LOGI(TAG, "entry %u firing AI call", (unsigned)idx);
     esp_err_t ret = ai_provider_analyze_prompt_sync(combined, api_key, &result);
     free(combined);
@@ -57,6 +58,9 @@ static void fire_at_time_entry(scheduler_service_ctx_t *ctx, uint8_t idx)
     }
 
     if (result.analysis[0] != '\0') {
+        ESP_LOGI(TAG, "entry %u AI result ready signal=%d confidence=%d len=%u",
+                 (unsigned)idx, (int)result.signal, (int)result.confidence,
+                 (unsigned)strlen(result.analysis));
         esp_err_t tg_ret = telegram_bot_send_text(result.analysis);
         if (tg_ret == ESP_OK) {
             ESP_LOGI(TAG, "entry %u telegram sent", (unsigned)idx);

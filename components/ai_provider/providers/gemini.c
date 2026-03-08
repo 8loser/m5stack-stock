@@ -144,6 +144,11 @@ static esp_err_t gemini_analyze(const stock_context_t *ctx,
         }
     }
 
+    if (result->analysis[0] == '\0' && text[0] != '\0') {
+        strlcpy(result->analysis, text, AI_ANALYSIS_MAX_LEN);
+        ESP_LOGI(TAG, "Gemini 回覆非 JSON，改用純文字 fallback");
+    }
+
     cJSON_Delete(resp);
     ESP_LOGI(TAG, "Gemini 分析完成: signal=%d confidence=%d",
              result->signal, result->confidence);

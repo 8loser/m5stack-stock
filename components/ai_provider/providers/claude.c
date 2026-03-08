@@ -128,6 +128,11 @@ static esp_err_t claude_analyze(const stock_context_t *ctx,
                 }
             }
         }
+
+        if (result->analysis[0] == '\0' && text[0] != '\0') {
+            strlcpy(result->analysis, text, AI_ANALYSIS_MAX_LEN);
+            ESP_LOGI(TAG, "Claude 回覆非 JSON，改用純文字 fallback");
+        }
     }
 
     cJSON_Delete(resp);
