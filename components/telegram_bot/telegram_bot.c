@@ -104,6 +104,86 @@ static size_t url_encode_component(const char *src, char *dst, size_t dst_size)
     return di;
 }
 
+static bool is_utf8_continuation(unsigned char b)
+{
+    return (b & 0xC0U) == 0x80U;
+}
+
+static size_t utf8_safe_prefix_len(const char *s, size_t len)
+{
+    size_t i = 0;
+    while (i < len) {
+        unsigned char b0 = (unsigned char)s[i];
+        if (b0 <= 0x7FU) {
+            i += 1;
+            continue;
+        }
+        if (b0 >= 0xC2U && b0 <= 0xDFU) {
+            if (i + 1 >= len) break;
+            unsigned char b1 = (unsigned char)s[i + 1];
+            if (!is_utf8_continuation(b1)) break;
+            i += 2;
+            continue;
+        }
+        if (b0 == 0xE0U) {
+            if (i + 2 >= len) break;
+            unsigned char b1 = (unsigned char)s[i + 1];
+            unsigned char b2 = (unsigned char)s[i + 2];
+            if (!(b1 >= 0xA0U && b1 <= 0xBFU) || !is_utf8_continuation(b2)) break;
+            i += 3;
+            continue;
+        }
+        if ((b0 >= 0xE1U && b0 <= 0xECU) || (b0 >= 0xEEU && b0 <= 0xEFU)) {
+            if (i + 2 >= len) break;
+            unsigned char b1 = (unsigned char)s[i + 1];
+            unsigned char b2 = (unsigned char)s[i + 2];
+            if (!is_utf8_continuation(b1) || !is_utf8_continuation(b2)) break;
+            i += 3;
+            continue;
+        }
+        if (b0 == 0xEDU) {
+            if (i + 2 >= len) break;
+            unsigned char b1 = (unsigned char)s[i + 1];
+            unsigned char b2 = (unsigned char)s[i + 2];
+            if (!(b1 >= 0x80U && b1 <= 0x9FU) || !is_utf8_continuation(b2)) break;
+            i += 3;
+            continue;
+        }
+        if (b0 == 0xF0U) {
+            if (i + 3 >= len) break;
+            unsigned char b1 = (unsigned char)s[i + 1];
+            unsigned char b2 = (unsigned char)s[i + 2];
+            unsigned char b3 = (unsigned char)s[i + 3];
+            if (!(b1 >= 0x90U && b1 <= 0xBFU) ||
+                !is_utf8_continuation(b2) || !is_utf8_continuation(b3)) break;
+            i += 4;
+            continue;
+        }
+        if (b0 >= 0xF1U && b0 <= 0xF3U) {
+            if (i + 3 >= len) break;
+            unsigned char b1 = (unsigned char)s[i + 1];
+            unsigned char b2 = (unsigned char)s[i + 2];
+            unsigned char b3 = (unsigned char)s[i + 3];
+            if (!is_utf8_continuation(b1) ||
+                !is_utf8_continuation(b2) || !is_utf8_continuation(b3)) break;
+            i += 4;
+            continue;
+        }
+        if (b0 == 0xF4U) {
+            if (i + 3 >= len) break;
+            unsigned char b1 = (unsigned char)s[i + 1];
+            unsigned char b2 = (unsigned char)s[i + 2];
+            unsigned char b3 = (unsigned char)s[i + 3];
+            if (!(b1 >= 0x80U && b1 <= 0x8FU) ||
+                !is_utf8_continuation(b2) || !is_utf8_continuation(b3)) break;
+            i += 4;
+            continue;
+        }
+        break;
+    }
+    return i;
+}
+
 static esp_err_t tg_http_event_handler(esp_http_client_event_t *evt)
 {
     tg_http_ctx_t *ctx = (tg_http_ctx_t *)evt->user_data;
@@ -227,6 +307,7 @@ static esp_err_t tg_send_message(const char *token, const char *chat_id, const c
 
     char encoded_chat[96] = {0};
     char url[320] = {0};
+    char *safe_text = NULL;
     char *encoded_text = NULL;
     char *post_data = NULL;
     char *resp = NULL;
@@ -235,12 +316,31 @@ static esp_err_t tg_send_message(const char *token, const char *chat_id, const c
 
     url_encode_component(chat_id, encoded_chat, sizeof(encoded_chat));
     size_t text_len = strlen(text);
-    size_t encoded_text_cap = (text_len * 3U) + 1U;
+    size_t safe_len = utf8_safe_prefix_len(text, text_len);
+    if (safe_len == 0) {
+        ret = ESP_ERR_INVALID_ARG;
+        goto cleanup;
+    }
+    if (safe_len < text_len) {
+        ESP_LOGW(TAG, "sendMessage UTF-8 tail trimmed raw_len=%u safe_len=%u",
+                 (unsigned)text_len, (unsigned)safe_len);
+    }
+    safe_text = malloc(safe_len + 1U);
+    if (!safe_text) {
+        ret = ESP_ERR_NO_MEM;
+        goto cleanup;
+    }
+    memcpy(safe_text, text, safe_len);
+    safe_text[safe_len] = '\0';
+
+    ESP_LOGI(TAG, "sendMessage text len=%u", (unsigned)safe_len);
+
+    size_t encoded_text_cap = (safe_len * 3U) + 1U;
     encoded_text = malloc(encoded_text_cap);
     if (!encoded_text) {
         return ESP_ERR_NO_MEM;
     }
-    url_encode_component(text, encoded_text, encoded_text_cap);
+    url_encode_component(safe_text, encoded_text, encoded_text_cap);
 
     size_t post_data_len = strlen("chat_id=&text=") + strlen(encoded_chat) + strlen(encoded_text) + 1U;
     post_data = malloc(post_data_len);
@@ -287,6 +387,7 @@ cleanup:
     free(resp);
     free(post_data);
     free(encoded_text);
+    free(safe_text);
     return ret;
 }
 

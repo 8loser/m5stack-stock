@@ -25,6 +25,7 @@
 - 韌體功能預設採非阻塞設計：耗時流程應放在獨立 task，模組間以 queue/event bus 解耦；避免在 UI 主迴圈或高頻控制路徑執行長時間同步網路呼叫。
 - 週期性工作需控制輪詢頻率，避免過高 polling；timeout/retry/backoff 必須可設定或可觀測。
 - 外部訊息與 JSON 處理需設定大小上限（request/response buffer、解析長度、欄位長度），避免無界成長造成記憶體壓力。
+- AtTime 觸發 AI 前，若 Telegram polling 正在運行，需先 pause 並等待 in-flight HTTP idle，再進行 AI 呼叫，完成後再 resume，避免共享網路資源互相干擾。
 - 需保留基本記憶體可觀測性：至少監控 heap 可用量趨勢與任務 stack high-water mark，並在效能調校/回歸時附前後對照。
 
 ### Internal DRAM 限制（Core2 硬體紅線）

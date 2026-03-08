@@ -12,9 +12,14 @@ static const char *TAG = "ai_gemini";
 #define GEMINI_URL_FMT \
     "https://generativelanguage.googleapis.com/v1/models/" \
     "gemini-2.5-flash:generateContent?key=%s"
-#define RESP_BUF_SIZE   4096
+#define RESP_BUF_SIZE   8192
 
-typedef struct { char *buf; size_t size; size_t len; } resp_ctx_t;
+typedef struct {
+    char *buf;
+    size_t size;
+    size_t len;
+    bool truncated;
+} resp_ctx_t;
 
 static esp_err_t resp_handler(esp_http_client_event_t *evt)
 {
@@ -23,6 +28,8 @@ static esp_err_t resp_handler(esp_http_client_event_t *evt)
         if (ctx->len + evt->data_len < ctx->size) {
             memcpy(ctx->buf + ctx->len, evt->data, evt->data_len);
             ctx->len += evt->data_len;
+        } else {
+            ctx->truncated = true;
         }
     }
     return ESP_OK;
@@ -62,7 +69,7 @@ static esp_err_t gemini_analyze(const stock_context_t *ctx,
     char *resp_buf = malloc(RESP_BUF_SIZE);
     if (!resp_buf) { free(body); return ESP_ERR_NO_MEM; }
 
-    resp_ctx_t resp_ctx = {.buf = resp_buf, .size = RESP_BUF_SIZE - 1, .len = 0};
+    resp_ctx_t resp_ctx = {.buf = resp_buf, .size = RESP_BUF_SIZE - 1, .len = 0, .truncated = false};
 
     esp_http_client_config_t cfg = {
         .url              = url,
@@ -93,11 +100,23 @@ static esp_err_t gemini_analyze(const stock_context_t *ctx,
 
     resp_buf[resp_ctx.len] = '\0';
 
+    if (resp_ctx.truncated) {
+        ESP_LOGW(TAG, "Gemini response truncated len=%u cap=%u",
+                 (unsigned)resp_ctx.len, (unsigned)(RESP_BUF_SIZE - 1));
+        free(resp_buf);
+        strlcpy(result->analysis, "Gemini 回應過長被截斷", AI_ANALYSIS_MAX_LEN);
+        return ESP_FAIL;
+    }
+
     /* 解析 Gemini 回應：candidates[0].content.parts[0].text */
     cJSON *resp = cJSON_Parse(resp_buf);
     free(resp_buf);
 
-    if (!resp) { return ESP_FAIL; }
+    if (!resp) {
+        ESP_LOGW(TAG, "Gemini response JSON parse failed");
+        strlcpy(result->analysis, "Gemini 回應解析失敗", AI_ANALYSIS_MAX_LEN);
+        return ESP_FAIL;
+    }
 
     const char *text = NULL;
     cJSON *candidates = cJSON_GetObjectItem(resp, "candidates");
@@ -113,6 +132,8 @@ static esp_err_t gemini_analyze(const stock_context_t *ctx,
     }
 
     if (!text) {
+        ESP_LOGW(TAG, "Gemini response missing candidates text");
+        strlcpy(result->analysis, "Gemini 回應缺少 text", AI_ANALYSIS_MAX_LEN);
         cJSON_Delete(resp);
         return ESP_FAIL;
     }

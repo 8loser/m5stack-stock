@@ -206,6 +206,12 @@ esp_err_t ai_provider_analyze_prompt_sync(const char *prompt,
     esp_err_t ret = s_providers[s_current_type]->analyze(
                         &empty_ctx, prompt, active_key, result);
     result->error_code = ret;
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "prompt analyze failed provider=%s ret=%s detail=%s",
+                 s_providers[s_current_type]->name,
+                 esp_err_to_name(ret),
+                 result->analysis[0] ? result->analysis : "(none)");
+    }
     return ret;
 }
 

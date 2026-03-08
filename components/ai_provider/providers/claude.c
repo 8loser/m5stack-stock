@@ -96,7 +96,11 @@ static esp_err_t claude_analyze(const stock_context_t *ctx,
     /* 解析 Claude 回應：content[0].text */
     cJSON *resp = cJSON_Parse(resp_buf);
     free(resp_buf);
-    if (!resp) return ESP_FAIL;
+    if (!resp) {
+        ESP_LOGW(TAG, "Claude response JSON parse failed");
+        strlcpy(result->analysis, "Claude 回應解析失敗", AI_ANALYSIS_MAX_LEN);
+        return ESP_FAIL;
+    }
 
     const char *text = NULL;
     cJSON *content = cJSON_GetObjectItem(resp, "content");
@@ -106,33 +110,38 @@ static esp_err_t claude_analyze(const stock_context_t *ctx,
         if (t && cJSON_IsString(t)) text = t->valuestring;
     }
 
-    if (text) {
-        const char *js = strchr(text, '{');
-        const char *je = strrchr(text, '}');
-        if (js && je && je > js) {
-            char tmp[512];
-            size_t l = je - js + 1;
-            if (l < sizeof(tmp)) {
-                memcpy(tmp, js, l);
-                tmp[l] = '\0';
-                cJSON *ai_json = cJSON_Parse(tmp);
-                if (ai_json) {
-                    cJSON *sig  = cJSON_GetObjectItem(ai_json, "signal");
-                    cJSON *conf = cJSON_GetObjectItem(ai_json, "confidence");
-                    cJSON *anal = cJSON_GetObjectItem(ai_json, "analysis");
-                    result->signal     = parse_signal(sig ? sig->valuestring : NULL);
-                    result->confidence = conf ? conf->valueint : 50;
-                    if (anal && cJSON_IsString(anal))
-                        strlcpy(result->analysis, anal->valuestring, AI_ANALYSIS_MAX_LEN);
-                    cJSON_Delete(ai_json);
-                }
+    if (!text) {
+        ESP_LOGW(TAG, "Claude response missing content text");
+        strlcpy(result->analysis, "Claude 回應缺少 text", AI_ANALYSIS_MAX_LEN);
+        cJSON_Delete(resp);
+        return ESP_FAIL;
+    }
+
+    const char *js = strchr(text, '{');
+    const char *je = strrchr(text, '}');
+    if (js && je && je > js) {
+        char tmp[512];
+        size_t l = je - js + 1;
+        if (l < sizeof(tmp)) {
+            memcpy(tmp, js, l);
+            tmp[l] = '\0';
+            cJSON *ai_json = cJSON_Parse(tmp);
+            if (ai_json) {
+                cJSON *sig  = cJSON_GetObjectItem(ai_json, "signal");
+                cJSON *conf = cJSON_GetObjectItem(ai_json, "confidence");
+                cJSON *anal = cJSON_GetObjectItem(ai_json, "analysis");
+                result->signal     = parse_signal(sig ? sig->valuestring : NULL);
+                result->confidence = conf ? conf->valueint : 50;
+                if (anal && cJSON_IsString(anal))
+                    strlcpy(result->analysis, anal->valuestring, AI_ANALYSIS_MAX_LEN);
+                cJSON_Delete(ai_json);
             }
         }
+    }
 
-        if (result->analysis[0] == '\0' && text[0] != '\0') {
-            strlcpy(result->analysis, text, AI_ANALYSIS_MAX_LEN);
-            ESP_LOGI(TAG, "Claude 回覆非 JSON，改用純文字 fallback");
-        }
+    if (result->analysis[0] == '\0' && text[0] != '\0') {
+        strlcpy(result->analysis, text, AI_ANALYSIS_MAX_LEN);
+        ESP_LOGI(TAG, "Claude 回覆非 JSON，改用純文字 fallback");
     }
 
     cJSON_Delete(resp);

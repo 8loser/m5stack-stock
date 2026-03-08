@@ -27,6 +27,7 @@ typedef struct {
     uint8_t           at_time_count;
     uint8_t           at_time_fired_bitmask;
     int8_t            at_time_prev_minute;
+    uint32_t          at_time_fail_notify_ms[MAX_AT_TIME_COUNT];
 } scheduler_service_ctx_t;
 
 scheduler_service_ctx_t *scheduler_service_ctx(void);
