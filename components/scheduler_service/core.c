@@ -48,9 +48,13 @@ static void scheduler_service_task(void *arg)
             ctx, (bits & SCHEDULER_SERVICE_NOTIFY_FORCE_QUOTE_BIT) != 0);
 
         if (bits & SCHEDULER_SERVICE_NOTIFY_FORCE_QUOTE_BIT) {
-            scheduler_service_do_fetch_quotes(ctx, true);
+            if (!ctx->quote_polling_paused) {
+                scheduler_service_do_fetch_quotes(ctx, true);
+            }
         } else if (bits & SCHEDULER_SERVICE_NOTIFY_QUOTE_BIT) {
-            scheduler_service_do_fetch_quotes(ctx, false);
+            if (!ctx->quote_polling_paused) {
+                scheduler_service_do_fetch_quotes(ctx, false);
+            }
         }
 
         scheduler_service_check_at_time(ctx);
@@ -152,6 +156,10 @@ void scheduler_service_get_config(schedule_config_t *cfg)
 
 void scheduler_service_trigger_quote_now(void)
 {
+    if (s_ctx.quote_polling_paused) {
+        ESP_LOGW(TAG, "trigger_quote_now ignored: polling paused (portal active)");
+        return;
+    }
     if (s_ctx.scheduler_task) {
         xTaskNotify(s_ctx.scheduler_task, SCHEDULER_SERVICE_NOTIFY_FORCE_QUOTE_BIT, eSetBits);
     }
@@ -242,5 +250,10 @@ esp_err_t scheduler_service_resume_quote_polling(void)
     }
     s_ctx.quote_polling_paused = false;
     ESP_LOGI(TAG, "已恢復週期報價抓取");
+
+    /* Trigger immediate fetch so dashboard shows fresh data right away */
+    if (s_ctx.scheduler_task) {
+        xTaskNotify(s_ctx.scheduler_task, SCHEDULER_SERVICE_NOTIFY_FORCE_QUOTE_BIT, eSetBits);
+    }
     return ESP_OK;
 }

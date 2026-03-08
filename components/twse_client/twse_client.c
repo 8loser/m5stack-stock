@@ -388,21 +388,32 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* 組合 ex_ch 參數：tse_2330.tw|tse_2317.tw|... */
-    char ex_ch[256] = {0};
-    for (int i = 0; i < count; i++) {
-        if (i > 0) strlcat(ex_ch, "|", sizeof(ex_ch));
-        char tmp[20];
-        snprintf(tmp, sizeof(tmp), "tse_%s.tw", symbols[i]);
-        strlcat(ex_ch, tmp, sizeof(ex_ch));
+    /* Heap-allocate url+ex_ch to keep stack small (called from HTTPD 4KB stack) */
+    char *ex_ch = calloc(1, 256);
+    char *url = malloc(512);
+    if (!ex_ch || !url) {
+        free(ex_ch);
+        free(url);
+        return ESP_ERR_NO_MEM;
     }
 
-    char url[512];
-    snprintf(url, sizeof(url),
+    /* 組合 ex_ch 參數：tse_2330.tw|tse_2317.tw|... */
+    for (int i = 0; i < count; i++) {
+        if (i > 0) strlcat(ex_ch, "|", 256);
+        char tmp[20];
+        snprintf(tmp, sizeof(tmp), "tse_%s.tw", symbols[i]);
+        strlcat(ex_ch, tmp, 256);
+    }
+
+    snprintf(url, 512,
              "%s?ex_ch=%s&json=1&delay=0", TWSE_BASE_URL, ex_ch);
+    free(ex_ch);
 
     char *buf = malloc(HTTP_BUF_INIT_SIZE);
-    if (!buf) return ESP_ERR_NO_MEM;
+    if (!buf) {
+        free(url);
+        return ESP_ERR_NO_MEM;
+    }
 
     http_ctx_t ctx = {
         .buf = buf,
@@ -423,6 +434,7 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
     esp_err_t ret = esp_http_client_perform(client);
     int status_code = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
+    free(url);
 
     if (ret != ESP_OK || ctx.overflow) {
         ESP_LOGE(TAG, "HTTP 請求失敗: err=%s status=%d len=%u overflow=%d",
@@ -544,12 +556,17 @@ esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *o
     memset(out, 0, sizeof(*out));
     strlcpy(out->symbol, symbol, sizeof(out->symbol));
 
-    char url[512];
-    snprintf(url, sizeof(url),
+    /* Heap-allocate url to keep stack small (called from HTTPD 4KB stack) */
+    char *url = malloc(512);
+    if (!url) return ESP_ERR_NO_MEM;
+    snprintf(url, 512,
              "%s?ex_ch=tse_%s.tw&json=1&delay=0", TWSE_BASE_URL, symbol);
 
     char *buf = malloc(HTTP_BUF_INIT_SIZE);
-    if (!buf) return ESP_ERR_NO_MEM;
+    if (!buf) {
+        free(url);
+        return ESP_ERR_NO_MEM;
+    }
 
     http_ctx_t ctx = {
         .buf = buf,
@@ -570,6 +587,7 @@ esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *o
     esp_err_t ret = esp_http_client_perform(client);
     int status_code = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
+    free(url);
 
     if (ret != ESP_OK || ctx.overflow) {
         ESP_LOGE(TAG, "驗證代號 HTTP 失敗: err=%s status=%d len=%u overflow=%d",

@@ -35,6 +35,7 @@
 | Task stack 預設用 internal DRAM | 新增 task 前必須確認剩餘 internal DRAM 夠用 |
 | PSRAM 不可作 task stack | NVS/SPI flash 操作時 cache 關閉，PSRAM 不可存取（assert crash） |
 | APSTA 模式不可用 | WiFi AP+STA 同時運行需要大量 internal DRAM，Core2 上會 crash（`ieee80211_hostap_attach`） |
+| HTTPD handler 禁止 outbound HTTPS fetch | handler 內呼叫 `twse_client_fetch` 會與 portal inbound sockets 搶 lwIP socket slot → crash；僅允許單次驗證呼叫（`twse_client_validate_symbol`），報價由 scheduler resume 後補抓 |
 | HTTPD handler 堆疊紅線 | stack 4KB，框架開銷後可用 ~2KB；含 `prompt[513]` 的 struct（`stock_alert_config_t` 522B、`at_time_entry_t` 516B）單個就吃半個 stack，陣列直接爆；>128B 的 local struct/array 一律 `calloc` 到 heap |
 | `esp_http_client` 非 thread-safe | 不可從其他 thread 呼叫 `esp_http_client_close/cleanup`；stop 只設 flag，讓 owner task 自行清理 |
 | TCP TIME_WAIT 佔 socket slot | `CONFIG_LWIP_TCP_MSL=3000`（6s TIME_WAIT）；portal server 用 SO_LINGER 送 RST |
@@ -45,6 +46,14 @@
 |-----------|------------|----------|------|
 | 已連線 | STA（不切 WiFi） | pause + cmd queue | 非阻塞，外網可用 |
 | 未連線 | 純 AP | stop（釋放 DRAM） | 配網用，無外網 |
+
+### Portal 期間網路資源協調
+
+- HTTPD handler 內禁止 outbound HTTPS quote fetch（twse_client_fetch）；僅允許 `twse_client_validate_symbol`（單次驗證）
+- `scheduler_service_trigger_quote_now()` 需檢查 `quote_polling_paused`，portal 期間不觸發
+- scheduler task 的 force/normal fetch 都需 `quote_polling_paused` guard
+- `scheduler_service_resume_quote_polling()` 立即 force fetch（portal 關閉 → dashboard 即時有資料）
+- 參考模式：telegram bot 的 pause → wait_http_idle → resume 三步驟
 
 ## Portal 前端驗收基線
 - Portal UI 必須支援手機與桌面瀏覽（`360px` / `768px` / `1280px`）。
@@ -97,3 +106,9 @@
 - 若任務中途改派（例如 `m5stack-core2-dev` 轉 `m5stack-core2-flash-agent`），需再補一則路由切換訊息。
 - 計劃中的驗證步驟（build/flash/monitor）也需標記由哪個 skill 執行，避免實作時遺漏路由切換。
 - 當 `Routing: m5stack-portal-web-dev` 時，需補一行：`Scope: portal static files only; No firmware/API changes`。
+
+## 重複異常修正升級通知
+- 同一任務內，若同類異常修正次數超過兩次（第 3 次起），必須主動通知使用者。
+- 通知內容需包含前兩次調整摘要：每次都要交代「改了什麼、結果如何、為何尚未解決」。
+- 通知內容需補上本輪方向建議：至少提供兩個可選方向，並標示建議採用方向與理由，供使用者判斷是否調整策略。
+- 「同類異常」以同一症狀且同一主要根因群組為判定基準；若已確認為新根因，可重新計數。

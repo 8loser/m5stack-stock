@@ -81,13 +81,17 @@ static bool get_form_value(const char *body, const char *key, char *out, size_t 
             const char *end = strchr(p, '&');
             size_t raw_len = end ? (size_t)(end - p) : strlen(p);
 
-            char tmp[PORTAL_BODY_MAX_LEN + 1] = {0};
             if (raw_len > PORTAL_BODY_MAX_LEN) {
                 raw_len = PORTAL_BODY_MAX_LEN;
+            }
+            char *tmp = malloc(raw_len + 1);
+            if (!tmp) {
+                return false;
             }
             memcpy(tmp, p, raw_len);
             tmp[raw_len] = '\0';
             url_decode(out, out_len, tmp);
+            free(tmp);
             return true;
         }
 
@@ -319,20 +323,6 @@ static void ensure_stock_meta_cached(const char *symbol)
     }
 }
 
-static const stock_quote_t *find_quote_by_symbol(const stock_quote_t *quotes, int count, const char *symbol)
-{
-    if (!quotes || !symbol || symbol[0] == '\0' || count <= 0) {
-        return NULL;
-    }
-
-    for (int i = 0; i < count; i++) {
-        if (strcmp(quotes[i].symbol, symbol) == 0) {
-            return &quotes[i];
-        }
-    }
-    return NULL;
-}
-
 static bool quote_is_available(const stock_quote_t *quote)
 {
     return quote && (quote->is_valid || quote->is_market_closed);
@@ -455,9 +445,17 @@ static esp_err_t parse_alert_config_from_json(cJSON *alert_obj, stock_alert_conf
 
 static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
 {
-    stock_list_t list = {0};
-    esp_err_t ret = storage_stocks_load(&list);
+    /* Heap-allocate all large structs to stay within HTTPD 4KB stack */
+    stock_list_t *list = calloc(1, sizeof(stock_list_t));
+    stock_alert_config_t *alert_cfg = calloc(1, sizeof(stock_alert_config_t));
+    if (!list || !alert_cfg) {
+        free(list); free(alert_cfg);
+        return send_json_error(req, 500, "no_memory");
+    }
+
+    esp_err_t ret = storage_stocks_load(list);
     if (ret != ESP_OK) {
+        free(list); free(alert_cfg);
         return send_json_error(req, 500, "load_failed");
     }
 
@@ -466,38 +464,22 @@ static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
     if (!root || !items) {
         cJSON_Delete(root);
         cJSON_Delete(items);
+        free(list); free(alert_cfg);
         return send_json_error(req, 500, "no_memory");
     }
 
-    cJSON_AddNumberToObject(root, "count", list.count);
+    cJSON_AddNumberToObject(root, "count", list->count);
     cJSON_AddBoolToObject(root, "ok", true);
     cJSON_AddItemToObject(root, "items", items);
 
-    /* Allocate large buffers on heap to avoid HTTPD 4KB stack overflow */
-    stock_quote_t *quotes = calloc(MAX_STOCK_COUNT, sizeof(stock_quote_t));
-    stock_alert_config_t *alert_cfg = malloc(sizeof(stock_alert_config_t));
-    if (!quotes || !alert_cfg) {
-        free(quotes);
-        free(alert_cfg);
-        cJSON_Delete(root);
-        return send_json_error(req, 500, "no_memory");
-    }
-
-    bool has_quote_data = false;
-    if (list.count > 0 && is_sta_connected()) {
-        if (twse_client_fetch(list.symbols, list.count, quotes) == ESP_OK) {
-            has_quote_data = true;
-        } else {
-            ESP_LOGW(TAG, "stocks_get quote fetch failed");
-        }
-    }
-
-    for (int i = 0; i < list.count; i++) {
-        ensure_stock_meta_cached(list.symbols[i]);
+    /* No outbound HTTPS from HTTPD handler — avoid socket contention.
+     * Quote data is updated by scheduler after portal closes. */
+    for (int i = 0; i < list->count; i++) {
+        ensure_stock_meta_cached(list->symbols[i]);
         const char *name = "";
         const char *abbr = "";
         const char *industry = "";
-        stock_meta_cache_t *meta = find_stock_meta(list.symbols[i]);
+        stock_meta_cache_t *meta = find_stock_meta(list->symbols[i]);
         if (meta) {
             name = meta->name;
             abbr = meta->abbr;
@@ -506,29 +488,26 @@ static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
 
         cJSON *item = cJSON_CreateObject();
         if (!item) {
-            free(quotes);
-            free(alert_cfg);
+            free(list); free(alert_cfg);
             cJSON_Delete(root);
             return send_json_error(req, 500, "no_memory");
         }
-        cJSON_AddStringToObject(item, "symbol", list.symbols[i]);
+        cJSON_AddStringToObject(item, "symbol", list->symbols[i]);
         cJSON_AddStringToObject(item, "name", name ? name : "");
         cJSON_AddStringToObject(item, "abbr", abbr ? abbr : "");
         cJSON_AddStringToObject(item, "industry", industry ? industry : "");
         memset(alert_cfg, 0, sizeof(stock_alert_config_t));
-        if (storage_stock_alert_config_load(list.symbols[i], alert_cfg) != ESP_OK) {
-            free(quotes);
-            free(alert_cfg);
+        if (storage_stock_alert_config_load(list->symbols[i], alert_cfg) != ESP_OK) {
+            free(list); free(alert_cfg);
             cJSON_Delete(root);
             return send_json_error(req, 500, "load_failed");
         }
         add_alert_config_to_stock_item(item, alert_cfg);
-        add_quote_to_stock_item(item, has_quote_data ? find_quote_by_symbol(quotes, list.count, list.symbols[i]) : NULL);
+        add_quote_to_stock_item(item, NULL);
         cJSON_AddItemToArray(items, item);
     }
 
-    free(quotes);
-    free(alert_cfg);
+    free(list); free(alert_cfg);
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -564,84 +543,75 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
     strlcpy(symbol, sym->valuestring, sizeof(symbol));
     cJSON_Delete(root);
 
-    stock_list_t list = {0};
-    if (storage_stocks_load(&list) != ESP_OK) {
+    /* Heap-allocate all >128B structs to stay within HTTPD 4KB stack */
+    stock_list_t *list = calloc(1, sizeof(stock_list_t));
+    stock_symbol_info_t *info = calloc(1, sizeof(stock_symbol_info_t));
+    stock_alert_config_t *alert_cfg = calloc(1, sizeof(stock_alert_config_t));
+    if (!list || !info || !alert_cfg) {
+        free(list); free(info); free(alert_cfg);
+        return send_json_error(req, 500, "no_memory");
+    }
+
+    if (storage_stocks_load(list) != ESP_OK) {
+        free(list); free(info); free(alert_cfg);
         return send_json_error(req, 500, "load_failed");
     }
 
-    if (stock_list_find_symbol(&list, symbol) >= 0) {
+    if (stock_list_find_symbol(list, symbol) >= 0) {
+        free(list); free(info); free(alert_cfg);
         return send_json_error(req, 409, ERR_DUPLICATE_SYMBOL);
     }
-    if (list.count >= MAX_STOCK_COUNT) {
+    if (list->count >= MAX_STOCK_COUNT) {
+        free(list); free(info); free(alert_cfg);
         return send_json_error(req, 409, ERR_LIMIT_EXCEEDED);
     }
 
     if (!is_sta_connected()) {
+        free(list); free(info); free(alert_cfg);
         return send_json_error(req, 502, ERR_VALIDATE_FAILED);
     }
 
-    stock_symbol_info_t info = {0};
-    if (twse_client_validate_symbol(symbol, &info) != ESP_OK) {
+    if (twse_client_validate_symbol(symbol, info) != ESP_OK) {
+        free(list); free(info); free(alert_cfg);
         return send_json_error(req, 502, ERR_VALIDATE_FAILED);
     }
-    if (!info.exists || strcmp(info.market, "tse") != 0) {
+    if (!info->exists || strcmp(info->market, "tse") != 0) {
+        free(list); free(info); free(alert_cfg);
         return send_json_error(req, 404, ERR_NOT_FOUND_OR_NOT_TSE);
     }
 
-    if (!stock_list_add_symbol(&list, symbol) || storage_stocks_save(&list) != ESP_OK) {
+    if (!stock_list_add_symbol(list, symbol) || storage_stocks_save(list) != ESP_OK) {
+        free(list); free(info); free(alert_cfg);
         return send_json_error(req, 500, "save_failed");
     }
 
-    if (storage_stock_meta_save(symbol, info.name, info.short_name, info.industry) != ESP_OK) {
-        stock_list_remove_symbol(&list, symbol);
-        storage_stocks_save(&list);
+    if (storage_stock_meta_save(symbol, info->name, info->short_name, info->industry) != ESP_OK) {
+        stock_list_remove_symbol(list, symbol);
+        storage_stocks_save(list);
+        free(list); free(info); free(alert_cfg);
         return send_json_error(req, 500, "save_failed");
-    }
-
-    /* Allocate large structs on heap to avoid HTTPD 4KB stack overflow */
-    stock_alert_config_t *alert_cfg = calloc(1, sizeof(stock_alert_config_t));
-    stock_quote_t *quote = calloc(1, sizeof(stock_quote_t));
-    if (!alert_cfg || !quote) {
-        free(alert_cfg);
-        free(quote);
-        stock_list_remove_symbol(&list, symbol);
-        storage_stocks_save(&list);
-        storage_stock_meta_remove(symbol);
-        return send_json_error(req, 500, "no_memory");
     }
 
     if (storage_stock_alert_config_save(symbol, alert_cfg) != ESP_OK) {
-        free(alert_cfg);
-        free(quote);
-        stock_list_remove_symbol(&list, symbol);
-        storage_stocks_save(&list);
+        stock_list_remove_symbol(list, symbol);
+        storage_stocks_save(list);
         storage_stock_meta_remove(symbol);
+        free(list); free(info); free(alert_cfg);
         return send_json_error(req, 500, "save_failed");
     }
 
+    /* Reload stock list for scheduler; no trigger_quote_now to avoid
+     * socket contention — scheduler will fetch after portal closes. */
     scheduler_service_reload_stock_list();
-    scheduler_service_trigger_quote_now();
-    cache_stock_meta(symbol, info.name, info.short_name, info.industry);
+    cache_stock_meta(symbol, info->name, info->short_name, info->industry);
     if (s_stock_list_changed_cb) {
-        s_stock_list_changed_cb(list.count);
-    }
-
-    const stock_quote_t *quote_ptr = NULL;
-    if (is_sta_connected()) {
-        char single_symbol[1][8] = {{0}};
-        strlcpy(single_symbol[0], symbol, sizeof(single_symbol[0]));
-        if (twse_client_fetch(single_symbol, 1, quote) == ESP_OK) {
-            quote_ptr = quote;
-        } else {
-            ESP_LOGW(TAG, "stocks_add quote fetch failed symbol=%s", symbol);
-        }
+        s_stock_list_changed_cb(list->count);
     }
 
     cJSON *resp = cJSON_CreateObject();
     cJSON *item = cJSON_CreateObject();
     if (!resp || !item) {
-        free(alert_cfg);
-        free(quote);
+        free(list); free(info); free(alert_cfg);
         cJSON_Delete(resp);
         cJSON_Delete(item);
         return send_json_error(req, 500, "no_memory");
@@ -650,15 +620,14 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(resp, "ok", true);
     cJSON_AddItemToObject(resp, "item", item);
     cJSON_AddStringToObject(item, "symbol", symbol);
-    cJSON_AddStringToObject(item, "name", info.name);
-    cJSON_AddStringToObject(item, "abbr", info.short_name);
-    cJSON_AddStringToObject(item, "industry", info.industry);
+    cJSON_AddStringToObject(item, "name", info->name);
+    cJSON_AddStringToObject(item, "abbr", info->short_name);
+    cJSON_AddStringToObject(item, "industry", info->industry);
     cJSON_AddStringToObject(item, "market", "tse");
     add_alert_config_to_stock_item(item, alert_cfg);
-    add_quote_to_stock_item(item, quote_ptr);
+    add_quote_to_stock_item(item, NULL);
 
-    free(alert_cfg);
-    free(quote);
+    free(list); free(info); free(alert_cfg);
 
     char *resp_json = cJSON_PrintUnformatted(resp);
     cJSON_Delete(resp);
@@ -701,30 +670,30 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
     char symbol[8] = {0};
     strlcpy(symbol, sym->valuestring, sizeof(symbol));
 
-    stock_list_t list = {0};
-    if (storage_stocks_load(&list) != ESP_OK) {
-        cJSON_Delete(root);
-        return send_json_error(req, 500, "load_failed");
-    }
-    if (stock_list_find_symbol(&list, symbol) < 0) {
-        cJSON_Delete(root);
-        return send_json_error(req, 404, ERR_NOT_FOUND);
-    }
-
-    /* Allocate large structs on heap to avoid HTTPD 4KB stack overflow */
+    /* Heap-allocate all large structs to stay within HTTPD 4KB stack */
+    stock_list_t *list = calloc(1, sizeof(stock_list_t));
     stock_alert_config_t *alert_cfg = calloc(1, sizeof(stock_alert_config_t));
-    stock_quote_t *quote = calloc(1, sizeof(stock_quote_t));
-    if (!alert_cfg || !quote) {
-        free(alert_cfg);
-        free(quote);
+    if (!list || !alert_cfg) {
+        free(list); free(alert_cfg);
         cJSON_Delete(root);
         return send_json_error(req, 500, "no_memory");
     }
 
+    if (storage_stocks_load(list) != ESP_OK) {
+        free(list); free(alert_cfg);
+        cJSON_Delete(root);
+        return send_json_error(req, 500, "load_failed");
+    }
+    if (stock_list_find_symbol(list, symbol) < 0) {
+        free(list); free(alert_cfg);
+        cJSON_Delete(root);
+        return send_json_error(req, 404, ERR_NOT_FOUND);
+    }
+    free(list);
+
     if (should_clear_alert) {
         if (storage_stock_alert_config_remove(symbol) != ESP_OK) {
             free(alert_cfg);
-            free(quote);
             cJSON_Delete(root);
             return send_json_error(req, 500, "save_failed");
         }
@@ -733,13 +702,11 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
         esp_err_t parse_ret = parse_alert_config_from_json(alert_obj, alert_cfg, &parse_error);
         if (parse_ret != ESP_OK) {
             free(alert_cfg);
-            free(quote);
             cJSON_Delete(root);
             return send_json_error(req, 400, parse_error);
         }
         if (storage_stock_alert_config_save(symbol, alert_cfg) != ESP_OK) {
             free(alert_cfg);
-            free(quote);
             cJSON_Delete(root);
             return send_json_error(req, 500, "save_failed");
         }
@@ -748,7 +715,6 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
 
     if (storage_stock_alert_config_load(symbol, alert_cfg) != ESP_OK) {
         free(alert_cfg);
-        free(quote);
         return send_json_error(req, 500, "load_failed");
     }
 
@@ -763,22 +729,11 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
         industry = meta->industry;
     }
 
-    const stock_quote_t *quote_ptr = NULL;
-    if (is_sta_connected()) {
-        char single_symbol[1][8] = {{0}};
-        strlcpy(single_symbol[0], symbol, sizeof(single_symbol[0]));
-        if (twse_client_fetch(single_symbol, 1, quote) == ESP_OK) {
-            quote_ptr = quote;
-        } else {
-            ESP_LOGW(TAG, "stocks_update quote fetch failed symbol=%s", symbol);
-        }
-    }
-
+    /* No outbound HTTPS from HTTPD handler — avoid socket contention. */
     cJSON *resp = cJSON_CreateObject();
     cJSON *item = cJSON_CreateObject();
     if (!resp || !item) {
         free(alert_cfg);
-        free(quote);
         cJSON_Delete(resp);
         cJSON_Delete(item);
         return send_json_error(req, 500, "no_memory");
@@ -791,10 +746,9 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
     cJSON_AddStringToObject(item, "abbr", abbr);
     cJSON_AddStringToObject(item, "industry", industry);
     add_alert_config_to_stock_item(item, alert_cfg);
-    add_quote_to_stock_item(item, quote_ptr);
+    add_quote_to_stock_item(item, NULL);
 
     free(alert_cfg);
-    free(quote);
 
     char *resp_json = cJSON_PrintUnformatted(resp);
     cJSON_Delete(resp);
@@ -830,18 +784,26 @@ static esp_err_t portal_stocks_remove_post_handler(httpd_req_t *req)
     strlcpy(symbol, sym->valuestring, sizeof(symbol));
     cJSON_Delete(root);
 
-    stock_list_t list = {0};
-    if (storage_stocks_load(&list) != ESP_OK) {
+    stock_list_t *list = calloc(1, sizeof(stock_list_t));
+    if (!list) {
+        return send_json_error(req, 500, "no_memory");
+    }
+    if (storage_stocks_load(list) != ESP_OK) {
+        free(list);
         return send_json_error(req, 500, "load_failed");
     }
 
-    if (!stock_list_remove_symbol(&list, symbol)) {
+    if (!stock_list_remove_symbol(list, symbol)) {
+        free(list);
         return send_json_error(req, 404, ERR_NOT_FOUND);
     }
 
-    if (storage_stocks_save(&list) != ESP_OK) {
+    if (storage_stocks_save(list) != ESP_OK) {
+        free(list);
         return send_json_error(req, 500, "save_failed");
     }
+    int final_count = list->count;
+    free(list);
     if (storage_stock_meta_remove(symbol) != ESP_OK) {
         return send_json_error(req, 500, "save_failed");
     }
@@ -852,7 +814,7 @@ static esp_err_t portal_stocks_remove_post_handler(httpd_req_t *req)
     scheduler_service_reload_stock_list();
     clear_stock_meta(symbol);
     if (s_stock_list_changed_cb) {
-        s_stock_list_changed_cb(list.count);
+        s_stock_list_changed_cb(final_count);
     }
 
     return send_json_response(req, 200, "{\"ok\":true}");
