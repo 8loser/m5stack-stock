@@ -40,6 +40,15 @@ Routing: m5stack-core2-flash
    - 建議下一步：（若失敗）
 ```
 
+### 可平行的 sub-agent 組合
+
+當主對話需要多步驟驗證時，獨立操作可同時 spawn：
+
+| 組合 | 說明 |
+|------|------|
+| `--build-only` + `generate_fonts.sh` | 字型生成與編譯互不依賴，可平行 |
+| `--app-flash` 後 spawn `--monitor` | 需串行（flash 完才能 monitor） |
+
 ### 主對話收到摘要後
 
 - 成功：告知使用者結果，視需要提問或繼續

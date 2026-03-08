@@ -67,7 +67,41 @@ Routing: m5stack-core2-dev
 6. 涉及 UI/WiFi/報價/AI/排程的改動，補上可重現手動測試步驟並優先處理 warning/error。
 7. 若有 UI 文字異動，驗證步驟需包含：`tools/fonts/generate_fonts.sh` + build-only。
 
-## 需要燒錄或 log 時
+## Sub-agent 使用策略
+
+### 噪訊隔離（燒錄/log）
 
 透過 `Agent` tool spawn sub-agent，依 `m5stack-core2-flash` skill 的 sub-agent prompt 範本執行，取得摘要後回本技能分析結果。
+
+### 平行探索（多元件變更）
+
+涉及 2 個以上元件時，spawn 多個 `Explore` 子 agent **平行讀碼**，避免大量原始碼灌入主 context。
+
+| 場景 | 做法 |
+|------|------|
+| 改動涉及 2+ 元件 | 每個元件 spawn 一個 Explore agent，各自回傳：影響的函式/結構、相依 API、注意事項 |
+| 單一元件內部改動 | 主 context 直接讀，不必 spawn |
+| 不確定影響範圍 | 先 spawn 一個 Explore agent 做初步掃描，再決定是否拆分 |
+
+Explore agent prompt 範本：
+```
+探索 components/<元件名>/ 的程式碼結構。
+重點回報：
+1. 與 <功能關鍵字> 相關的函式簽名與呼叫關係
+2. 跨模組依賴（include 了哪些其他元件的 header）
+3. 需要注意的 mutex/queue/全域狀態
+回傳摘要，不超過 30 行。
+```
+
+### 平行驗證
+
+可平行執行的驗證步驟應同時 spawn，不要串行等待：
+
+| 可平行 | 需串行 |
+|--------|--------|
+| `generate_fonts.sh` + `--build-only` | build 成功 → flash → monitor |
+| 多個獨立元件的 header 相容性檢查 | 改 A 的結果影響 B 的改法 |
+
+## Handoff
+
 Portal 網頁調整轉交 `m5stack-portal-web-dev`（`components/portal_backend/portal` 內的 HTML/CSS/JS）。

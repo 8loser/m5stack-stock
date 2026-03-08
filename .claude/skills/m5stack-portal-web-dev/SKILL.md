@@ -23,6 +23,16 @@ Routing: m5stack-portal-web-dev
 3. 完成後提供可重現的手動驗證步驟（桌面/手機瀏覽、主要流程）。
 4. 若需跨到 firmware/API 才能完成，先交付前端可完成部分，再產出交接清單。
 
+## Sub-agent 使用策略
+
+前端改完後需要 build 驗證時，透過 `Agent` tool spawn sub-agent 執行 `m5stack-core2-flash`，避免 build log 污染主 context。
+
+| 操作 | 做法 |
+|------|------|
+| 前端修改後驗證 build | spawn sub-agent 執行 `./flash.sh --build-only`，只接收成功/失敗摘要 |
+| 需要實機驗證 UI | spawn sub-agent 執行 `./flash.sh --app-flash <port>`，再 spawn 一個跑 `--monitor` 擷取啟動 log |
+| 多頁面同時調整 | 主 context 直接改（靜態檔案小，不需拆 sub-agent） |
+
 ## Handoff
 
 符合以下任一條件時，轉交 `m5stack-core2-dev`：
