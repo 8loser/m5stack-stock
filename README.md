@@ -150,7 +150,7 @@ Web Portal 分成 6 個分頁：
 
 Portal 前端檔案位置：
 
-- `components/portal_backend/portal/index.html`：頁面結構
+- `components/portal_backend/portal/{wifi,ai,telegram,stocks,at_time,interval}.html`：各分頁頁面結構
 - `components/portal_backend/portal/portal.css`：樣式
 - `components/portal_backend/portal/portal_bootstrap.js`：初始化與 tab lazy-load
 - `components/portal_backend/portal/tab_*.js`：各分頁邏輯（WiFi/AI/Telegram/Stocks/At Time/Interval）
