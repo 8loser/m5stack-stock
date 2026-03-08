@@ -28,6 +28,11 @@ function alertSummary(cfg) {
   return (enabled ? "告警: 啟用" : "告警: 停用") + " | 上漲 " + up + "% | 下跌 " + down + "% | " + promptText;
 }
 
+function hasAlertConfigForDisplay(cfg) {
+  if (!cfg) return false;
+  return !!((cfg.ai_prompt || "").trim());
+}
+
 function thresholdInputValue(v) {
   if (typeof v !== "number" || !isFinite(v)) return "0.00";
   return (Math.round(v * 100) / 100).toFixed(2);
@@ -47,10 +52,16 @@ function renderStocksList() {
   syms.forEach(function (sym) {
     var it = s_stock_items[sym];
     var cfg = it.alert_config || {};
-    html += "<div class='stock-row'><div><span class='stock-symbol'>" +
-      escHtml(sym) + "</span><br><span>" + escHtml(it.name || "") + "</span><br><span class='hint'>" +
+    var stockName = (it.name || "").trim();
+    var alertHtml = hasAlertConfigForDisplay(cfg)
+      ? ("<div class='stock-alert'>" + escHtml(alertSummary(cfg)) + "</div>")
+      : "";
+    html += "<div class='stock-item'>" +
+      "<div class='stock-row'><div><span class='stock-symbol'>" +
+      escHtml(sym) + "</span>" + (stockName ? (" <span class='stock-name'>" + escHtml(stockName) + "</span>") : "") +
+      "<br><span class='hint'>" +
       escHtml(it.industry || "") + "</span><div class='stock-quote'>" + escHtml(quoteSummary(it.quote)) +
-      "</div><div class='stock-alert'>" + escHtml(alertSummary(cfg)) + "</div></div>" +
+      "</div>" + alertHtml + "</div>" +
       "<div class='stock-actions'>" +
       "<button type='button' class='btn-edit' onclick=\"editStock('" + sym + "')\">Edit</button>" +
       "<button type='button' class='btn-danger' onclick=\"removeStock('" + sym + "')\">Remove</button>" +
@@ -58,19 +69,25 @@ function renderStocksList() {
 
     if (s_stock_editing_symbol === sym) {
       html += "<div class='stock-edit'>" +
-        "<label class='stock-edit-toggle'><input id='alert_enabled_" + sym + "' type='checkbox'" + (cfg.enabled ? " checked" : "") + ">Enable Alert</label>" +
-        "<div class='stock-edit-grid'>" +
-          "<label>Up Threshold (%)<input id='alert_up_" + sym + "' type='number' min='0' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.up_threshold_pct)) + "'></label>" +
-          "<label>Down Threshold (%)<input id='alert_down_" + sym + "' type='number' min='0' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.down_threshold_pct)) + "'></label>" +
+        "<label class='stock-edit-toggle'><input id='alert_enabled_" + sym + "' type='checkbox'" + (cfg.enabled ? " checked" : "") + ">Enable</label>" +
+        "<div class='stock-edit-group'>" +
+          "<div class='stock-threshold-grid'>" +
+            "<label class='threshold-label' for='alert_up_" + sym + "'>上漲門檻 (%)</label>" +
+            "<label class='threshold-label' for='alert_down_" + sym + "'>下跌門檻 (%)</label>" +
+            "<input id='alert_up_" + sym + "' type='number' min='0' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.up_threshold_pct)) + "'>" +
+            "<input id='alert_down_" + sym + "' type='number' min='0' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.down_threshold_pct)) + "'>" +
+          "</div>" +
+          "<label class='prompt-group-label'>AI Prompt<textarea id='alert_prompt_" + sym + "' maxlength='512'>" + escHtml(cfg.ai_prompt || "") + "</textarea></label>" +
         "</div>" +
-        "<label>AI Prompt<textarea id='alert_prompt_" + sym + "' maxlength='512'>" + escHtml(cfg.ai_prompt || "") + "</textarea></label>" +
         "<div class='stock-edit-actions'>" +
           "<button type='button' class='secondary' onclick=\"saveStockEdit('" + sym + "')\">Save</button>" +
-          "<button type='button' class='btn-warning' onclick=\"clearStockAlert('" + sym + "')\">Clear Alert</button>" +
+          "<button type='button' class='btn-warning' onclick=\"clearStockAlert('" + sym + "')\">Clear</button>" +
           "<button type='button' class='btn-cancel' onclick=\"cancelStockEdit()\">Cancel</button>" +
         "</div>" +
       "</div>";
     }
+
+    html += "</div>";
   });
 
   box.innerHTML = html;
