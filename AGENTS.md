@@ -83,6 +83,33 @@
 - 寫入格式以單行待辦為主：`- [ ] YYYY-MM-DD: TODO ...`。
 - 進入正式規劃或實作前，再將項目搬移至 `openspec/changes/.../tasks.md`。
 
+## Architecture
+ESP-IDF (C) 專案，含 app_core event bus，FreeRTOS 多核心任務。
+- 目錄與模組清單請見「專案結構與模組規劃」，本節不重複列舉。
+- 模組邊界以 event bus/queue 解耦，避免跨模組直接耦合。
+- UI 操作需維持單一 `ui_mutex` 保護的一致性。
+
+## 關鍵資料流
+```
+scheduler_service Timer
+  → twse_client_fetch()
+  → xQueueSend(g_quote_queue)
+  → ui_manager_update_quote()      # Dashboard 顯示
+```
+
+## 開機初始化順序
+`nvs_flash_init` → `app_event_bus_init` → `board_init` → `ui_manager_init` → `storage_init` → `network_portal_init` → `twse_client_init` → `scheduler_service_init`
+
+## NVS 命名空間
+
+| Namespace | Key | 型別 | 說明 |
+|-----------|-----|------|------|
+| `wifi_cfg` | `ssid` / `password` | str | WiFi 帳密 |
+| `ai_cfg` | `provider` | u8 | 0=Gemini 1=Claude 2=OpenAI |
+| `ai_cfg` | `api_key` | str | API Key |
+| `stocks` | `symbols` / `count` | blob/u8 | 監控股票清單 |
+| `schedule` | `quote_ivl` / `ai_ivl` / `mkt_only` | u16/u16/u8 | 排程設定 |
+
 ## AI 文件同步規範
 - `AGENTS.md` 與 `CLAUDE.md` 需同步維護；凡共通規範變更，兩份文件必須同次更新。
 - 若僅更新其中一份，必須在該文件標註「不同步原因」與適用範圍（工具專屬差異）。
