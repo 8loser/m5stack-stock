@@ -34,7 +34,7 @@
 | Task stack 預設用 internal DRAM | 新增 task 前必須確認剩餘 internal DRAM 夠用 |
 | PSRAM 不可作 task stack | NVS/SPI flash 操作時 cache 關閉，PSRAM 不可存取（assert crash） |
 | APSTA 模式不可用 | WiFi AP+STA 同時運行需要大量 internal DRAM，Core2 上會 crash（`ieee80211_hostap_attach`） |
-| HTTPD handler 大 buffer 需移 heap | HTTPD task stack 僅 4KB，>128B 的 local array 應 malloc |
+| HTTPD handler 堆疊紅線 | stack 4KB，框架開銷後可用 ~2KB；含 `prompt[513]` 的 struct（`stock_alert_config_t` 522B、`at_time_entry_t` 516B）單個就吃半個 stack，陣列直接爆；>128B 的 local struct/array 一律 `calloc` 到 heap |
 | `esp_http_client` 非 thread-safe | 不可從其他 thread 呼叫 `esp_http_client_close/cleanup`；stop 只設 flag，讓 owner task 自行清理 |
 | TCP TIME_WAIT 佔 socket slot | `CONFIG_LWIP_TCP_MSL=3000`（6s TIME_WAIT）；portal server 用 SO_LINGER 送 RST |
 
@@ -87,9 +87,8 @@
 ## AI 協作分工（去重）
 - 功能開發、程式修改與邏輯除錯一律使用 `m5stack-core2-dev`。
 - `components/portal_backend/portal` 網頁調整優先使用 `m5stack-portal-web-dev`；若需 firmware/API 行為變更再轉交 `m5stack-core2-dev`。
-- 連線、燒錄、監看與 log 取得一律使用 `m5stack-core2-flash-agent`。
+- 燒錄、flash、monitor、log 擷取一律交由 `m5stack-core2-flash-agent` 執行，主對話只接收摘要。
 - `m5stack-core2-flash-agent` 在燒錄阻塞時可最小修改 `flash.sh`（限連線/燒錄路徑），不得延伸到韌體功能邏輯。
-- `m5stack-core2-dev` 需要實機 log 時，先切 `m5stack-core2-flash-agent` 取得結果，再回 `m5stack-core2-dev` 續修。
 - 具體流程與守則以各自的 skill/agent 文件為準，`AGENTS.md` 不重複維護其細節。
 
 ## 路由可觀測性

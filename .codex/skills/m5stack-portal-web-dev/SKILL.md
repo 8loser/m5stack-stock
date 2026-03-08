@@ -1,55 +1,37 @@
 ---
 name: m5stack-portal-web-dev
-description: M5Stack Portal 前端網頁協作技能，專責 components/portal_backend/portal 內的 HTML/CSS/JS/靜態資源調整。當需求涉及 portal UI 版面、互動、文案與可用性優化時使用；若需要 firmware 或 API 行為變更，先完成前端可獨立部分後交接 m5stack-core2-dev。
+description: 僅用於 components/portal_backend/portal 路徑內的前端調整（HTML/CSS/JS/靜態資源）。當使用者提到該路徑下的檔案、portal 頁面樣式、portal UI 互動或文案時使用。其他前端需求、firmware 邏輯、燒錄流程均不屬於本 skill 範圍。
 ---
 
-# M5Stack Portal Web Dev
+Routing: m5stack-portal-web-dev
 
 ## Overview
 
 專責 `components/portal_backend/portal` 的前端頁面與靜態資源調整。
 目標是用最小改動完成 Portal UI 需求，並保持與既有 firmware 分工清楚。
 
-## Trigger
-
-當需求包含以下任一類型時使用本技能：
-- Portal 網頁版面、樣式、互動（HTML/CSS/JS）
-- Portal 文案、表單、可用性與流程優化
-- `components/portal_backend/portal` 內靜態資源調整
-
 ## Boundaries
 
 - 允許：`components/portal_backend/portal` 內前端檔案與必要資源。
-- 不處理：`flash.sh`、燒錄、monitor、序列埠與連線問題（交給 `m5stack-core2-flash-agent`）。
-- 不得修改 firmware/API 行為；若需求依賴 firmware/API 變更，需輸出 handoff note 後轉交 `m5stack-core2-dev`。
+- 不處理：`flash.sh`、燒錄、monitor、序列埠與連線問題（交由 `m5stack-core2-flash-agent`）。
+- 不主動承擔 firmware 核心邏輯與跨模組 API 行為變更（交給 `m5stack-core2-dev`）。
 
 ## Workflow
 
 1. 先定位需求對應頁面與資源，確認是否能在 portal 前端內獨立完成。
-2. 先明確寫出使用者主訴屬於尺寸、間距、風格、可用性中的哪一類；若同時存在多類問題，需拆開處理，不得混成單一重設計。
-3. 提出至少 2 個前端可行方案，列出取捨並推薦 1 個方案，再進行實作。
-4. 若使用者明確指出元件「太大」，方案必須優先縮小尺寸與降低首屏佔用，不得用增加留白、放大元件或加重容器存在感作為主要解法。
-5. 若重設計的是導覽列或選單，需先檢查其首屏高度占比與主內容層級，避免導覽比內容更搶眼。
-6. 採最小可行改動，避免順手重構無關區塊。
-7. 完成後依 DoD 驗收，並提供可重現的手動驗證步驟（桌面/手機瀏覽、主要流程）。
-8. 若需跨到 firmware/API 才能完成，先交付前端可完成部分，再產出交接清單。
+2. 採最小可行改動，避免順手重構無關區塊。
+3. 完成後提供可重現的手動驗證步驟（桌面/手機瀏覽、主要流程）。
+4. 若需跨到 firmware/API 才能完成，先交付前端可完成部分，再產出交接清單。
 
-## Definition of Done (DoD)
+## 驗證協作策略
 
-- RWD：在 `360px`、`768px`、`1280px` 寬度下，主要流程可用且無水平捲動。
-- 可用性：手機可用觸控完成主要流程。
-- 狀態覆蓋：成功、載入中、錯誤至少有基本可理解的 UI 呈現。
-- 基本效能檢查：避免明顯阻塞主流程的前端行為（如不必要的大量同步運算）。
-- 程式品質：避免冗餘寫法與無實際作用程式碼（dead code、重複邏輯、無效監聽與未使用資源）。
-- 版型檢查：`width: 100%` 的 `a`、`button`、`input` 等元件需確認 `box-sizing` 正確，避免 padding/border 造成溢出、互壓或假性間距失效。
+前端改完後若需要 build/flash/monitor 驗證，交由 `m5stack-core2-flash-agent` 執行，本技能只保留驗證摘要。
 
-## Response Template
-
-每次回覆需固定包含以下 4 段：
-- `變更檔案`
-- `互動行為`
-- `驗收步驟`
-- `風險與未完成項`
+| 操作 | 做法 |
+|------|------|
+| 前端修改後驗證 build | 交由 `m5stack-core2-flash-agent` 執行 `./flash.sh --build-only`，只接收成功/失敗摘要 |
+| 需要實機驗證 UI | 交由 `m5stack-core2-flash-agent` 依序執行 `--app-flash` 與 `--monitor` 擷取啟動 log |
+| 多頁面同時調整 | 主流程直接改（靜態檔案小，不需拆分） |
 
 ## Handoff
 

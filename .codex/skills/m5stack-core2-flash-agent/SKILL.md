@@ -1,14 +1,38 @@
 ---
 name: m5stack-core2-flash-agent
-description: M5Stack Core2 燒錄與連線協作技能，專注 flash.sh 流程、序列埠監看、連線阻塞排除與實機 log 擷取。本技能不處理韌體功能邏輯修改。
+description: M5Stack Core2 燒錄與連線協作，專注 flash.sh 流程、序列埠監看、連線阻塞排除與實機 log 擷取。當需求涉及裝置連線檢查、序列埠偵測、燒錄、monitor、log 擷取、燒錄流程阻塞排除時使用。不處理韌體功能邏輯修改。
 ---
 
-# M5Stack Core2 Flash Agent
+Routing: m5stack-core2-flash-agent
 
-## Overview
+## 執行原則
 
-聚焦實機連線、燒錄、monitor、log 擷取與燒錄流程阻塞排除。
-需求若涉及 `components/` 或 `main/` 的功能邏輯修改，轉交 `m5stack-core2-dev`。
+燒錄、flash、monitor、log 擷取等操作輸出噪訊高，回報時應壓縮為精簡摘要，避免大量 build/monitor 串流污染主脈絡。
+
+### 何時直接執行命令
+
+| 操作 | 執行方式 |
+|------|---------------|
+| `--build-only` | 執行並摘要（build log 大） |
+| `--flash-only` | 執行並摘要（flash 進度輸出） |
+| `--app-flash` | 執行並摘要 |
+| `--monitor` | 執行並摘要（連續串流） |
+| `--erase` + flash | 執行並摘要 |
+| 僅查詢 port / 排錯討論 | 直接在主流程處理 |
+
+### 可平行的操作組合
+
+當主流程需要多步驟驗證時，獨立操作可平行執行：
+
+| 組合 | 說明 |
+|------|------|
+| `--build-only` + `generate_fonts.sh` | 字型生成與編譯互不依賴，可平行 |
+| `--app-flash` 後再 `--monitor` | 需串行（flash 完才能 monitor） |
+
+### 主對話收到摘要後
+
+- 成功：告知使用者結果，視需要提問或繼續
+- 失敗：分析關鍵錯誤行，決定是否需要轉交 `/m5stack-core2-dev`
 
 ## Scope
 
@@ -24,59 +48,37 @@ description: M5Stack Core2 燒錄與連線協作技能，專注 flash.sh 流程�
 
 ## Command Quick Reference
 
-1. Build only：`./flash.sh --build-only`
-2. Flash only：`./flash.sh --flash-only <port>`
-3. App flash only：`./flash.sh --app-flash <port>`
-4. Monitor：`./flash.sh --monitor <port>`
-5. Erase + flash：`./flash.sh --erase --flash-only <port>`
-6. Build + flash + monitor：依使用者要求串接，不自行擴大操作
-
-## Standard Workflow
-
-1. 先分類問題：build / port / flash / monitor。
-2. 確認裝置 port（必要時列舉可用序列埠）。
-3. 先走 `./flash.sh` 既有模式重現問題，不先繞開腳本。
-4. 若需求包含建置，先做 `--build-only`。
-5. 視需求執行 `--flash-only <port>` 或 `--app-flash <port>`。
-6. 執行 `--monitor <port>` 擷取關鍵 log。
-7. 若卡住，做最小修補與回歸驗證。
-8. 產出結果摘要並交接（若需 firmware 修正）。
+| 操作 | 命令 |
+|------|------|
+| 僅建置 | `./flash.sh --build-only` |
+| 僅燒錄 | `./flash.sh --flash-only <port>` |
+| App 燒錄 | `./flash.sh --app-flash <port>` |
+| 監看 | `./flash.sh --monitor <port>` |
+| 清除+燒錄 | `./flash.sh --erase --flash-only <port>` |
 
 ## Troubleshooting Decision Tree
 
-1. `monitor` 啟動失敗
-   - 先判斷是否 port 被佔用。
-   - 清掉占用後重試同一命令。
-2. 找不到裝置 port
-   - 重新插拔裝置與線材後再探測。
-   - 若仍失敗，回報目前可見埠清單與時間點。
-3. `flash` 失敗
-   - 先重試一次同命令，確認是否偶發連線抖動。
-   - 再檢查 baud/port 參數是否與腳本一致。
-4. 可 flash 但無法穩定 monitor
-   - 優先收集最小可用 log 片段（啟動到錯誤）。
-   - 必要時只做 log 擷取，不混入其他操作。
+1. `monitor` 啟動失敗 → 先判斷 port 是否被佔用 → `kill $(lsof -t /dev/ttyACM0)`
+2. 找不到裝置 port → 重新插拔後再探測
+3. `flash` 失敗 → 重試一次確認是否偶發 → 再查 baud/port 參數
+4. 可 flash 但無法穩定 monitor → 只做最小 log 擷取，不混入其他操作
 
 ## Known Gotchas
 
-1. `--monitor` 可能鎖住 port（例如 `/dev/ttyACM0`）
-   - 燒錄前先釋放占用：`kill $(lsof -t /dev/ttyACM0)`
-2. `build/` 若由 root 建立，container build 可能失敗
-   - 先修正目錄擁有權，再重跑 `./flash.sh --build-only`
+1. `--monitor` 可能鎖住 port：燒錄前先 `kill $(lsof -t /dev/ttyACM0)`
+2. `build/` 若由 root 建立，container build 會失敗：先修正目錄擁有權
 
 ## Flash.sh Patch Policy
 
-1. 只在連線/燒錄路徑阻塞時修改 `flash.sh`。
-2. 允許修補範圍：serial lock 釋放/重試、序列埠偵測與權限相容、container runtime 可觀測性。
-3. 變更要最小且可回滾，不做大規模重構。
-4. 回報必須包含：阻塞原因、修補點、驗證命令。
+- 只在連線/燒錄路徑阻塞時修改 `flash.sh`
+- 允許範圍：serial lock 釋放、序列埠偵測、container 可觀測性
+- 變更必須最小且可回滾，回報需含：阻塞原因、修補點、驗證命令
 
-## Handoff Format
+## Handoff to m5stack-core2-dev
 
-交接 `m5stack-core2-dev` 時固定附上：
-
+固定附上：
 1. 使用命令（完整參數）
 2. 裝置 port 與操作時間
-3. 結果摘要（成功/失敗、重現率）
+3. 結果（成功/失敗、重現率）
 4. 關鍵錯誤行（最小必要片段）
-5. 重現步驟（可直接再跑）
+5. 重現步驟
