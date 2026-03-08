@@ -22,6 +22,68 @@ static const ai_provider_ops_t *s_providers[] = {
 static ai_provider_type_t s_current_type = AI_PROVIDER_GEMINI;
 static QueueHandle_t      s_result_queue = NULL;
 
+static size_t utf8_codepoint_len(const char *s)
+{
+    unsigned char c0 = (unsigned char)s[0];
+    if (c0 < 0x80) return 1;
+    if ((c0 & 0xE0) == 0xC0) {
+        unsigned char c1 = (unsigned char)s[1];
+        return ((c1 & 0xC0) == 0x80) ? 2 : 0;
+    }
+    if ((c0 & 0xF0) == 0xE0) {
+        unsigned char c1 = (unsigned char)s[1];
+        unsigned char c2 = (unsigned char)s[2];
+        return (((c1 & 0xC0) == 0x80) && ((c2 & 0xC0) == 0x80)) ? 3 : 0;
+    }
+    if ((c0 & 0xF8) == 0xF0) {
+        unsigned char c1 = (unsigned char)s[1];
+        unsigned char c2 = (unsigned char)s[2];
+        unsigned char c3 = (unsigned char)s[3];
+        return (((c1 & 0xC0) == 0x80) &&
+                ((c2 & 0xC0) == 0x80) &&
+                ((c3 & 0xC0) == 0x80)) ? 4 : 0;
+    }
+    return 0;
+}
+
+static size_t utf8_prefix_limit(const char *s, size_t max_bytes, size_t max_chars)
+{
+    size_t pos = 0;
+    size_t chars = 0;
+    while (s[pos] != '\0' && chars < max_chars && pos < max_bytes) {
+        size_t cp_len = utf8_codepoint_len(s + pos);
+        if (cp_len == 0 || (pos + cp_len) > max_bytes) {
+            break;
+        }
+        pos += cp_len;
+        chars++;
+    }
+    return pos;
+}
+
+static void trim_analysis_inplace(ai_analysis_result_t *result)
+{
+    if (!result) return;
+    if (AI_ANALYSIS_MAX_LEN == 0) return;
+
+    size_t hard_max_bytes = AI_ANALYSIS_MAX_LEN - 1;
+    size_t soft_max_bytes = AI_ANALYSIS_MAX_BYTES;
+    if (soft_max_bytes > hard_max_bytes) {
+        soft_max_bytes = hard_max_bytes;
+    }
+
+    size_t raw_len = strlen(result->analysis);
+    size_t keep_len = utf8_prefix_limit(result->analysis, soft_max_bytes, AI_ANALYSIS_MAX_CHARS);
+    if (keep_len < raw_len) {
+        result->analysis[keep_len] = '\0';
+        ESP_LOGW(TAG, "analysis trimmed raw=%u keep=%u chars<=%u bytes<=%u",
+                 (unsigned)raw_len,
+                 (unsigned)keep_len,
+                 (unsigned)AI_ANALYSIS_MAX_CHARS,
+                 (unsigned)soft_max_bytes);
+    }
+}
+
 static stock_context_t quote_to_context(const stock_quote_t *q)
 {
     stock_context_t ctx;
@@ -130,6 +192,7 @@ static void analyze_task(void *arg)
 
     esp_err_t ret = s_providers[args->provider_type]->analyze(
                         &ctx, prompt, active_key, &result);
+    trim_analysis_inplace(&result);
     result.error_code = ret;
 
     if (s_result_queue) {
@@ -178,6 +241,7 @@ esp_err_t ai_provider_analyze_sync(const stock_quote_t *quote,
     memset(result, 0, sizeof(*result));
     esp_err_t ret = s_providers[s_current_type]->analyze(
                         &ctx, prompt, active_key, result);
+    trim_analysis_inplace(result);
     result->error_code = ret;
     return ret;
 }
@@ -205,6 +269,7 @@ esp_err_t ai_provider_analyze_prompt_sync(const char *prompt,
     memset(result, 0, sizeof(*result));
     esp_err_t ret = s_providers[s_current_type]->analyze(
                         &empty_ctx, prompt, active_key, result);
+    trim_analysis_inplace(result);
     result->error_code = ret;
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "prompt analyze failed provider=%s ret=%s detail=%s",

@@ -117,34 +117,6 @@ extern const uint8_t tab_at_time_js_end[] asm("_binary_tab_at_time_js_end");
 extern const uint8_t tab_interval_js_start[] asm("_binary_tab_interval_js_start");
 extern const uint8_t tab_interval_js_end[] asm("_binary_tab_interval_js_end");
 
-static void url_decode(char *dst, size_t dst_len, const char *src)
-{
-    size_t di = 0;
-
-    if (!dst || dst_len == 0) {
-        return;
-    }
-    dst[0] = '\0';
-
-    for (size_t i = 0; src && src[i] != '\0' && di + 1 < dst_len; i++) {
-        if (src[i] == '+') {
-            dst[di++] = ' ';
-            continue;
-        }
-
-        if (src[i] == '%' && isxdigit((unsigned char)src[i + 1]) && isxdigit((unsigned char)src[i + 2])) {
-            char hex[3] = {src[i + 1], src[i + 2], '\0'};
-            dst[di++] = (char)strtol(hex, NULL, 16);
-            i += 2;
-            continue;
-        }
-
-        dst[di++] = src[i];
-    }
-
-    dst[di] = '\0';
-}
-
 static bool get_form_value(const char *body, const char *key, char *out, size_t out_len)
 {
     if (!body || !key || !out || out_len == 0) {
@@ -159,15 +131,24 @@ static bool get_form_value(const char *body, const char *key, char *out, size_t 
             p += key_len + 1;
             const char *end = strchr(p, '&');
             size_t raw_len = end ? (size_t)(end - p) : strlen(p);
-
-            char tmp[PORTAL_BODY_MAX_LEN + 1] = {0};
-            if (raw_len > PORTAL_BODY_MAX_LEN) {
-                raw_len = PORTAL_BODY_MAX_LEN;
+            size_t di = 0;
+            for (size_t i = 0; i < raw_len && di + 1 < out_len; i++) {
+                if (p[i] == '+') {
+                    out[di++] = ' ';
+                    continue;
+                }
+                if (p[i] == '%' &&
+                    (i + 2) < raw_len &&
+                    isxdigit((unsigned char)p[i + 1]) &&
+                    isxdigit((unsigned char)p[i + 2])) {
+                    char hex[3] = {p[i + 1], p[i + 2], '\0'};
+                    out[di++] = (char)strtol(hex, NULL, 16);
+                    i += 2;
+                    continue;
+                }
+                out[di++] = p[i];
             }
-            memcpy(tmp, p, raw_len);
-            tmp[raw_len] = '\0';
-
-            url_decode(out, out_len, tmp);
+            out[di] = '\0';
             return true;
         }
 

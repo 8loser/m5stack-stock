@@ -95,6 +95,8 @@
 
 /* --- AI (legacy compatibility) --- */
 #define AI_ANALYSIS_MAX_LEN     1024
+#define AI_ANALYSIS_MAX_CHARS   320
+#define AI_ANALYSIS_MAX_BYTES   (AI_ANALYSIS_MAX_CHARS * 3)
 #define AI_HTTP_TIMEOUT_MS      60000
 #define AT_TIME_FAIL_NOTIFY_WINDOW_MS (30U * 60U * 1000U)
 #define TASK_PRIO_AI            TASK_PRIO_TWSE

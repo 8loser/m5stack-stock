@@ -92,7 +92,10 @@
         <label>Global Prompt</label>
         <textarea id="ai_global_prompt" maxlength="100" placeholder="輸入通用分析 prompt（約 100 中文字，最多 300 bytes）"></textarea>
         <div class="hint">通用 prompt 會儲存在裝置中，供後續分析流程使用。</div>
-        <div class="hint">系統會在實際呼叫 AI 時自動附加：*簡短回覆，在100字以內</div>
+        <div class="hint">固定 prompt</div>
+        <ul class="hint">
+          <li>簡短回覆在320字以內</li>
+        </ul>
 
         <div class="hint">Leave blank to keep existing key. Only providers with non-empty key will be used.</div>
         <button type="submit">Save AI Settings</button>

@@ -9,7 +9,7 @@
 #include <string.h>
 
 static const char *TAG = "at_time";
-static const char *AT_TIME_FIXED_GLOBAL_PROMPT = "*簡短回覆，在100字以內";
+static const char *AT_TIME_FIXED_GLOBAL_PROMPT = "*簡短回覆，在320字以內";
 
 static void notify_at_time_failure(scheduler_service_ctx_t *ctx, uint8_t idx, const char *reason)
 {
