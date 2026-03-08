@@ -34,6 +34,7 @@ Routing: m5stack-core2-dev
 - 所有 `lv_*` 呼叫必須持有 `g_ui_mutex`，避免 LVGL 執行緒競態。
 - ESP-IDF v5.1+ 的 I2S 使用 `i2s_std.h` 新 API，不用 `driver/i2s.h` 舊介面。
 - 大型 buffer 優先放 PSRAM：`heap_caps_malloc(n, MALLOC_CAP_SPIRAM)`。
+- HTTPD handler 堆疊紅線：task stack 4KB，框架開銷後可用 ~2KB。含 `prompt[513]` 的 struct（`stock_alert_config_t` 522B、`at_time_entry_t` 516B）單個就吃半個 stack，陣列直接爆。handler 內 >128B 的 local struct/array 一律 `calloc` 到 heap，所有 error path 需對應 `free()`。
 - BM8563 alarm 設定時，日期/星期欄位 `0x80` 代表不比較。
 - LCD flush callback 必須在 SPI DMA 傳輸完成後才呼叫 `lv_disp_flush_ready`。
 - FT6336U 底部虛擬鍵區域要在輸入層攔截，不傳給 LVGL 一般觸控流程。

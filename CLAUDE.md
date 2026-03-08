@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Task stack 預設用 internal DRAM | 新增 task 前必須確認剩餘 internal DRAM 夠用 |
 | PSRAM 不可作 task stack | NVS/SPI flash 操作時 cache 關閉，PSRAM 不可存取（assert crash） |
 | APSTA 模式不可用 | WiFi AP+STA 同時運行需要大量 internal DRAM，Core2 上會 crash（`ieee80211_hostap_attach`） |
-| HTTPD handler 大 buffer 需移 heap | HTTPD task stack 僅 4KB，>128B 的 local array 應 malloc |
+| HTTPD handler 堆疊紅線 | stack 4KB，框架開銷後可用 ~2KB；含 `prompt[513]` 的 struct（`stock_alert_config_t` 522B、`at_time_entry_t` 516B）單個就吃半個 stack，陣列直接爆；>128B 的 local struct/array 一律 `calloc` 到 heap |
 | `esp_http_client` 非 thread-safe | 不可從其他 thread 呼叫 `esp_http_client_close/cleanup`；stop 只設 flag，讓 owner task 自行清理 |
 | TCP TIME_WAIT 佔 socket slot | `CONFIG_LWIP_TCP_MSL=3000`（6s TIME_WAIT）；portal server 用 SO_LINGER 送 RST |
 

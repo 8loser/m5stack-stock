@@ -57,13 +57,19 @@ static esp_err_t send_error(httpd_req_t *req, int status, const char *code)
 
 static esp_err_t at_time_get_handler(httpd_req_t *req)
 {
-    at_time_entry_t entries[MAX_AT_TIME_COUNT] = {0};
+    /* Allocate on heap: at_time_entry_t[8] ≈ 4KB, exceeds HTTPD 4KB stack */
+    at_time_entry_t *entries = calloc(MAX_AT_TIME_COUNT, sizeof(at_time_entry_t));
+    if (!entries) {
+        return send_error(req, 500, "no_memory");
+    }
+
     uint8_t count = 0;
     storage_at_time_load_all(entries, &count);
 
     cJSON *root = cJSON_CreateObject();
     cJSON *items = cJSON_CreateArray();
     if (!root || !items) {
+        free(entries);
         cJSON_Delete(root);
         cJSON_Delete(items);
         return send_error(req, 500, "no_memory");
@@ -76,6 +82,7 @@ static esp_err_t at_time_get_handler(httpd_req_t *req)
     for (uint8_t i = 0; i < count; i++) {
         cJSON *item = cJSON_CreateObject();
         if (!item) {
+            free(entries);
             cJSON_Delete(root);
             return send_error(req, 500, "no_memory");
         }
@@ -87,6 +94,8 @@ static esp_err_t at_time_get_handler(httpd_req_t *req)
         cJSON_AddStringToObject(item, "prompt", entries[i].prompt);
         cJSON_AddItemToArray(items, item);
     }
+
+    free(entries);
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -144,22 +153,28 @@ static esp_err_t at_time_save_handler(httpd_req_t *req)
         return send_error(req, 400, "prompt_too_long");
     }
 
-    at_time_entry_t entry = {0};
-    entry.enabled  = cJSON_IsTrue(j_enabled);
-    entry.hour     = (uint8_t)hour;
-    entry.minute   = (uint8_t)minute;
-    entry.weekdays = (uint8_t)weekdays;
-    strlcpy(entry.prompt, j_prompt->valuestring, sizeof(entry.prompt));
+    /* Allocate on heap: at_time_entry_t ≈ 516B, save HTTPD stack space */
+    at_time_entry_t *entry = calloc(1, sizeof(at_time_entry_t));
+    if (!entry) {
+        cJSON_Delete(root);
+        return send_error(req, 500, "no_memory");
+    }
+    entry->enabled  = cJSON_IsTrue(j_enabled);
+    entry->hour     = (uint8_t)hour;
+    entry->minute   = (uint8_t)minute;
+    entry->weekdays = (uint8_t)weekdays;
+    strlcpy(entry->prompt, j_prompt->valuestring, sizeof(entry->prompt));
     cJSON_Delete(root);
 
-    esp_err_t ret = storage_at_time_save_entry((uint8_t)idx, &entry);
+    esp_err_t ret = storage_at_time_save_entry((uint8_t)idx, entry);
+    free(entry);
     if (ret != ESP_OK) {
         return send_error(req, 500, "save_failed");
     }
 
     scheduler_service_reload_at_time();
     ESP_LOGI(TAG, "at_time entry %d saved hour=%d min=%d wdays=0x%02x",
-             idx, entry.hour, entry.minute, entry.weekdays);
+             idx, entry->hour, entry->minute, entry->weekdays);
     return send_json(req, 200, "{\"ok\":true}");
 }
 

@@ -473,7 +473,16 @@ static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(root, "ok", true);
     cJSON_AddItemToObject(root, "items", items);
 
-    stock_quote_t quotes[MAX_STOCK_COUNT] = {0};
+    /* Allocate large buffers on heap to avoid HTTPD 4KB stack overflow */
+    stock_quote_t *quotes = calloc(MAX_STOCK_COUNT, sizeof(stock_quote_t));
+    stock_alert_config_t *alert_cfg = malloc(sizeof(stock_alert_config_t));
+    if (!quotes || !alert_cfg) {
+        free(quotes);
+        free(alert_cfg);
+        cJSON_Delete(root);
+        return send_json_error(req, 500, "no_memory");
+    }
+
     bool has_quote_data = false;
     if (list.count > 0 && is_sta_connected()) {
         if (twse_client_fetch(list.symbols, list.count, quotes) == ESP_OK) {
@@ -497,6 +506,8 @@ static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
 
         cJSON *item = cJSON_CreateObject();
         if (!item) {
+            free(quotes);
+            free(alert_cfg);
             cJSON_Delete(root);
             return send_json_error(req, 500, "no_memory");
         }
@@ -504,15 +515,20 @@ static esp_err_t portal_stocks_get_handler(httpd_req_t *req)
         cJSON_AddStringToObject(item, "name", name ? name : "");
         cJSON_AddStringToObject(item, "abbr", abbr ? abbr : "");
         cJSON_AddStringToObject(item, "industry", industry ? industry : "");
-        stock_alert_config_t alert_cfg = {0};
-        if (storage_stock_alert_config_load(list.symbols[i], &alert_cfg) != ESP_OK) {
+        memset(alert_cfg, 0, sizeof(stock_alert_config_t));
+        if (storage_stock_alert_config_load(list.symbols[i], alert_cfg) != ESP_OK) {
+            free(quotes);
+            free(alert_cfg);
             cJSON_Delete(root);
             return send_json_error(req, 500, "load_failed");
         }
-        add_alert_config_to_stock_item(item, &alert_cfg);
+        add_alert_config_to_stock_item(item, alert_cfg);
         add_quote_to_stock_item(item, has_quote_data ? find_quote_by_symbol(quotes, list.count, list.symbols[i]) : NULL);
         cJSON_AddItemToArray(items, item);
     }
+
+    free(quotes);
+    free(alert_cfg);
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -582,8 +598,21 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
         return send_json_error(req, 500, "save_failed");
     }
 
-    stock_alert_config_t alert_cfg = {0};
-    if (storage_stock_alert_config_save(symbol, &alert_cfg) != ESP_OK) {
+    /* Allocate large structs on heap to avoid HTTPD 4KB stack overflow */
+    stock_alert_config_t *alert_cfg = calloc(1, sizeof(stock_alert_config_t));
+    stock_quote_t *quote = calloc(1, sizeof(stock_quote_t));
+    if (!alert_cfg || !quote) {
+        free(alert_cfg);
+        free(quote);
+        stock_list_remove_symbol(&list, symbol);
+        storage_stocks_save(&list);
+        storage_stock_meta_remove(symbol);
+        return send_json_error(req, 500, "no_memory");
+    }
+
+    if (storage_stock_alert_config_save(symbol, alert_cfg) != ESP_OK) {
+        free(alert_cfg);
+        free(quote);
         stock_list_remove_symbol(&list, symbol);
         storage_stocks_save(&list);
         storage_stock_meta_remove(symbol);
@@ -597,13 +626,12 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
         s_stock_list_changed_cb(list.count);
     }
 
-    stock_quote_t quote = {0};
     const stock_quote_t *quote_ptr = NULL;
     if (is_sta_connected()) {
         char single_symbol[1][8] = {{0}};
         strlcpy(single_symbol[0], symbol, sizeof(single_symbol[0]));
-        if (twse_client_fetch(single_symbol, 1, &quote) == ESP_OK) {
-            quote_ptr = &quote;
+        if (twse_client_fetch(single_symbol, 1, quote) == ESP_OK) {
+            quote_ptr = quote;
         } else {
             ESP_LOGW(TAG, "stocks_add quote fetch failed symbol=%s", symbol);
         }
@@ -612,6 +640,8 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
     cJSON *resp = cJSON_CreateObject();
     cJSON *item = cJSON_CreateObject();
     if (!resp || !item) {
+        free(alert_cfg);
+        free(quote);
         cJSON_Delete(resp);
         cJSON_Delete(item);
         return send_json_error(req, 500, "no_memory");
@@ -624,8 +654,11 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
     cJSON_AddStringToObject(item, "abbr", info.short_name);
     cJSON_AddStringToObject(item, "industry", info.industry);
     cJSON_AddStringToObject(item, "market", "tse");
-    add_alert_config_to_stock_item(item, &alert_cfg);
+    add_alert_config_to_stock_item(item, alert_cfg);
     add_quote_to_stock_item(item, quote_ptr);
+
+    free(alert_cfg);
+    free(quote);
 
     char *resp_json = cJSON_PrintUnformatted(resp);
     cJSON_Delete(resp);
@@ -678,27 +711,44 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
         return send_json_error(req, 404, ERR_NOT_FOUND);
     }
 
-    stock_alert_config_t alert_cfg = {0};
+    /* Allocate large structs on heap to avoid HTTPD 4KB stack overflow */
+    stock_alert_config_t *alert_cfg = calloc(1, sizeof(stock_alert_config_t));
+    stock_quote_t *quote = calloc(1, sizeof(stock_quote_t));
+    if (!alert_cfg || !quote) {
+        free(alert_cfg);
+        free(quote);
+        cJSON_Delete(root);
+        return send_json_error(req, 500, "no_memory");
+    }
+
     if (should_clear_alert) {
         if (storage_stock_alert_config_remove(symbol) != ESP_OK) {
+            free(alert_cfg);
+            free(quote);
             cJSON_Delete(root);
             return send_json_error(req, 500, "save_failed");
         }
     } else {
         const char *parse_error = NULL;
-        esp_err_t parse_ret = parse_alert_config_from_json(alert_obj, &alert_cfg, &parse_error);
+        esp_err_t parse_ret = parse_alert_config_from_json(alert_obj, alert_cfg, &parse_error);
         if (parse_ret != ESP_OK) {
+            free(alert_cfg);
+            free(quote);
             cJSON_Delete(root);
             return send_json_error(req, 400, parse_error);
         }
-        if (storage_stock_alert_config_save(symbol, &alert_cfg) != ESP_OK) {
+        if (storage_stock_alert_config_save(symbol, alert_cfg) != ESP_OK) {
+            free(alert_cfg);
+            free(quote);
             cJSON_Delete(root);
             return send_json_error(req, 500, "save_failed");
         }
     }
     cJSON_Delete(root);
 
-    if (storage_stock_alert_config_load(symbol, &alert_cfg) != ESP_OK) {
+    if (storage_stock_alert_config_load(symbol, alert_cfg) != ESP_OK) {
+        free(alert_cfg);
+        free(quote);
         return send_json_error(req, 500, "load_failed");
     }
 
@@ -713,13 +763,12 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
         industry = meta->industry;
     }
 
-    stock_quote_t quote = {0};
     const stock_quote_t *quote_ptr = NULL;
     if (is_sta_connected()) {
         char single_symbol[1][8] = {{0}};
         strlcpy(single_symbol[0], symbol, sizeof(single_symbol[0]));
-        if (twse_client_fetch(single_symbol, 1, &quote) == ESP_OK) {
-            quote_ptr = &quote;
+        if (twse_client_fetch(single_symbol, 1, quote) == ESP_OK) {
+            quote_ptr = quote;
         } else {
             ESP_LOGW(TAG, "stocks_update quote fetch failed symbol=%s", symbol);
         }
@@ -728,6 +777,8 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
     cJSON *resp = cJSON_CreateObject();
     cJSON *item = cJSON_CreateObject();
     if (!resp || !item) {
+        free(alert_cfg);
+        free(quote);
         cJSON_Delete(resp);
         cJSON_Delete(item);
         return send_json_error(req, 500, "no_memory");
@@ -739,8 +790,11 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
     cJSON_AddStringToObject(item, "name", name);
     cJSON_AddStringToObject(item, "abbr", abbr);
     cJSON_AddStringToObject(item, "industry", industry);
-    add_alert_config_to_stock_item(item, &alert_cfg);
+    add_alert_config_to_stock_item(item, alert_cfg);
     add_quote_to_stock_item(item, quote_ptr);
+
+    free(alert_cfg);
+    free(quote);
 
     char *resp_json = cJSON_PrintUnformatted(resp);
     cJSON_Delete(resp);
