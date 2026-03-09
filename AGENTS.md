@@ -38,7 +38,7 @@
 | HTTPD handler 禁止 outbound HTTPS fetch | handler 內呼叫 `twse_client_fetch` 會與 portal inbound sockets 搶 lwIP socket slot → crash；僅允許單次驗證呼叫（`twse_client_validate_symbol`），報價由 scheduler resume 後補抓 |
 | HTTPD handler 堆疊紅線 | stack 4KB，框架開銷後可用 ~2KB；含 `prompt[513]` 的 struct（`stock_alert_config_t` 522B、`at_time_entry_t` 516B）單個就吃半個 stack，陣列直接爆；>128B 的 local struct/array 一律 `calloc` 到 heap |
 | `esp_http_client` 非 thread-safe | 不可從其他 thread 呼叫 `esp_http_client_close/cleanup`；stop 只設 flag，讓 owner task 自行清理 |
-| TCP TIME_WAIT 佔 socket slot | `CONFIG_LWIP_TCP_MSL=3000`（6s TIME_WAIT）；portal server 用 SO_LINGER 送 RST |
+| TCP TIME_WAIT 佔 socket slot | `CONFIG_LWIP_TCP_MSL=3000`（6s TIME_WAIT）；portal server 用 SO_LINGER 送 RST；**必須確認 `CONFIG_LWIP_SO_LINGER=y`**（未啟用時 `setsockopt` 靜默無效） |
 
 ### Portal 雙模式架構
 
@@ -120,6 +120,8 @@ scheduler_service Timer
 - `AGENTS.md` 僅保留分工與路由規則，不再重複列細節表。
 - 連線判讀規則：`WiFi connected (STA)` 不等於 `Provisioning Portal active (AP/HTTP)`；診斷 Portal 頁面時不得只憑 STA 已連線判定正常。
 - Portal 現為 STA/AP 雙模式：已連 WiFi 時不切換 WiFi 模式（STA 直接服務），未連 WiFi 時用純 AP。**不可使用 APSTA 模式**。
+- sdkconfig 未啟用的功能會讓對應 C API 靜默失敗（如 SO_LINGER、SO_RCVBUF）；排查 lwIP/網路問題時優先檢查 sdkconfig 選項。
+- 修 bug 優先確認根因再動手，避免在根因未確認前建立大型 workaround（如 async state machine + polling endpoint）。
 
 ## AI 協作分工（去重）
 - 功能開發、程式修改與邏輯除錯一律使用 `m5stack-core2-dev`。

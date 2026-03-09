@@ -258,6 +258,7 @@ static esp_err_t send_json_response(httpd_req_t *req, int status, const char *js
                           : status == 502 ? "502 Bad Gateway"
                           : "500 Internal Server Error");
     httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Connection", "close");
     return httpd_resp_sendstr(req, json ? json : "{}");
 }
 
@@ -1668,4 +1669,9 @@ const char *portal_backend_get_ap_ip(void)
 void portal_backend_set_stock_list_changed_callback(stock_list_changed_cb_t cb)
 {
     stock_admin_service_set_stock_list_changed_callback(cb);
+}
+
+void portal_backend_cache_quote(const stock_quote_t *quote)
+{
+    stock_admin_service_cache_quote(quote);
 }

@@ -198,6 +198,7 @@ void app_main(void)
         while (processed < MAIN_QUOTE_DRAIN_MAX_PER_CYCLE &&
                xQueueReceive(g_quote_queue, &quote, 0) == pdTRUE) {
             ui_manager_update_quote(&quote);
+            network_portal_cache_quote(&quote);
             ret = telegram_bot_cache_quote(&quote);
             if (ret != ESP_OK) {
                 ESP_LOGW(TAG, "telegram cache quote failed: %s", esp_err_to_name(ret));

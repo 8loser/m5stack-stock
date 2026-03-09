@@ -2,6 +2,7 @@
 
 #include "wifi_manager.h"
 #include "portal_backend.h"
+#include "twse_models.h"
 
 esp_err_t network_portal_init(void);
 esp_err_t network_portal_connect(const char *ssid, const char *password);
@@ -31,3 +32,4 @@ esp_err_t network_portal_scan(wifi_ap_info_t *results, uint16_t *count,
 /* 狀態回調 */
 void network_portal_set_callback(wifi_state_cb_t cb);
 void network_portal_set_stock_list_changed_callback(stock_list_changed_cb_t cb);
+void network_portal_cache_quote(const stock_quote_t *quote);

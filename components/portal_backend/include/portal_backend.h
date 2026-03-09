@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esp_err.h"
+#include "twse_models.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -16,3 +17,4 @@ const char *portal_backend_get_url(void);
 const char *portal_backend_get_ap_ip(void);
 
 void portal_backend_set_stock_list_changed_callback(stock_list_changed_cb_t cb);
+void portal_backend_cache_quote(const stock_quote_t *quote);

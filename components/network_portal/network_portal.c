@@ -99,3 +99,8 @@ void network_portal_set_stock_list_changed_callback(stock_list_changed_cb_t cb)
 {
     portal_backend_set_stock_list_changed_callback(cb);
 }
+
+void network_portal_cache_quote(const stock_quote_t *quote)
+{
+    portal_backend_cache_quote(quote);
+}
