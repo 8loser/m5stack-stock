@@ -4,8 +4,9 @@ function formatPrice(v) {
 
 function formatPercent(v) {
   if (typeof v !== "number" || !isFinite(v)) return "N/A";
-  var s = v > 0 ? "+" : "";
-  return s + v.toFixed(2) + "%";
+  if (v > 0) return "↗" + v.toFixed(2) + "%";
+  if (v < 0) return "↘" + Math.abs(v).toFixed(2) + "%";
+  return "0.00%";
 }
 
 function quoteSummary(q) {
