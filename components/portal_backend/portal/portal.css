@@ -169,6 +169,28 @@ button, .menu-btn { cursor: pointer; }
   white-space: nowrap;
 }
 .stock-quote { margin-top: 4px; font-size: 12px; color: #34506c; }
+.stock-price { font-weight: 700; }
+.stock-change { font-weight: 700; }
+.stock-change-up { color: #c62828; }
+.stock-change-down { color: #2e7d32; }
+.stock-change-flat { color: #34506c; }
+.stock-limit-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.stock-limit-up {
+  background: #ffebee;
+  color: #b71c1c;
+}
+.stock-limit-down {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
 .stock-alert { margin-top: 4px; font-size: 12px; color: #4f6276; }
 
 .stock-row > div:first-child { width: 100%; }

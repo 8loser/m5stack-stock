@@ -9,14 +9,18 @@ function formatPercent(v) {
   return "0.00%";
 }
 
+function quoteDeltaClass(q) {
+  if (!q || typeof q.change_percent !== "number" || !isFinite(q.change_percent)) return "";
+  if (q.change_percent > 0) return " stock-change-up";
+  if (q.change_percent < 0) return " stock-change-down";
+  return " stock-change-flat";
+}
+
 function quoteSummary(q) {
   if (!q || !q.available) {
-    return "現價: N/A | 漲跌: N/A";
+    return "N/A | N/A";
   }
-  var s = "現價: " + formatPrice(q.price) + " | 漲跌: " + formatPercent(q.change_percent);
-  if (q.limit_status === "up") s += " | 漲停";
-  if (q.limit_status === "down") s += " | 跌停";
-  return s;
+  return formatPrice(q.price) + " | " + formatPercent(q.change_percent);
 }
 
 function alertSummary(cfg) {
@@ -57,11 +61,25 @@ function renderStocksList() {
     var alertHtml = hasAlertConfigForDisplay(cfg)
       ? ("<div class='stock-alert'>" + escHtml(alertSummary(cfg)) + "</div>")
       : "";
+    var quote = it.quote || null;
+    var quoteText = quoteSummary(quote);
+    var parts = quoteText.split(" | ");
+    var priceText = parts.length ? parts[0] : "N/A";
+    var deltaText = parts.length > 1 ? parts[1] : "N/A";
+    var toneClass = quoteDeltaClass(quote);
+    var limitHtml = "";
+    if (quote && quote.limit_status === "up") {
+      limitHtml = " <span class='stock-limit-badge stock-limit-up'>漲停</span>";
+    } else if (quote && quote.limit_status === "down") {
+      limitHtml = " <span class='stock-limit-badge stock-limit-down'>跌停</span>";
+    }
+    var quoteHtml = "<span class='stock-price" + toneClass + "'>" + escHtml(priceText) + "</span> | " +
+      "<span class='stock-change" + toneClass + "'>" + escHtml(deltaText) + "</span>" + limitHtml;
     html += "<div class='stock-item'>" +
       "<div class='stock-row'><div><div class='stock-head'><div><span class='stock-symbol'>" +
       escHtml(sym) + "</span>" + (stockName ? (" <span class='stock-name'>" + escHtml(stockName) + "</span>") : "") +
       "</div><span class='hint stock-industry'>" + escHtml(it.industry || "") + "</span></div>" +
-      "<div class='stock-quote'>" + escHtml(quoteSummary(it.quote)) + "</div>" + alertHtml + "</div>" +
+      "<div class='stock-quote'>" + quoteHtml + "</div>" + alertHtml + "</div>" +
       "<div class='stock-actions'>" +
       "<button type='button' class='btn-edit' onclick=\"editStock('" + sym + "')\">Edit</button>" +
       "<button type='button' class='btn-danger' onclick=\"removeStock('" + sym + "')\">Remove</button>" +
