@@ -34,6 +34,16 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
 esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *out);
 
 /**
+ * @brief 驗證單一股票代號並可選擇同時解析即時報價（同一次 HTTP 回應）
+ * @param symbol     股票代號（4 碼）
+ * @param out_info   輸出：代號存在性與基本資訊
+ * @param out_quote  輸出：報價（可為 NULL 表示不需要）
+ */
+esp_err_t twse_client_validate_symbol_with_quote(const char *symbol,
+                                                 stock_symbol_info_t *out_info,
+                                                 stock_quote_t *out_quote);
+
+/**
  * @brief 啟動背景抓取任務
  */
 esp_err_t twse_client_start_task(const char symbols[][8], uint8_t count,

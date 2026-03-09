@@ -549,12 +549,18 @@ esp_err_t twse_client_fetch(const char symbols[][8], uint8_t count,
     return ESP_OK;
 }
 
-esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *out)
+esp_err_t twse_client_validate_symbol_with_quote(const char *symbol,
+                                                 stock_symbol_info_t *out,
+                                                 stock_quote_t *out_quote)
 {
     if (!symbol || !out) return ESP_ERR_INVALID_ARG;
 
     memset(out, 0, sizeof(*out));
     strlcpy(out->symbol, symbol, sizeof(out->symbol));
+    if (out_quote) {
+        memset(out_quote, 0, sizeof(*out_quote));
+        strlcpy(out_quote->symbol, symbol, sizeof(out_quote->symbol));
+    }
 
     /* Heap-allocate url to keep stack small (called from HTTPD 4KB stack) */
     char *url = malloc(512);
@@ -629,6 +635,9 @@ esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *o
     }
 
     parse_symbol_metadata(item, out);
+    if (out_quote && out->exists) {
+        parse_stock_item(item, symbol, out_quote);
+    }
 
     if (ex && cJSON_IsString(ex)) {
         strlcpy(out->market, ex->valuestring, sizeof(out->market));
@@ -639,6 +648,11 @@ esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *o
 
     cJSON_Delete(root);
     return ESP_OK;
+}
+
+esp_err_t twse_client_validate_symbol(const char *symbol, stock_symbol_info_t *out)
+{
+    return twse_client_validate_symbol_with_quote(symbol, out, NULL);
 }
 
 typedef struct {

@@ -547,48 +547,49 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
     stock_list_t *list = calloc(1, sizeof(stock_list_t));
     stock_symbol_info_t *info = calloc(1, sizeof(stock_symbol_info_t));
     stock_alert_config_t *alert_cfg = calloc(1, sizeof(stock_alert_config_t));
-    if (!list || !info || !alert_cfg) {
-        free(list); free(info); free(alert_cfg);
+    stock_quote_t *quote = calloc(1, sizeof(stock_quote_t));
+    if (!list || !info || !alert_cfg || !quote) {
+        free(list); free(info); free(alert_cfg); free(quote);
         return send_json_error(req, 500, "no_memory");
     }
 
     if (storage_stocks_load(list) != ESP_OK) {
-        free(list); free(info); free(alert_cfg);
+        free(list); free(info); free(alert_cfg); free(quote);
         return send_json_error(req, 500, "load_failed");
     }
 
     if (stock_list_find_symbol(list, symbol) >= 0) {
-        free(list); free(info); free(alert_cfg);
+        free(list); free(info); free(alert_cfg); free(quote);
         return send_json_error(req, 409, ERR_DUPLICATE_SYMBOL);
     }
     if (list->count >= MAX_STOCK_COUNT) {
-        free(list); free(info); free(alert_cfg);
+        free(list); free(info); free(alert_cfg); free(quote);
         return send_json_error(req, 409, ERR_LIMIT_EXCEEDED);
     }
 
     if (!is_sta_connected()) {
-        free(list); free(info); free(alert_cfg);
+        free(list); free(info); free(alert_cfg); free(quote);
         return send_json_error(req, 502, ERR_VALIDATE_FAILED);
     }
 
-    if (twse_client_validate_symbol(symbol, info) != ESP_OK) {
-        free(list); free(info); free(alert_cfg);
+    if (twse_client_validate_symbol_with_quote(symbol, info, quote) != ESP_OK) {
+        free(list); free(info); free(alert_cfg); free(quote);
         return send_json_error(req, 502, ERR_VALIDATE_FAILED);
     }
     if (!info->exists || strcmp(info->market, "tse") != 0) {
-        free(list); free(info); free(alert_cfg);
+        free(list); free(info); free(alert_cfg); free(quote);
         return send_json_error(req, 404, ERR_NOT_FOUND_OR_NOT_TSE);
     }
 
     if (!stock_list_add_symbol(list, symbol) || storage_stocks_save(list) != ESP_OK) {
-        free(list); free(info); free(alert_cfg);
+        free(list); free(info); free(alert_cfg); free(quote);
         return send_json_error(req, 500, "save_failed");
     }
 
     if (storage_stock_meta_save(symbol, info->name, info->short_name, info->industry) != ESP_OK) {
         stock_list_remove_symbol(list, symbol);
         storage_stocks_save(list);
-        free(list); free(info); free(alert_cfg);
+        free(list); free(info); free(alert_cfg); free(quote);
         return send_json_error(req, 500, "save_failed");
     }
 
@@ -596,7 +597,7 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
         stock_list_remove_symbol(list, symbol);
         storage_stocks_save(list);
         storage_stock_meta_remove(symbol);
-        free(list); free(info); free(alert_cfg);
+        free(list); free(info); free(alert_cfg); free(quote);
         return send_json_error(req, 500, "save_failed");
     }
 
@@ -611,7 +612,7 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
     cJSON *resp = cJSON_CreateObject();
     cJSON *item = cJSON_CreateObject();
     if (!resp || !item) {
-        free(list); free(info); free(alert_cfg);
+        free(list); free(info); free(alert_cfg); free(quote);
         cJSON_Delete(resp);
         cJSON_Delete(item);
         return send_json_error(req, 500, "no_memory");
@@ -625,9 +626,9 @@ static esp_err_t portal_stocks_add_post_handler(httpd_req_t *req)
     cJSON_AddStringToObject(item, "industry", info->industry);
     cJSON_AddStringToObject(item, "market", "tse");
     add_alert_config_to_stock_item(item, alert_cfg);
-    add_quote_to_stock_item(item, NULL);
+    add_quote_to_stock_item(item, quote);
 
-    free(list); free(info); free(alert_cfg);
+    free(list); free(info); free(alert_cfg); free(quote);
 
     char *resp_json = cJSON_PrintUnformatted(resp);
     cJSON_Delete(resp);
