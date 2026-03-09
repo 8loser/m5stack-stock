@@ -3,8 +3,31 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "storage.h"
+#include "ai_provider.h"
 #include <stdint.h>
 #include <stddef.h>
+
+/**
+ * @brief AI test key 單一 provider 結果
+ */
+typedef struct {
+    bool     configured;
+    bool     ok;
+    int      status_code;
+    esp_err_t err;
+} sched_ai_test_provider_result_t;
+
+/**
+ * @brief AI test key 完整結果（由呼叫端提供，scheduler task 填入）
+ */
+typedef struct {
+    int passed;
+    int failed;
+    int skipped;
+    sched_ai_test_provider_result_t gemini;
+    sched_ai_test_provider_result_t claude;
+    sched_ai_test_provider_result_t openai;
+} sched_ai_test_result_t;
 
 /**
  * @brief 初始化排程器（含 SNTP 時間同步）
@@ -66,6 +89,20 @@ esp_err_t scheduler_service_wait_quote_fetch_idle(uint32_t timeout_ms);
  * @brief 重新載入 AtTime entries（API 儲存後呼叫）
  */
 esp_err_t scheduler_service_reload_at_time(void);
+
+/**
+ * @brief 提交 AI test key 命令到 scheduler task 執行（同步等待結果）
+ *
+ * @param selected_provider -1=all, 0=Gemini, 1=Claude, 2=OpenAI
+ * @param provided_api_key  使用者提供的 key（NULL 表示用 NVS 已存的）
+ * @param result            呼叫端提供的結果 struct
+ * @param timeout_ms        最多等待毫秒數
+ * @return ESP_OK / ESP_ERR_TIMEOUT / ESP_FAIL
+ */
+esp_err_t scheduler_service_cmd_test_ai_key(int selected_provider,
+                                             const char *provided_api_key,
+                                             sched_ai_test_result_t *result,
+                                             uint32_t timeout_ms);
 
 /**
  * @brief 取得 AtTime 固定全域 prompt 陣列（唯讀）

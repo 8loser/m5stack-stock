@@ -580,20 +580,20 @@ static esp_err_t portal_ai_post_handler(httpd_req_t *req)
     return send_json_response(req, 200, json);
 }
 
-typedef struct {
-    char gemini_key[128];
-    char claude_key[128];
-    char openai_key[128];
-    char json[AI_TEST_RESP_MAX_LEN];
-} ai_test_ctx_t;
+static const char *ai_test_error_str(const sched_ai_test_provider_result_t *p)
+{
+    if (!p->configured) return "";
+    if (p->err != ESP_OK) return "network_error";
+    return p->ok ? "" : "http_error";
+}
 
 static esp_err_t portal_ai_test_post_handler(httpd_req_t *req)
 {
     char *body = NULL;
     char provider[16] = {0};
     char provided_api_key[128] = {0};
-    bool has_provided_api_key = false;
     int selected_provider = -1; /* -1 = test all providers */
+    const char *key_to_send = NULL;
 
     if (req && req->content_len > 0) {
         if (read_request_body_alloc(req, &body) != ESP_OK) {
@@ -606,171 +606,96 @@ static esp_err_t portal_ai_test_post_handler(httpd_req_t *req)
                 return send_json_response(req, 400, "{\"ok\":false,\"error\":\"invalid_provider\"}");
             }
         }
-        has_provided_api_key = get_form_value(body, "api_key", provided_api_key, sizeof(provided_api_key));
+        if (get_form_value(body, "api_key", provided_api_key, sizeof(provided_api_key))) {
+            key_to_send = provided_api_key;
+        }
         free(body);
     }
 
-    ai_test_ctx_t *ctx = calloc(1, sizeof(ai_test_ctx_t));
-    if (!ctx) {
-        return send_json_response(req, 400, "{\"ok\":false,\"error\":\"no_memory\"}");
-    }
-    int passed = 0;
-    int failed = 0;
-    int skipped = 0;
-    int gemini_status = 0;
-    int claude_status = 0;
-    int openai_status = 0;
-    bool gemini_ok = false;
-    bool claude_ok = false;
-    bool openai_ok = false;
-    const char *gemini_error = "";
-    const char *claude_error = "";
-    const char *openai_error = "";
+    sched_ai_test_result_t result;
+    esp_err_t submit = scheduler_service_cmd_test_ai_key(
+        selected_provider, key_to_send, &result, 15000);
 
-    if (selected_provider < 0 || selected_provider == AI_PROVIDER_GEMINI) {
-        if (selected_provider == AI_PROVIDER_GEMINI && has_provided_api_key && provided_api_key[0] != '\0') {
-            strlcpy(ctx->gemini_key, provided_api_key, sizeof(ctx->gemini_key));
-        } else {
-            storage_ai_load_provider_key((uint8_t)AI_PROVIDER_GEMINI, ctx->gemini_key, sizeof(ctx->gemini_key));
-            if (ctx->gemini_key[0] == '\0') {
-                storage_ai_load_key(ctx->gemini_key, sizeof(ctx->gemini_key));
-            }
-        }
+    if (submit == ESP_ERR_TIMEOUT) {
+        return send_json_response(req, 504, "{\"ok\":false,\"error\":\"timeout\"}");
     }
-    if (selected_provider < 0 || selected_provider == AI_PROVIDER_CLAUDE) {
-        if (selected_provider == AI_PROVIDER_CLAUDE && has_provided_api_key && provided_api_key[0] != '\0') {
-            strlcpy(ctx->claude_key, provided_api_key, sizeof(ctx->claude_key));
-        } else {
-            storage_ai_load_provider_key((uint8_t)AI_PROVIDER_CLAUDE, ctx->claude_key, sizeof(ctx->claude_key));
-        }
+    if (submit == ESP_ERR_INVALID_STATE) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"scheduler_unavailable\"}");
     }
-    if (selected_provider < 0 || selected_provider == AI_PROVIDER_OPENAI) {
-        if (selected_provider == AI_PROVIDER_OPENAI && has_provided_api_key && provided_api_key[0] != '\0') {
-            strlcpy(ctx->openai_key, provided_api_key, sizeof(ctx->openai_key));
-        } else {
-            storage_ai_load_provider_key((uint8_t)AI_PROVIDER_OPENAI, ctx->openai_key, sizeof(ctx->openai_key));
-        }
+    if (submit != ESP_OK) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"internal_error\"}");
     }
 
-    if ((selected_provider == AI_PROVIDER_GEMINI && ctx->gemini_key[0] == '\0') ||
-        (selected_provider == AI_PROVIDER_CLAUDE && ctx->claude_key[0] == '\0') ||
-        (selected_provider == AI_PROVIDER_OPENAI && ctx->openai_key[0] == '\0') ||
-        (selected_provider < 0 && ctx->gemini_key[0] == '\0' && ctx->claude_key[0] == '\0' && ctx->openai_key[0] == '\0')) {
-        free(ctx);
+    if (result.passed == 0 && result.failed == 0 && result.skipped > 0) {
         return send_json_response(req, 400, "{\"ok\":false,\"error\":\"missing_config\"}");
     }
 
-    if (selected_provider < 0 || selected_provider == AI_PROVIDER_GEMINI) {
-        if (ctx->gemini_key[0] != '\0') {
-            esp_err_t ret = ai_provider_test_key((ai_provider_type_t)AI_PROVIDER_GEMINI,
-                                                 ctx->gemini_key,
-                                                 &gemini_status);
-            gemini_ok = (ret == ESP_OK && gemini_status == 200);
-            gemini_error = (ret != ESP_OK) ? "network_error" : (gemini_ok ? "" : "http_error");
-            if (gemini_ok) {
-                passed++;
-            } else {
-                failed++;
-            }
-        } else {
-            skipped++;
-        }
-    }
+    ESP_LOGI(TAG, "AI test result: passed=%d failed=%d skipped=%d",
+             result.passed, result.failed, result.skipped);
 
-    if (selected_provider < 0 || selected_provider == AI_PROVIDER_CLAUDE) {
-        if (ctx->claude_key[0] != '\0') {
-            esp_err_t ret = ai_provider_test_key((ai_provider_type_t)AI_PROVIDER_CLAUDE,
-                                                 ctx->claude_key,
-                                                 &claude_status);
-            claude_ok = (ret == ESP_OK && claude_status == 200);
-            claude_error = (ret != ESP_OK) ? "network_error" : (claude_ok ? "" : "http_error");
-            if (claude_ok) {
-                passed++;
-            } else {
-                failed++;
-            }
-        } else {
-            skipped++;
-        }
+    char *json = calloc(1, AI_TEST_RESP_MAX_LEN);
+    if (!json) {
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"no_memory\"}");
     }
-
-    if (selected_provider < 0 || selected_provider == AI_PROVIDER_OPENAI) {
-        if (ctx->openai_key[0] != '\0') {
-            esp_err_t ret = ai_provider_test_key((ai_provider_type_t)AI_PROVIDER_OPENAI,
-                                                 ctx->openai_key,
-                                                 &openai_status);
-            openai_ok = (ret == ESP_OK && openai_status == 200);
-            openai_error = (ret != ESP_OK) ? "network_error" : (openai_ok ? "" : "http_error");
-            if (openai_ok) {
-                passed++;
-            } else {
-                failed++;
-            }
-        } else {
-            skipped++;
-        }
-    }
-
-    ESP_LOGI(TAG, "AI test result: passed=%d failed=%d skipped=%d", passed, failed, skipped);
 
     if (selected_provider == AI_PROVIDER_GEMINI) {
-        snprintf(ctx->json, sizeof(ctx->json),
+        snprintf(json, AI_TEST_RESP_MAX_LEN,
                  "{\"ok\":true,\"summary\":{\"passed\":%d,\"failed\":%d,\"skipped\":%d},"
                  "\"results\":["
                  "{\"provider\":\"gemini\",\"configured\":%s,\"ok\":%s,\"status\":%d,\"error\":\"%s\"}"
                  "]}",
-                 passed, failed, skipped,
-                 ctx->gemini_key[0] != '\0' ? "true" : "false",
-                 gemini_ok ? "true" : "false",
-                 gemini_status,
-                 gemini_error);
+                 result.passed, result.failed, result.skipped,
+                 result.gemini.configured ? "true" : "false",
+                 result.gemini.ok ? "true" : "false",
+                 result.gemini.status_code,
+                 ai_test_error_str(&result.gemini));
     } else if (selected_provider == AI_PROVIDER_CLAUDE) {
-        snprintf(ctx->json, sizeof(ctx->json),
+        snprintf(json, AI_TEST_RESP_MAX_LEN,
                  "{\"ok\":true,\"summary\":{\"passed\":%d,\"failed\":%d,\"skipped\":%d},"
                  "\"results\":["
                  "{\"provider\":\"claude\",\"configured\":%s,\"ok\":%s,\"status\":%d,\"error\":\"%s\"}"
                  "]}",
-                 passed, failed, skipped,
-                 ctx->claude_key[0] != '\0' ? "true" : "false",
-                 claude_ok ? "true" : "false",
-                 claude_status,
-                 claude_error);
+                 result.passed, result.failed, result.skipped,
+                 result.claude.configured ? "true" : "false",
+                 result.claude.ok ? "true" : "false",
+                 result.claude.status_code,
+                 ai_test_error_str(&result.claude));
     } else if (selected_provider == AI_PROVIDER_OPENAI) {
-        snprintf(ctx->json, sizeof(ctx->json),
+        snprintf(json, AI_TEST_RESP_MAX_LEN,
                  "{\"ok\":true,\"summary\":{\"passed\":%d,\"failed\":%d,\"skipped\":%d},"
                  "\"results\":["
                  "{\"provider\":\"openai\",\"configured\":%s,\"ok\":%s,\"status\":%d,\"error\":\"%s\"}"
                  "]}",
-                 passed, failed, skipped,
-                 ctx->openai_key[0] != '\0' ? "true" : "false",
-                 openai_ok ? "true" : "false",
-                 openai_status,
-                 openai_error);
+                 result.passed, result.failed, result.skipped,
+                 result.openai.configured ? "true" : "false",
+                 result.openai.ok ? "true" : "false",
+                 result.openai.status_code,
+                 ai_test_error_str(&result.openai));
     } else {
-        snprintf(ctx->json, sizeof(ctx->json),
+        snprintf(json, AI_TEST_RESP_MAX_LEN,
                  "{\"ok\":true,\"summary\":{\"passed\":%d,\"failed\":%d,\"skipped\":%d},"
                  "\"results\":["
                  "{\"provider\":\"gemini\",\"configured\":%s,\"ok\":%s,\"status\":%d,\"error\":\"%s\"},"
                  "{\"provider\":\"claude\",\"configured\":%s,\"ok\":%s,\"status\":%d,\"error\":\"%s\"},"
                  "{\"provider\":\"openai\",\"configured\":%s,\"ok\":%s,\"status\":%d,\"error\":\"%s\"}"
                  "]}",
-                 passed, failed, skipped,
-                 ctx->gemini_key[0] != '\0' ? "true" : "false",
-                 gemini_ok ? "true" : "false",
-                 gemini_status,
-                 gemini_error,
-                 ctx->claude_key[0] != '\0' ? "true" : "false",
-                 claude_ok ? "true" : "false",
-                 claude_status,
-                 claude_error,
-                 ctx->openai_key[0] != '\0' ? "true" : "false",
-                 openai_ok ? "true" : "false",
-                 openai_status,
-                 openai_error);
+                 result.passed, result.failed, result.skipped,
+                 result.gemini.configured ? "true" : "false",
+                 result.gemini.ok ? "true" : "false",
+                 result.gemini.status_code,
+                 ai_test_error_str(&result.gemini),
+                 result.claude.configured ? "true" : "false",
+                 result.claude.ok ? "true" : "false",
+                 result.claude.status_code,
+                 ai_test_error_str(&result.claude),
+                 result.openai.configured ? "true" : "false",
+                 result.openai.ok ? "true" : "false",
+                 result.openai.status_code,
+                 ai_test_error_str(&result.openai));
     }
 
-    esp_err_t ret = send_json_response(req, 200, ctx->json);
-    free(ctx);
+    esp_err_t ret = send_json_response(req, 200, json);
+    free(json);
     return ret;
 }
 

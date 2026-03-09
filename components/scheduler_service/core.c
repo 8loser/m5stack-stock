@@ -2,12 +2,15 @@
 #include "sleep_manager.h"
 #include "app_config.h"
 #include "twse_client.h"
+#include "ai_provider.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
 #include <stdlib.h>
+#include <string.h>
 #include "esp_heap_caps.h"
 
 static const char *TAG = "scheduler";
@@ -25,6 +28,85 @@ static void quote_timer_cb(TimerHandle_t xTimer)
     scheduler_service_ctx_t *ctx = scheduler_service_ctx();
     if (ctx->scheduler_task) {
         xTaskNotify(ctx->scheduler_task, SCHEDULER_SERVICE_NOTIFY_QUOTE_BIT, eSetBits);
+    }
+}
+
+static void execute_cmd_test_ai_key(const sched_cmd_item_t *cmd)
+{
+    sched_ai_test_result_t *r = (sched_ai_test_result_t *)cmd->result;
+    int sel = cmd->selected_provider;
+    bool has_key = (cmd->api_key[0] != '\0');
+    char key_buf[128] = {0};
+
+    /* --- Gemini --- */
+    if (sel < 0 || sel == AI_PROVIDER_GEMINI) {
+        if (sel == AI_PROVIDER_GEMINI && has_key) {
+            strlcpy(key_buf, cmd->api_key, sizeof(key_buf));
+        } else {
+            storage_ai_load_provider_key((uint8_t)AI_PROVIDER_GEMINI, key_buf, sizeof(key_buf));
+            if (key_buf[0] == '\0') {
+                storage_ai_load_key(key_buf, sizeof(key_buf));
+            }
+        }
+        r->gemini.configured = (key_buf[0] != '\0');
+        if (r->gemini.configured) {
+            r->gemini.err = ai_provider_test_key(AI_PROVIDER_GEMINI, key_buf, &r->gemini.status_code);
+            r->gemini.ok = (r->gemini.err == ESP_OK && r->gemini.status_code == 200);
+            if (r->gemini.ok) r->passed++; else r->failed++;
+        } else {
+            r->skipped++;
+        }
+        memset(key_buf, 0, sizeof(key_buf));
+    }
+
+    /* --- Claude --- */
+    if (sel < 0 || sel == AI_PROVIDER_CLAUDE) {
+        if (sel == AI_PROVIDER_CLAUDE && has_key) {
+            strlcpy(key_buf, cmd->api_key, sizeof(key_buf));
+        } else {
+            storage_ai_load_provider_key((uint8_t)AI_PROVIDER_CLAUDE, key_buf, sizeof(key_buf));
+        }
+        r->claude.configured = (key_buf[0] != '\0');
+        if (r->claude.configured) {
+            r->claude.err = ai_provider_test_key(AI_PROVIDER_CLAUDE, key_buf, &r->claude.status_code);
+            r->claude.ok = (r->claude.err == ESP_OK && r->claude.status_code == 200);
+            if (r->claude.ok) r->passed++; else r->failed++;
+        } else {
+            r->skipped++;
+        }
+        memset(key_buf, 0, sizeof(key_buf));
+    }
+
+    /* --- OpenAI --- */
+    if (sel < 0 || sel == AI_PROVIDER_OPENAI) {
+        if (sel == AI_PROVIDER_OPENAI && has_key) {
+            strlcpy(key_buf, cmd->api_key, sizeof(key_buf));
+        } else {
+            storage_ai_load_provider_key((uint8_t)AI_PROVIDER_OPENAI, key_buf, sizeof(key_buf));
+        }
+        r->openai.configured = (key_buf[0] != '\0');
+        if (r->openai.configured) {
+            r->openai.err = ai_provider_test_key(AI_PROVIDER_OPENAI, key_buf, &r->openai.status_code);
+            r->openai.ok = (r->openai.err == ESP_OK && r->openai.status_code == 200);
+            if (r->openai.ok) r->passed++; else r->failed++;
+        } else {
+            r->skipped++;
+        }
+    }
+}
+
+void scheduler_service_process_cmd_queue(scheduler_service_ctx_t *ctx)
+{
+    sched_cmd_item_t cmd;
+    while (xQueueReceive(ctx->cmd_queue, &cmd, 0) == pdTRUE) {
+        switch (cmd.type) {
+        case SCHED_CMD_TEST_AI_KEY:
+            execute_cmd_test_ai_key(&cmd);
+            break;
+        }
+        if (cmd.done) {
+            xSemaphoreGive(cmd.done);
+        }
     }
 }
 
@@ -55,6 +137,10 @@ static void scheduler_service_task(void *arg)
             if (!ctx->quote_polling_paused) {
                 scheduler_service_do_fetch_quotes(ctx, false);
             }
+        }
+
+        if (bits & SCHEDULER_SERVICE_NOTIFY_CMD_BIT) {
+            scheduler_service_process_cmd_queue(ctx);
         }
 
         scheduler_service_check_at_time(ctx);
@@ -99,6 +185,7 @@ esp_err_t scheduler_service_init(QueueHandle_t quote_queue)
 {
     s_ctx = (scheduler_service_ctx_t){0};
     s_ctx.quote_queue = quote_queue;
+    s_ctx.cmd_queue = xQueueCreate(1, sizeof(sched_cmd_item_t));
     s_ctx.quote_polling_paused = false;
 
     storage_schedule_load(&s_ctx.config);
@@ -256,4 +343,46 @@ esp_err_t scheduler_service_resume_quote_polling(void)
         xTaskNotify(s_ctx.scheduler_task, SCHEDULER_SERVICE_NOTIFY_FORCE_QUOTE_BIT, eSetBits);
     }
     return ESP_OK;
+}
+
+esp_err_t scheduler_service_cmd_test_ai_key(int selected_provider,
+                                             const char *provided_api_key,
+                                             sched_ai_test_result_t *result,
+                                             uint32_t timeout_ms)
+{
+    if (!s_ctx.cmd_queue || !s_ctx.scheduler_task) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    SemaphoreHandle_t done = xSemaphoreCreateBinary();
+    if (!done) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    memset(result, 0, sizeof(*result));
+
+    sched_cmd_item_t cmd = {
+        .type = SCHED_CMD_TEST_AI_KEY,
+        .result = result,
+        .done = done,
+        .selected_provider = selected_provider,
+    };
+    if (provided_api_key && provided_api_key[0] != '\0') {
+        strlcpy(cmd.api_key, provided_api_key, sizeof(cmd.api_key));
+    }
+
+    if (xQueueSend(s_ctx.cmd_queue, &cmd, 0) != pdTRUE) {
+        vSemaphoreDelete(done);
+        return ESP_FAIL;
+    }
+
+    xTaskNotify(s_ctx.scheduler_task, SCHEDULER_SERVICE_NOTIFY_CMD_BIT, eSetBits);
+
+    esp_err_t ret = ESP_OK;
+    if (xSemaphoreTake(done, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+        ret = ESP_ERR_TIMEOUT;
+    }
+
+    vSemaphoreDelete(done);
+    return ret;
 }

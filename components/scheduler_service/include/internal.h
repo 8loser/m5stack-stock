@@ -5,6 +5,7 @@
 #include "storage.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
 #include <stdbool.h>
@@ -12,10 +13,25 @@
 
 #define SCHEDULER_SERVICE_NOTIFY_QUOTE_BIT       (1U << 0)
 #define SCHEDULER_SERVICE_NOTIFY_FORCE_QUOTE_BIT (1U << 1)
+#define SCHEDULER_SERVICE_NOTIFY_CMD_BIT         (1U << 2)
+
+typedef enum {
+    SCHED_CMD_TEST_AI_KEY,
+} sched_cmd_type_t;
+
+typedef struct {
+    sched_cmd_type_t type;
+    void            *result;          /* 指向呼叫端的結果 struct */
+    SemaphoreHandle_t done;           /* 完成信號 */
+    /* --- CMD_TEST_AI_KEY params --- */
+    int              selected_provider;
+    char             api_key[128];    /* 使用者提供的 key（空字串=用 NVS） */
+} sched_cmd_item_t;
 
 typedef struct {
     schedule_config_t config;
     QueueHandle_t     quote_queue;
+    QueueHandle_t     cmd_queue;
     TimerHandle_t     quote_timer;
     TaskHandle_t      scheduler_task;
     bool              sntp_synced;
@@ -47,3 +63,4 @@ bool scheduler_service_is_wifi_connected(void);
 void scheduler_service_init_sntp(scheduler_service_ctx_t *ctx);
 void scheduler_service_do_fetch_quotes(scheduler_service_ctx_t *ctx, bool force_fetch);
 void scheduler_service_check_at_time(scheduler_service_ctx_t *ctx);
+void scheduler_service_process_cmd_queue(scheduler_service_ctx_t *ctx);

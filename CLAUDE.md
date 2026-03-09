@@ -29,7 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Task stack 預設用 internal DRAM | 新增 task 前必須確認剩餘 internal DRAM 夠用 |
 | PSRAM 不可作 task stack | NVS/SPI flash 操作時 cache 關閉，PSRAM 不可存取（assert crash） |
 | APSTA 模式不可用 | WiFi AP+STA 同時運行需要大量 internal DRAM，Core2 上會 crash（`ieee80211_hostap_attach`） |
-| HTTPD handler 禁止 outbound HTTPS fetch | handler 內呼叫 `twse_client_fetch` 會與 portal inbound sockets 搶 lwIP socket slot → crash；僅允許單次驗證呼叫（`twse_client_validate_symbol`），報價由 scheduler resume 後補抓 |
+| HTTPD handler 禁止 outbound HTTPS fetch | handler 內做 outbound HTTPS 會與 portal inbound sockets 搶 lwIP socket slot → 間歇失敗或 crash；僅允許輕量單次驗證（`twse_client_validate_symbol`）；其餘 HTTPS 呼叫（AI test key、報價抓取等）一律透過 cmd queue 委派給擁有獨立 stack 的 task 執行 |
 | HTTPD handler 堆疊紅線 | stack 4KB，框架開銷後可用 ~2KB；含 `prompt[513]` 的 struct（`stock_alert_config_t` 522B、`at_time_entry_t` 516B）單個就吃半個 stack，陣列直接爆；>128B 的 local struct/array 一律 `calloc` 到 heap |
 | `esp_http_client` 非 thread-safe | 不可從其他 thread 呼叫 `esp_http_client_close/cleanup`；stop 只設 flag，讓 owner task 自行清理 |
 | TCP TIME_WAIT 佔 socket slot | `CONFIG_LWIP_TCP_MSL=3000`（6s TIME_WAIT）；portal server 用 SO_LINGER 送 RST；**必須確認 `CONFIG_LWIP_SO_LINGER=y`**（未啟用時 `setsockopt` 靜默無效） |
@@ -48,6 +48,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - scheduler task 的 force/normal fetch 都需 `quote_polling_paused` guard
 - `scheduler_service_resume_quote_polling()` 立即 force fetch（portal 關閉 → dashboard 即時有資料）
 - 參考模式：telegram bot 的 pause → wait_http_idle → resume 三步驟
+- HTTPD handler 需要 outbound HTTPS 時，透過 `scheduler_service_cmd_test_ai_key()` 等 cmd queue API 委派給 scheduler task 執行（比照 telegram bot 的 `cmd_send_test` 模式：queue + semaphore 同步等結果）
 
 ## Portal 前端驗收基線
 
@@ -92,7 +93,7 @@ components/
   storage/               # NVS 讀寫，唯一持久化介面
   twse_client/           # TWSE API → cJSON → stock_quote_t
   ai_provider/           # vtable 模式三 Provider（Gemini/Claude/OpenAI）
-  scheduler_service/     # FreeRTOS Timer 驅動，整合 SNTP + DeepSleep（透過 event bus 回報 heartbeat）
+  scheduler_service/     # FreeRTOS Timer 驅動，整合 SNTP + DeepSleep + cmd queue（透過 event bus 回報 heartbeat；接受 portal handler 委派的 HTTPS 任務）
   ui/                    # LVGL 頁面與 widgets，單一 ui_mutex 保護
 ```
 
