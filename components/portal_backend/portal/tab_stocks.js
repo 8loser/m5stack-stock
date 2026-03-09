@@ -10,9 +10,9 @@ function formatPercent(v) {
 
 function quoteSummary(q) {
   if (!q || !q.available) {
-    return "最新: N/A | 漲幅: N/A";
+    return "現價: N/A | 漲跌: N/A";
   }
-  var s = "最新: " + formatPrice(q.price) + " | 漲幅: " + formatPercent(q.change_percent);
+  var s = "現價: " + formatPrice(q.price) + " | 漲跌: " + formatPercent(q.change_percent);
   if (q.limit_status === "up") s += " | 漲停";
   if (q.limit_status === "down") s += " | 跌停";
   return s;
@@ -57,11 +57,10 @@ function renderStocksList() {
       ? ("<div class='stock-alert'>" + escHtml(alertSummary(cfg)) + "</div>")
       : "";
     html += "<div class='stock-item'>" +
-      "<div class='stock-row'><div><span class='stock-symbol'>" +
+      "<div class='stock-row'><div><div class='stock-head'><div><span class='stock-symbol'>" +
       escHtml(sym) + "</span>" + (stockName ? (" <span class='stock-name'>" + escHtml(stockName) + "</span>") : "") +
-      "<br><span class='hint'>" +
-      escHtml(it.industry || "") + "</span><div class='stock-quote'>" + escHtml(quoteSummary(it.quote)) +
-      "</div>" + alertHtml + "</div>" +
+      "</div><span class='hint stock-industry'>" + escHtml(it.industry || "") + "</span></div>" +
+      "<div class='stock-quote'>" + escHtml(quoteSummary(it.quote)) + "</div>" + alertHtml + "</div>" +
       "<div class='stock-actions'>" +
       "<button type='button' class='btn-edit' onclick=\"editStock('" + sym + "')\">Edit</button>" +
       "<button type='button' class='btn-danger' onclick=\"removeStock('" + sym + "')\">Remove</button>" +
