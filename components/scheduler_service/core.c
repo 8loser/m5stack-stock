@@ -31,6 +31,20 @@ static void quote_timer_cb(TimerHandle_t xTimer)
     }
 }
 
+static esp_err_t test_key_with_retry(ai_provider_type_t type, const char *key, int *status)
+{
+    for (int attempt = 0; attempt < 3; attempt++) {
+        esp_err_t err = ai_provider_test_key(type, key, status);
+        if (err == ESP_OK) {
+            return ESP_OK;
+        }
+        ESP_LOGW(TAG, "AI test key attempt %d/%d failed for provider %d, retrying...",
+                 attempt + 1, 3, (int)type);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    return ESP_FAIL;
+}
+
 static void execute_cmd_test_ai_key(const sched_cmd_item_t *cmd)
 {
     sched_ai_test_result_t *r = (sched_ai_test_result_t *)cmd->result;
@@ -50,7 +64,7 @@ static void execute_cmd_test_ai_key(const sched_cmd_item_t *cmd)
         }
         r->gemini.configured = (key_buf[0] != '\0');
         if (r->gemini.configured) {
-            r->gemini.err = ai_provider_test_key(AI_PROVIDER_GEMINI, key_buf, &r->gemini.status_code);
+            r->gemini.err = test_key_with_retry(AI_PROVIDER_GEMINI, key_buf, &r->gemini.status_code);
             r->gemini.ok = (r->gemini.err == ESP_OK && r->gemini.status_code == 200);
             if (r->gemini.ok) r->passed++; else r->failed++;
         } else {
@@ -68,7 +82,7 @@ static void execute_cmd_test_ai_key(const sched_cmd_item_t *cmd)
         }
         r->claude.configured = (key_buf[0] != '\0');
         if (r->claude.configured) {
-            r->claude.err = ai_provider_test_key(AI_PROVIDER_CLAUDE, key_buf, &r->claude.status_code);
+            r->claude.err = test_key_with_retry(AI_PROVIDER_CLAUDE, key_buf, &r->claude.status_code);
             r->claude.ok = (r->claude.err == ESP_OK && r->claude.status_code == 200);
             if (r->claude.ok) r->passed++; else r->failed++;
         } else {
@@ -86,7 +100,7 @@ static void execute_cmd_test_ai_key(const sched_cmd_item_t *cmd)
         }
         r->openai.configured = (key_buf[0] != '\0');
         if (r->openai.configured) {
-            r->openai.err = ai_provider_test_key(AI_PROVIDER_OPENAI, key_buf, &r->openai.status_code);
+            r->openai.err = test_key_with_retry(AI_PROVIDER_OPENAI, key_buf, &r->openai.status_code);
             r->openai.ok = (r->openai.err == ESP_OK && r->openai.status_code == 200);
             if (r->openai.ok) r->passed++; else r->failed++;
         } else {
