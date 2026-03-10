@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - 指令細節由 `m5stack-core2-dev` 與 `m5stack-core2-flash-agent` 維護，`CLAUDE.md` 僅保留路由與共通規範。
 - 測試與驗證步驟細節同樣由 `m5stack-core2-dev` 與 `m5stack-core2-flash-agent` 維護。
+- 若本次修改可能影響既有功能，回覆時需主動提醒使用者測試受影響流程。
 - 程式風格與命名細節由 `m5stack-core2-dev` 維護。
 
 ## Firmware 併發與資源基線
