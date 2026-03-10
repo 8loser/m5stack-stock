@@ -127,7 +127,22 @@ function loadSavedAps(generation) {
 
 function loadScan(generation) {
   return fetchWithTimeout("/api/scan", null, PORTAL_API_TIMEOUT_MS)
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        if (!r.ok) {
+          var err = new Error("scan_failed");
+          err.code = (data && data.error) ? data.error : "scan_failed";
+          err.status = r.status;
+          throw err;
+        }
+        if (!Array.isArray(data)) {
+          var invalid = new Error("invalid_scan_payload");
+          invalid.code = "invalid_scan_payload";
+          throw invalid;
+        }
+        return data;
+      });
+    })
     .then(function (a) {
       if (is_stale_generation(generation)) return;
       var s = document.getElementById("ss");

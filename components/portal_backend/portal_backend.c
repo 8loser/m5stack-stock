@@ -318,8 +318,7 @@ static esp_err_t portal_scan_get_handler(httpd_req_t *req)
             ESP_LOGW(TAG, "GET /scan failed err=%s elapsed=%lldms",
                      esp_err_to_name(scan_ret),
                      (long long)((esp_timer_get_time() - start_us) / 1000LL));
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "scan failed");
-            return scan_ret;
+            return send_json_error(req, 500, "scan_failed");
         }
         if (count > 0) {
             memcpy(s_scan_cache, fresh_infos, count * sizeof(wifi_ap_info_t));
@@ -1486,8 +1485,8 @@ esp_err_t portal_backend_start(void)
         s_portal_sta_mode = true;
         ESP_LOGI(TAG, "WiFi connected, starting portal in STA mode (no AP)");
     } else {
-        /* AP mode: no WiFi connection, start pure AP for provisioning.
-         * Pure AP (not APSTA) avoids internal DRAM exhaustion. */
+        /* APSTA mode: no WiFi connection, keep AP for portal while
+         * allowing station scan during provisioning flow. */
         s_portal_sta_mode = false;
 
         if (!s_ap_netif) {
@@ -1506,9 +1505,9 @@ esp_err_t portal_backend_start(void)
         ap_cfg.ap.max_connection = WIFI_PORTAL_MAX_STA;
         ap_cfg.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
 
-        ret = esp_wifi_set_mode(WIFI_MODE_AP);
+        ret = esp_wifi_set_mode(WIFI_MODE_APSTA);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "切換 AP 模式失敗: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "切換 APSTA 模式失敗: %s", esp_err_to_name(ret));
             return ret;
         }
 
@@ -1518,7 +1517,7 @@ esp_err_t portal_backend_start(void)
             return ret;
         }
 
-        ESP_LOGI(TAG, "No WiFi, starting portal in AP mode: %s", s_portal_ap_ssid);
+        ESP_LOGI(TAG, "No WiFi, starting portal in APSTA mode: %s", s_portal_ap_ssid);
     }
 
     ret = start_portal_http_server();
