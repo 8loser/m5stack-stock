@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "ui_manager.c"
         "screens/screen_dashboard.c"
+        "screens/screen_boot.c"
         "screens/screen_portal.c"
         "screens/screen_log.c"
         "screens/screen_info.c"
@@ -9,7 +10,6 @@ idf_component_register(
         "screens/screen_hw_test.c"
         "widgets/status_bar.c"
         "widgets/stock_card.c"
-        "widgets/loading_spinner.c"
         "fonts/lv_font_noto_tc_14.c"
         "fonts/lv_font_noto_tc_16.c"
     INCLUDE_DIRS "include"

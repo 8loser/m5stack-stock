@@ -7,12 +7,12 @@
 #include "ui_compat.h"
 #include "screen_log.h"
 #include "screen_dashboard.h"
+#include "screen_boot.h"
 #include "screen_portal.h"
 #include "screen_info.h"
 #include "screen_settings.h"
 #include "screen_hw_test.h"
 #include "status_bar.h"
-#include "loading_spinner.h"
 #include "scheduler_service.h"
 #include "telegram_bot.h"
 #include "network_portal.h"
@@ -160,21 +160,18 @@ static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 
 static SemaphoreHandle_t s_ui_mutex   = NULL;
 static lv_disp_t        *s_disp       = NULL;
-static screen_id_t       s_cur_screen = SCREEN_DASHBOARD;
+static screen_id_t       s_cur_screen = SCREEN_BOOT;
 static portMUX_TYPE      s_heartbeat_lock = portMUX_INITIALIZER_UNLOCKED;
-static portMUX_TYPE      s_startup_guard_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE      s_boot_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t          s_main_heartbeat_ms = 0;
 static uint32_t          s_scheduler_heartbeat_ms = 0;
-static bool              s_startup_guard_active = true;
-static bool              s_startup_ready = false;
-static uint32_t          s_startup_guard_start_ms = 0;
+static bool              s_boot_active = true;
 
 #define MAIN_HEARTBEAT_TIMEOUT_MS      1500U
 #define SCHED_HEARTBEAT_TIMEOUT_MS     3000U
 #define PORTAL_NET_DRAIN_TIMEOUT_MS    (HTTP_TIMEOUT_MS + 5000U)
 #define PORTAL_TG_DRAIN_TIMEOUT_MS     PORTAL_NET_DRAIN_TIMEOUT_MS
 #define AUTO_RETURN_GUARD_MS           500U
-#define STARTUP_GUARD_MIN_MS           3000U
 static const screen_id_t s_nav_screens[] = {
     SCREEN_DASHBOARD,
     SCREEN_LOG,
@@ -193,6 +190,40 @@ static int s_mid_btn_idx = 0;
 /* 各頁面的 lv_obj */
 static lv_obj_t *s_screens[SCREEN_COUNT] = {NULL};
 
+static bool ui_can_open_dashboard(void)
+{
+    return network_portal_is_connected();
+}
+
+static screen_id_t ui_get_home_screen(void)
+{
+    return ui_can_open_dashboard() ? SCREEN_DASHBOARD : SCREEN_PORTAL;
+}
+
+static void ui_switch_nav_step(int step)
+{
+    int base_idx = s_nav_idx;
+    int idx = 0;
+
+    for (idx = 0; idx < (int)s_nav_screens_count; idx++) {
+        if (s_nav_screens[idx] == s_cur_screen) {
+            base_idx = idx;
+            break;
+        }
+    }
+
+    idx = base_idx;
+    for (int i = 0; i < (int)s_nav_screens_count; i++) {
+        idx = (idx + step + (int)s_nav_screens_count) % (int)s_nav_screens_count;
+        if (s_nav_screens[idx] == SCREEN_DASHBOARD && !ui_can_open_dashboard()) {
+            continue;
+        }
+        s_nav_idx = idx;
+        ui_manager_switch_screen(s_nav_screens[idx]);
+        return;
+    }
+}
+
 static void ui_manager_log_v(log_tag_t tag, log_level_t level, const char *fmt, va_list ap)
 {
     if (!fmt) {
@@ -210,27 +241,7 @@ static void lvgl_task(void *arg)
     while (1) {
         if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             lv_task_handler();
-            bool startup_guard_active = false;
-            bool startup_ready = false;
-            uint32_t startup_guard_start_ms = 0;
             uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
-
-            taskENTER_CRITICAL(&s_startup_guard_lock);
-            startup_guard_active = s_startup_guard_active;
-            startup_ready = s_startup_ready;
-            startup_guard_start_ms = s_startup_guard_start_ms;
-            taskEXIT_CRITICAL(&s_startup_guard_lock);
-
-            if (startup_guard_active) {
-                loading_spinner_set_visible(true);
-                if (startup_ready && (now_ms - startup_guard_start_ms >= STARTUP_GUARD_MIN_MS)) {
-                    taskENTER_CRITICAL(&s_startup_guard_lock);
-                    s_startup_guard_active = false;
-                    taskEXIT_CRITICAL(&s_startup_guard_lock);
-                    loading_spinner_set_visible(false);
-                    ESP_LOGI(TAG, "startup guard released");
-                }
-            }
 
             bool screen_on = board_is_screen_on();
             if (s_last_screen_on != screen_on) {
@@ -238,9 +249,10 @@ static void lvgl_task(void *arg)
                 if (s_last_screen_on && !screen_on) {
                     s_last_touch_ms = now_ms;
                     s_last_auto_return_ms = now_ms;
-                    if (s_cur_screen != SCREEN_DASHBOARD) {
-                        ESP_LOGI(TAG, "screen off, preload dashboard");
-                        ui_manager_switch_screen(SCREEN_DASHBOARD);
+                    if (s_cur_screen != SCREEN_DASHBOARD && s_cur_screen != SCREEN_BOOT) {
+                        screen_id_t home = ui_get_home_screen();
+                        ESP_LOGI(TAG, "screen off, preload home=%d", (int)home);
+                        ui_manager_switch_screen(home);
                     }
                 } else if (!s_last_screen_on && screen_on) {
                     /* 亮屏只重置基準，避免沿用熄屏前時間 */
@@ -252,13 +264,15 @@ static void lvgl_task(void *arg)
 
             if (screen_on &&
                 s_cur_screen != SCREEN_DASHBOARD &&
-                s_cur_screen != SCREEN_PORTAL) {
+                s_cur_screen != SCREEN_PORTAL &&
+                s_cur_screen != SCREEN_BOOT) {
                 uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
                 if ((now_ms - s_last_touch_ms) >= UI_NON_HOME_IDLE_RETURN_MS &&
                     (now_ms - s_last_auto_return_ms) >= AUTO_RETURN_GUARD_MS) {
+                    screen_id_t home = ui_get_home_screen();
                     s_last_auto_return_ms = now_ms;
-                    ESP_LOGI(TAG, "idle timeout, return to dashboard");
-                    ui_manager_switch_screen(SCREEN_DASHBOARD);
+                    ESP_LOGI(TAG, "idle timeout, return to home=%d", (int)home);
+                    ui_manager_switch_screen(home);
                 }
             }
             xSemaphoreGiveRecursive(s_ui_mutex);
@@ -277,17 +291,15 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
 {
     uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
     s_ui_mutex = ui_mutex;
-    s_cur_screen = SCREEN_DASHBOARD;
+    s_cur_screen = SCREEN_BOOT;
     s_nav_idx = 0;
     s_mid_btn_idx = 0;
     s_last_touch_ms = now_ms;
     s_last_auto_return_ms = now_ms;
     s_last_screen_on = board_is_screen_on();
-    taskENTER_CRITICAL(&s_startup_guard_lock);
-    s_startup_guard_active = true;
-    s_startup_ready = false;
-    s_startup_guard_start_ms = now_ms;
-    taskEXIT_CRITICAL(&s_startup_guard_lock);
+    taskENTER_CRITICAL(&s_boot_lock);
+    s_boot_active = true;
+    taskEXIT_CRITICAL(&s_boot_lock);
     taskENTER_CRITICAL(&s_heartbeat_lock);
     s_main_heartbeat_ms = now_ms;
     s_scheduler_heartbeat_ms = now_ms;
@@ -361,20 +373,20 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
 
     /* 建立所有頁面 */
     s_screens[SCREEN_DASHBOARD]   = screen_dashboard_create();
+    s_screens[SCREEN_BOOT]        = screen_boot_create();
     s_screens[SCREEN_PORTAL]      = screen_portal_create();
     s_screens[SCREEN_LOG]         = screen_log_create();
     s_screens[SCREEN_INFO]        = screen_info_create();
     s_screens[SCREEN_SETTINGS]    = screen_settings_create();
     s_screens[SCREEN_HW_TEST]     = screen_hw_test_create();
 
-    /* 顯示 Dashboard */
-    lv_scr_load(s_screens[SCREEN_DASHBOARD]);
+    /* 開機流程先顯示 Boot screen */
+    lv_scr_load(s_screens[SCREEN_BOOT]);
 
     /* 在頂層建立共用 widgets（覆蓋所有頁面）*/
     status_bar_create_on(lv_layer_top());
-    status_bar_set_page(SCREEN_DASHBOARD);
-    loading_spinner_create(lv_layer_top());
-    loading_spinner_set_visible(true);
+    status_bar_set_page(SCREEN_BOOT);
+    status_bar_set_visible(false);
 
     /* 啟動 LVGL 任務 */
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", STACK_LVGL, NULL,
@@ -391,8 +403,21 @@ void ui_lvgl_tick_cb(void *arg)
 
 void ui_manager_switch_screen(screen_id_t id)
 {
+    bool boot_active = false;
+
     if (id >= SCREEN_COUNT) return;
     if (s_screens[id] == NULL) return;
+    taskENTER_CRITICAL(&s_boot_lock);
+    boot_active = s_boot_active;
+    taskEXIT_CRITICAL(&s_boot_lock);
+    if (boot_active && id != SCREEN_BOOT) {
+        ESP_LOGI(TAG, "boot active, ignore switch to %d", (int)id);
+        return;
+    }
+    if (id == SCREEN_DASHBOARD && !ui_can_open_dashboard()) {
+        ESP_LOGI(TAG, "wifi disconnected, block switch to dashboard");
+        return;
+    }
 
     screen_id_t prev = s_cur_screen;
     uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
@@ -436,7 +461,8 @@ void ui_manager_switch_screen(screen_id_t id)
         if (id == SCREEN_SETTINGS) {
             screen_settings_load();
         }
-        if (id == SCREEN_SETTINGS || id == SCREEN_PORTAL || prev == SCREEN_PORTAL) {
+        if (id == SCREEN_BOOT || prev == SCREEN_BOOT ||
+            id == SCREEN_SETTINGS || id == SCREEN_PORTAL || prev == SCREEN_PORTAL) {
             /* Settings and portal transitions are sensitive to long-running side effects. */
             lv_scr_load(s_screens[id]);
         } else {
@@ -494,17 +520,20 @@ void ui_manager_switch_screen(screen_id_t id)
 
 static void handle_hw_button(uint8_t btn)
 {
-    if (ui_manager_is_startup_guard_active()) {
-        ESP_LOGI(TAG, "startup guard active, ignore nav btn=%u", (unsigned)btn);
+    bool boot_active = false;
+
+    taskENTER_CRITICAL(&s_boot_lock);
+    boot_active = s_boot_active;
+    taskEXIT_CRITICAL(&s_boot_lock);
+    if (boot_active) {
+        ESP_LOGI(TAG, "boot active, ignore nav btn=%u", (unsigned)btn);
         return;
     }
 
     ESP_LOGI(TAG, "handle_hw_button: cur=%d btn=%u", (int)s_cur_screen, btn);
 
     if (s_cur_screen == SCREEN_PORTAL && (btn == 0 || btn == 2)) {
-        if (btn <= 2) {
-            ui_manager_switch_screen(SCREEN_DASHBOARD);
-        }
+        ui_switch_nav_step((btn == 0) ? -1 : 1);
         return;
     }
 
@@ -514,19 +543,21 @@ static void handle_hw_button(uint8_t btn)
             ui_manager_switch_screen(SCREEN_PORTAL);
             return;
         }
-        ui_manager_switch_screen(SCREEN_DASHBOARD);
+        if (ui_can_open_dashboard()) {
+            ui_manager_switch_screen(SCREEN_DASHBOARD);
+        } else {
+            ESP_LOGI(TAG, "wifi disconnected, keep portal on mid key");
+        }
         return;
     }
 
     if (btn == 0 && s_nav_screens_count > 0) {
-        s_nav_idx = (s_nav_idx - 1 + (int)s_nav_screens_count) % (int)s_nav_screens_count;
-        ui_manager_switch_screen(s_nav_screens[s_nav_idx]);
+        ui_switch_nav_step(-1);
         return;
     }
 
     if (btn == 2 && s_nav_screens_count > 0) {
-        s_nav_idx = (s_nav_idx + 1) % (int)s_nav_screens_count;
-        ui_manager_switch_screen(s_nav_screens[s_nav_idx]);
+        ui_switch_nav_step(1);
     }
 }
 
@@ -581,10 +612,31 @@ void ui_manager_update_wifi_state(int state, const char *ip)
     }
 }
 
-void ui_manager_show_loading(bool show)
+void ui_manager_set_boot_progress(const char *text)
 {
-    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        loading_spinner_set_visible(show);
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        screen_boot_set_progress(text);
+        xSemaphoreGiveRecursive(s_ui_mutex);
+    }
+}
+
+void ui_manager_finish_boot(bool wifi_connected)
+{
+    bool boot_active = false;
+    screen_id_t target = wifi_connected ? SCREEN_DASHBOARD : SCREEN_PORTAL;
+
+    taskENTER_CRITICAL(&s_boot_lock);
+    boot_active = s_boot_active;
+    s_boot_active = false;
+    taskEXIT_CRITICAL(&s_boot_lock);
+
+    if (!boot_active) {
+        return;
+    }
+
+    ui_manager_switch_screen(target);
+    if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        status_bar_set_visible(true);
         xSemaphoreGiveRecursive(s_ui_mutex);
     }
 }
@@ -630,22 +682,6 @@ bool ui_manager_is_main_flow_alive(uint32_t *age_main_ms, uint32_t *age_sched_ms
 
     return (main_age <= MAIN_HEARTBEAT_TIMEOUT_MS) &&
            (sched_age <= SCHED_HEARTBEAT_TIMEOUT_MS);
-}
-
-void ui_manager_set_startup_ready(bool ready)
-{
-    taskENTER_CRITICAL(&s_startup_guard_lock);
-    s_startup_ready = ready;
-    taskEXIT_CRITICAL(&s_startup_guard_lock);
-}
-
-bool ui_manager_is_startup_guard_active(void)
-{
-    bool active = false;
-    taskENTER_CRITICAL(&s_startup_guard_lock);
-    active = s_startup_guard_active;
-    taskEXIT_CRITICAL(&s_startup_guard_lock);
-    return active;
 }
 
 void ui_manager_log_stock(log_level_t level, const char *fmt, ...)

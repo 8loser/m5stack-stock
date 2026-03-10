@@ -148,6 +148,7 @@ void app_main(void)
     /* Phase 2: LVGL UI 初始化 */
     ESP_LOGI(TAG, "初始化 LVGL UI...");
     ESP_ERROR_CHECK(ui_manager_init(g_ui_mutex));
+    ui_manager_set_boot_progress("Load storage...");
 
     /* Phase 3: 儲存 & WiFi */
     ESP_LOGI(TAG, "初始化 Storage...");
@@ -158,6 +159,7 @@ void app_main(void)
         ui_manager_set_dashboard_symbols((const char (*)[8])stocks.symbols, stocks.count);
     }
 
+    ui_manager_set_boot_progress("Init network...");
     ESP_LOGI(TAG, "初始化 WiFi...");
     ESP_ERROR_CHECK(network_portal_init());
     network_portal_set_callback(on_wifi_state);
@@ -165,24 +167,27 @@ void app_main(void)
     ESP_ERROR_CHECK(telegram_bot_init());
     telegram_bot_start();
 
-    /* 嘗試自動連線；若無設定則導向 Portal 頁面，由使用者手動啟動配網入口 */
+    ui_manager_set_boot_progress("Connect saved WiFi...");
+    /* 嘗試自動連線；若無設定則開機完成後導向 Portal */
     ret = network_portal_connect_saved();
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "未連上既有 WiFi，請至 Portal 頁面手動啟動");
-        ui_manager_switch_screen(SCREEN_PORTAL);
+        ESP_LOGW(TAG, "未連上既有 WiFi，開機完成後導向 Portal");
     }
 
     /* Phase 4: TWSE Client */
+    ui_manager_set_boot_progress("Init quote client...");
     ESP_LOGI(TAG, "初始化 TWSE Client...");
     ESP_ERROR_CHECK(twse_client_init(g_quote_queue));
 
     /* Phase 5: 排程器 */
+    ui_manager_set_boot_progress("Init scheduler...");
     ESP_LOGI(TAG, "初始化 Scheduler...");
     ESP_ERROR_CHECK(scheduler_service_init(g_quote_queue));
 
     ESP_LOGI(TAG, "=== 系統啟動完成 ===");
+    ui_manager_set_boot_progress("Ready");
     ui_manager_log_sys(LOG_LEVEL_INFO, "System ready");
-    ui_manager_set_startup_ready(true);
+    ui_manager_finish_boot(network_portal_is_connected());
 
     /* 主迴圈：消費 queue 資料 → 驅動 UI 更新 */
     stock_quote_t      quote;

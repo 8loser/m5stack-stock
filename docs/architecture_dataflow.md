@@ -11,22 +11,25 @@ flowchart TD
     C[init_global_resources<br/>g_quote_queue + g_ui_mutex]
     D[app_event_bus_init + subscribe]
     E[board_init]
-    F[storage_init + storage_wifi_migrate_legacy]
-    G[ui_manager_init]
+    F[ui_manager_init + boot screen]
+    G[storage_init + storage_wifi_migrate_legacy]
     H[network_portal_init]
     I[telegram_bot_init/start]
     J[network_portal_connect_saved]
     K[twse_client_init]
     L[scheduler_init]
-    M[main loop]
+    M[ui_manager_finish_boot<br/>wifi connected ? dashboard : portal]
+    N[main loop]
 
-    A --> B --> C --> D --> E --> G --> F --> H --> I --> J --> K --> L --> M
+    A --> B --> C --> D --> E --> F --> G --> H --> I --> J --> K --> L --> M --> N
 ```
 
 重點：
 - `main` 建立跨模組共享資源：`g_quote_queue`、`g_ui_mutex`。
 - `app_event_bus` 目前主要承接 `scheduler` 發出的 heartbeat 與抓價輪次事件，`main` 訂閱後寫入 UI log。
 - `network_portal` 是 façade：把呼叫轉給 `wifi_manager` 與 `portal_backend`。
+- `ui_manager` 啟動時先顯示 boot screen，透過 progress text 回報初始化進度。
+- `ready` 後才進行首畫面分流：已連 WiFi 進 Dashboard，未連 WiFi 進 Portal。
 
 ## 2) 報價主資料流（核心管線）
 
@@ -85,6 +88,7 @@ flowchart TD
 - 進入 `SCREEN_PORTAL` 時自動 `portal_backend_start()`（APSTA + HTTP）。
 - 若已連 WiFi，Portal 走 STA（不切 mode）；若未連 WiFi，Portal 強制 APSTA（實驗）以支援手機連 Core2 AP 後執行 WiFi scan。
 - 離開 `SCREEN_PORTAL` 時自動 `portal_backend_stop()`（回 STA）。
+- 未連 WiFi 時，UI 會阻擋切入 `SCREEN_DASHBOARD`，僅允許切到 Portal 與其他非 Dashboard 頁面。
 
 ## 5) 股票清單與設定回寫流（Portal API）
 

@@ -131,6 +131,9 @@ static void refresh_page_message(void)
     case SCREEN_HW_TEST:
         page_name = "硬體測試";
         break;
+    case SCREEN_BOOT:
+        page_name = "開機中";
+        break;
     default:
         page_name = "儀表板";
         break;
@@ -317,6 +320,19 @@ void status_bar_create_on(lv_obj_t *parent)
 
     if (!s_heartbeat_timer) {
         s_heartbeat_timer = lv_timer_create(heartbeat_update_cb, 120, NULL);
+    }
+}
+
+void status_bar_set_visible(bool visible)
+{
+    if (s_bar == NULL) {
+        return;
+    }
+
+    if (visible) {
+        lv_obj_clear_flag(s_bar, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_bar, LV_OBJ_FLAG_HIDDEN);
     }
 }
 

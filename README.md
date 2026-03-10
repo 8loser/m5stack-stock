@@ -85,18 +85,36 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
 
 ## 目前 UI 與操作
 
+### 開機流程
+
+- 開機先顯示全版 `Boot screen`，以進度文字顯示初始化階段
+- 系統 `ready` 後分流：
+  - 已連 WiFi：進入 `Dashboard`
+  - 未連 WiFi：進入 `Portal`
+
 ### 底部虛擬按鍵（觸控區）
 
 - 左鍵：切到上一頁（輪詢頁面：`Dashboard -> Log -> Resource -> Settings -> HW Test`）
 - 中鍵：進入 `Portal`
 - 右鍵：切到下一頁（同上輪詢）
-- 在 `Portal` 頁面時，任一底部鍵都會回到 `Dashboard`
+- 未連 WiFi 時，頁面輪詢會跳過 `Dashboard`
+- 在 `Portal` 頁面時：
+  - 已連 WiFi：中鍵可回 `Dashboard`
+  - 未連 WiFi：中鍵維持在 `Portal`
 
-### 自動返回 Dashboard
+### 自動返回首頁（Home）
 
-- 在非 `Portal`、非 `Dashboard` 頁面，若 10 秒內沒有觸控，會自動返回 `Dashboard`
+- 在非 `Portal`、非 `Dashboard` 頁面，若 10 秒內沒有觸控，會自動返回首頁
+- 首頁定義：
+  - 已連 WiFi：`Dashboard`
+  - 未連 WiFi：`Portal`
 - 熄屏期間不進行閒置超時判定
-- 熄屏時若目前不在 `Dashboard`，會預先切回 `Dashboard`；因此亮屏第一時間會直接顯示 `Dashboard`
+- 熄屏時若目前不在首頁，會預先切回首頁；因此亮屏第一時間會顯示首頁
+
+### Dashboard 進入條件
+
+- `Dashboard` 僅允許在「已連 WiFi」狀態進入
+- 未連 WiFi 時，會阻擋所有切到 `Dashboard` 的操作路徑
 
 ### 頁面
 
