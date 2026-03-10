@@ -43,6 +43,24 @@ function thresholdInputValue(v) {
   return (Math.round(v * 100) / 100).toFixed(2);
 }
 
+function clampThresholdValue(v) {
+  if (!isFinite(v)) return 0;
+  if (v < 0) return 0;
+  if (v > 99.99) return 99.99;
+  return Math.round(v * 100) / 100;
+}
+
+function adjustStockThreshold(sym, field, delta) {
+  var inputId = field === "up" ? ("alert_up_" + sym) : ("alert_down_" + sym);
+  var inputEl = document.getElementById(inputId);
+  if (!inputEl) return;
+
+  var curr = parseFloat(inputEl.value);
+  if (!isFinite(curr)) curr = 0;
+  var next = clampThresholdValue(curr + delta);
+  inputEl.value = next.toFixed(2);
+}
+
 function renderStocksList() {
   var box = document.getElementById("stocks_list");
   if (!box) return;
@@ -92,8 +110,20 @@ function renderStocksList() {
           "<div class='stock-threshold-grid'>" +
             "<label class='threshold-label' for='alert_up_" + sym + "'>上漲門檻 (%)</label>" +
             "<label class='threshold-label' for='alert_down_" + sym + "'>下跌門檻 (%)</label>" +
-            "<input id='alert_up_" + sym + "' type='number' min='0' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.up_threshold_pct)) + "'>" +
-            "<input id='alert_down_" + sym + "' type='number' min='0' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.down_threshold_pct)) + "'>" +
+            "<div class='threshold-input-inline'>" +
+              "<input id='alert_up_" + sym + "' type='number' min='0' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.up_threshold_pct)) + "'>" +
+              "<div class='threshold-stepper'>" +
+                "<button type='button' class='threshold-step-btn threshold-step-minus' title='-0.01' aria-label='decrease by 0.01' onclick=\"adjustStockThreshold('" + sym + "','up',-0.01)\">−</button>" +
+                "<button type='button' class='threshold-step-btn threshold-step-plus' title='+0.01' aria-label='increase by 0.01' onclick=\"adjustStockThreshold('" + sym + "','up',0.01)\">+</button>" +
+              "</div>" +
+            "</div>" +
+            "<div class='threshold-input-inline'>" +
+              "<input id='alert_down_" + sym + "' type='number' min='0' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.down_threshold_pct)) + "'>" +
+              "<div class='threshold-stepper'>" +
+                "<button type='button' class='threshold-step-btn threshold-step-minus' title='-0.01' aria-label='decrease by 0.01' onclick=\"adjustStockThreshold('" + sym + "','down',-0.01)\">−</button>" +
+                "<button type='button' class='threshold-step-btn threshold-step-plus' title='+0.01' aria-label='increase by 0.01' onclick=\"adjustStockThreshold('" + sym + "','down',0.01)\">+</button>" +
+              "</div>" +
+            "</div>" +
           "</div>" +
           "<label class='prompt-group-label'>AI Prompt<textarea id='alert_prompt_" + sym + "' maxlength='512'>" + escHtml(cfg.ai_prompt || "") + "</textarea></label>" +
         "</div>" +

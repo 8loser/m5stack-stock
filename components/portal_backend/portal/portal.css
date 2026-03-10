@@ -220,36 +220,159 @@ button, .menu-btn { cursor: pointer; }
 .btn-warning { background: #d1871c; }
 
 .stock-edit {
-  margin: 8px 0 14px;
-  border: 1px solid #d8e3ee;
-  border-radius: 10px;
-  padding: 10px;
-  background: var(--surface-soft);
+  margin: 10px 0 14px;
+  border: 1px solid #d6e2ec;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f7fbff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
-.stock-edit textarea { min-height: 90px; }
+.stock-edit textarea { min-height: 104px; }
 .stock-edit-toggle { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .stock-edit-toggle input { width: auto; margin-top: 0; }
 .stock-edit-group {
-  margin-top: 8px;
-  border: 1px solid #d7e1ec;
-  border-radius: 10px;
-  background: #f9fcff;
-  padding: 8px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }
-.stock-threshold-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; align-items: end; }
+.stock-threshold-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
 .threshold-label { margin-top: 0; font-size: 12px; font-weight: 700; color: #3c4f64; }
 .stock-threshold-grid input { margin-top: 0; }
-.prompt-group-label { margin-top: 8px; }
-.prompt-group-label textarea { margin-top: 6px; }
+.threshold-input-inline {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #cfd6de;
+  border-radius: 9px;
+  background: #f3f5f7;
+  overflow: hidden;
+}
+.threshold-input-inline input {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 9px 10px;
+}
+.threshold-input-inline input:focus {
+  outline: none;
+  border: 0;
+  box-shadow: none;
+  background: #f8fafc;
+}
+.threshold-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-left: 1px solid #d6dde5;
+  background: #eceff3;
+}
+.threshold-step-btn {
+  width: 32px;
+  min-width: 32px;
+  min-height: 34px;
+  margin-top: 0;
+  padding: 0;
+  border-radius: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #5c6774;
+  background: transparent;
+  box-shadow: none;
+  border-left: 1px solid #d6dde5;
+}
+.threshold-stepper .threshold-step-btn:first-child {
+  border-left: 0;
+}
+.threshold-step-btn:hover {
+  background: #e4e8ee;
+  filter: none;
+}
+.threshold-step-btn:active {
+  transform: none;
+  background: #dbe1e9;
+}
+.threshold-step-btn:focus-visible {
+  outline: 2px solid #8bb7e0;
+  outline-offset: -2px;
+}
+.prompt-group-label {
+  display: block;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #2c445b;
+}
+.prompt-group-label textarea {
+  margin-top: 7px;
+  border-color: #c8d8e7;
+  border-radius: 11px;
+  padding: 11px 12px;
+  line-height: 1.45;
+  background: #fcfeff;
+}
+.prompt-group-label textarea:focus {
+  border-color: #6ca9de;
+  box-shadow: 0 0 0 3px rgba(72, 142, 201, 0.2);
+}
 
-.stock-edit-actions { display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end; }
+.stock-edit-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
 .stock-edit-actions button {
   width: auto;
-  padding: 6px 12px;
+  min-height: 34px;
+  padding: 7px 14px;
   margin-top: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   font-size: 13px;
+}
+.stock-edit-actions .secondary {
+  background: linear-gradient(135deg, #2f89e8, #1f6bc0);
+}
+.stock-edit-actions .btn-warning {
+  background: #c77f19;
+}
+.stock-edit-actions .btn-cancel {
+  background: #738190;
+}
+
+@media (max-width: 640px) {
+  .stock-edit {
+    padding: 10px;
+    border-radius: 11px;
+  }
+  .stock-threshold-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .threshold-label {
+    font-size: 11px;
+  }
+  .threshold-input-inline {
+    border-radius: 8px;
+  }
+  .threshold-stepper {
+    gap: 0;
+  }
+  .threshold-step-btn {
+    width: 28px;
+    min-width: 28px;
+    min-height: 32px;
+    font-size: 13px;
+  }
+  .stock-edit-actions {
+    justify-content: space-between;
+    flex-wrap: nowrap;
+  }
+  .stock-edit-actions button {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 .ai-provider-actions {
