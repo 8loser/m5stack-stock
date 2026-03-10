@@ -15,6 +15,7 @@ esp_err_t storage_wifi_load_ap(uint8_t idx, char *ssid, size_t ssid_size,
                                char *password, size_t pw_size);
 esp_err_t storage_wifi_remove_ap(uint8_t idx);
 esp_err_t storage_wifi_add_ap(const char *ssid, const char *password);
+esp_err_t storage_wifi_promote_ap(uint8_t idx);
 esp_err_t storage_wifi_migrate_legacy(void);
 
 /* ====== AI 設定 ====== */

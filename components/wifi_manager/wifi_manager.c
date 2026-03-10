@@ -13,7 +13,7 @@
 
 #define WIFI_CONNECTED_BIT  BIT0
 #define WIFI_FAIL_BIT       BIT1
-#define MAX_RETRY           5
+#define MAX_RETRY           3
 
 static const char *TAG = "wifi_manager";
 
@@ -24,6 +24,34 @@ static char s_connected_ssid[33] = "";
 static int s_retry_count = 0;
 static wifi_state_cb_t s_callback = NULL;
 static bool s_initialized = false;
+static volatile bool s_saved_failover_mode = false;
+
+static const char *wifi_reason_to_str(int reason)
+{
+    switch (reason) {
+    case WIFI_REASON_BEACON_TIMEOUT:
+        return "BEACON_TIMEOUT";
+    case WIFI_REASON_NO_AP_FOUND:
+        return "NO_AP_FOUND";
+    case WIFI_REASON_AUTH_FAIL:
+        return "AUTH_FAIL";
+    case WIFI_REASON_ASSOC_FAIL:
+        return "ASSOC_FAIL";
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+        return "HANDSHAKE_TIMEOUT";
+    case WIFI_REASON_CONNECTION_FAIL:
+        return "CONNECTION_FAIL";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static bool wifi_should_fast_fail(int reason)
+{
+    return (reason == WIFI_REASON_NO_AP_FOUND ||
+            reason == WIFI_REASON_AUTH_FAIL ||
+            reason == WIFI_REASON_HANDSHAKE_TIMEOUT);
+}
 
 static void notify_state(wifi_state_t new_state)
 {
@@ -47,17 +75,27 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
     if (base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         const wifi_event_sta_disconnected_t *disc = (const wifi_event_sta_disconnected_t *)event_data;
         wifi_mode_t mode = WIFI_MODE_NULL;
+        const int reason = disc ? (int)disc->reason : -1;
         esp_wifi_get_mode(&mode);
 
-        ESP_LOGW(TAG, "[%u ms] STA_DISCONNECTED reason=%d mode=%d retry=%d/%d",
+        ESP_LOGW(TAG, "[%u ms] STA_DISCONNECTED reason=%d(%s) mode=%d retry=%d/%d",
                  (unsigned)esp_log_timestamp(),
-                 disc ? (int)disc->reason : -1,
+                 reason,
+                 wifi_reason_to_str(reason),
                  (int)mode,
                  s_retry_count,
                  MAX_RETRY);
 
         s_ip_str[0] = '\0';
         s_connected_ssid[0] = '\0';
+
+        if (s_saved_failover_mode && wifi_should_fast_fail(reason)) {
+            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            notify_state(WIFI_STATE_FAILED);
+            ESP_LOGW(TAG, "saved AP fast-fail on reason=%d(%s), switch to next AP",
+                     reason, wifi_reason_to_str(reason));
+            return;
+        }
 
         if (s_retry_count < MAX_RETRY) {
             esp_wifi_connect();
@@ -174,6 +212,7 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
 
 esp_err_t wifi_manager_connect_any_saved(void)
 {
+    esp_err_t ret = ESP_FAIL;
     uint8_t count = storage_wifi_ap_count();
     if (count == 0) {
         ESP_LOGI(TAG, "無已儲存的 WiFi 設定");
@@ -181,6 +220,7 @@ esp_err_t wifi_manager_connect_any_saved(void)
         return ESP_ERR_NOT_FOUND;
     }
 
+    s_saved_failover_mode = true;
     for (uint8_t i = 0; i < count; i++) {
         char ssid[WIFI_SSID_MAX_LEN] = {0};
         char password[WIFI_PASS_MAX_LEN] = {0};
@@ -190,12 +230,24 @@ esp_err_t wifi_manager_connect_any_saved(void)
 
         ESP_LOGI(TAG, "嘗試已儲存 AP %d/%d: %s", i + 1, count, ssid);
         if (wifi_manager_connect(ssid, password) == ESP_OK) {
-            return ESP_OK;
+            if (i > 0) {
+                esp_err_t promote_ret = storage_wifi_promote_ap(i);
+                if (promote_ret != ESP_OK) {
+                    ESP_LOGW(TAG, "promote saved AP failed idx=%u err=%s",
+                             (unsigned)i, esp_err_to_name(promote_ret));
+                }
+            }
+            ret = ESP_OK;
+            goto out;
         }
     }
 
     notify_state(WIFI_STATE_FAILED);
-    return ESP_FAIL;
+    ret = ESP_FAIL;
+
+out:
+    s_saved_failover_mode = false;
+    return ret;
 }
 
 esp_err_t wifi_manager_connect_saved(void)

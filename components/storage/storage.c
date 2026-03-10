@@ -290,6 +290,60 @@ esp_err_t storage_wifi_add_ap(const char *ssid, const char *password)
     return ret;
 }
 
+esp_err_t storage_wifi_promote_ap(uint8_t idx)
+{
+    nvs_handle_t h;
+    esp_err_t ret = nvs_open(NVS_NS_WIFI, NVS_READWRITE, &h);
+    if (ret != ESP_OK) return ret;
+
+    uint8_t count = 0;
+    ret = nvs_get_u8(h, "ap_count", &count);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(h);
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (ret != ESP_OK) {
+        nvs_close(h);
+        return ret;
+    }
+    if (idx >= count) {
+        nvs_close(h);
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (idx == 0) {
+        nvs_close(h);
+        return ESP_OK;
+    }
+
+    char target_ssid[WIFI_SSID_MAX_LEN] = {0};
+    char target_pass[WIFI_PASS_MAX_LEN] = {0};
+    ret = load_ap_from_handle(h, idx, target_ssid, sizeof(target_ssid), target_pass, sizeof(target_pass));
+    if (ret != ESP_OK) {
+        nvs_close(h);
+        return ret;
+    }
+
+    for (int i = (int)idx - 1; i >= 0; i--) {
+        char prev_ssid[WIFI_SSID_MAX_LEN] = {0};
+        char prev_pass[WIFI_PASS_MAX_LEN] = {0};
+        ret = load_ap_from_handle(h, (uint8_t)i, prev_ssid, sizeof(prev_ssid), prev_pass, sizeof(prev_pass));
+        if (ret != ESP_OK) {
+            nvs_close(h);
+            return ret;
+        }
+        ret = save_ap_to_handle(h, (uint8_t)(i + 1), prev_ssid, prev_pass);
+        if (ret != ESP_OK) {
+            nvs_close(h);
+            return ret;
+        }
+    }
+
+    ret = save_ap_to_handle(h, 0, target_ssid, target_pass);
+    if (ret == ESP_OK) ret = nvs_commit(h);
+    nvs_close(h);
+    return ret;
+}
+
 esp_err_t storage_wifi_migrate_legacy(void)
 {
     nvs_handle_t h;
