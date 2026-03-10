@@ -34,6 +34,7 @@ Routing: m5stack-core2-dev
 - 所有 `lv_*` 呼叫必須持有 `g_ui_mutex`，避免 LVGL 執行緒競態。
 - ESP-IDF v5.1+ 的 I2S 使用 `i2s_std.h` 新 API，不用 `driver/i2s.h` 舊介面。
 - 大型 buffer 優先放 PSRAM：`heap_caps_malloc(n, MALLOC_CAP_SPIRAM)`。
+- LVGL v8.4 的 Kconfig 與舊印象可能不一致：`LV_MEM_SIZE_KILOBYTES` 實際上限為 128，且無 `LV_USE_PSRAM` 選項。若要讓 LVGL 配置走系統 allocator（搭配 `CONFIG_SPIRAM_USE_MALLOC` 導向 PSRAM），以 `CONFIG_LV_MEM_CUSTOM=y` + `CONFIG_LV_MEM_CUSTOM_INCLUDE="stdlib.h"` 為基線；避免誤設導致實際仍用小型 internal pool，進而在畫面元件增加後觸發 OOM/assert/WDT。
 - 中文回覆容量估算以 UTF-8 約 `3 bytes/字` 為基線，`AI_ANALYSIS_MAX_LEN` 設計需保留安全餘量，避免貼齊上限造成截斷。
 - HTTPD handler 堆疊紅線：task stack 4KB，框架開銷後可用 ~2KB。含 `prompt[513]` 的 struct（`stock_alert_config_t` 522B、`at_time_entry_t` 516B）單個就吃半個 stack，陣列直接爆。handler 內 >128B 的 local struct/array 一律 `calloc` 到 heap，所有 error path 需對應 `free()`。
 - BM8563 alarm 設定時，日期/星期欄位 `0x80` 代表不比較。
