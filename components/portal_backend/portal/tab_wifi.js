@@ -21,6 +21,20 @@ function setWifiSubmitting(submitting) {
   btn.textContent = submitting ? "Connecting..." : "Connect";
 }
 
+function wifiConnectErrMsg(code, status) {
+  if (code === "already_connecting") return "Another connect is in progress. Please wait.";
+  if (code === "connect_failed") return "Connect failed. Check SSID/password and try again.";
+  if (code === "timeout") return "Connect timeout. Device may still be switching network.";
+  if (code === "fetch_timeout") return "Request timeout. Reconnect to portal WiFi and check device network state.";
+  if (code === "network_reset") return "Connection dropped while switching network. Reconnect to portal WiFi and retry.";
+  if (code === "ssid_required") return "SSID is required";
+  if (code === "internal_error") {
+    return "System busy. Please retry in a moment.";
+  }
+  if (status) return "Connect failed: HTTP " + status;
+  return "Connect failed: network";
+}
+
 function connectWifiNow() {
   var btn = document.getElementById("wifi_connect_btn");
   if (btn && btn.disabled) return;
@@ -44,19 +58,37 @@ function connectWifiNow() {
 
   setWifiSubmitting(true);
   setWifiMsg("Submitting WiFi connect request...", true);
-  fetch("/wifi", {
+  fetchWithTimeout("/wifi", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body
-  })
+  }, 35000)
     .then(function (r) {
-      if (!r.ok) {
-        throw new Error("HTTP " + r.status);
-      }
-      setWifiMsg("Connect request submitted. Core2 is trying to switch back to STA mode.", true);
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        var ok = !!(data && data.ok);
+        if (!r.ok || !ok) {
+          var err = new Error("connect_failed");
+          err.code = (data && data.error) ? data.error : "internal_error";
+          err.status = r.status;
+          throw err;
+        }
+        return data || {};
+      });
+    })
+    .then(function (data) {
+      var ssid = (data && data.ssid) ? data.ssid : "";
+      var msg = ssid ?
+        ("Connected to " + ssid + ". Core2 will switch back to STA mode.") :
+        "Connected. Core2 will switch back to STA mode.";
+      setWifiMsg(msg, true);
     })
     .catch(function (e) {
-      setWifiMsg("Connect failed: " + (e && e.message ? e.message : "network"), false);
+      if (e && e.message === "fetch_timeout") {
+        e.code = "fetch_timeout";
+      } else if (e && !e.code) {
+        e.code = "network_reset";
+      }
+      setWifiMsg(wifiConnectErrMsg(e && e.code, e && e.status), false);
     })
     .finally(function () {
       setWifiSubmitting(false);

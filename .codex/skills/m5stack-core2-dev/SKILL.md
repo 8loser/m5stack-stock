@@ -49,6 +49,9 @@ Routing: m5stack-core2-dev
 - 任何 UI 文案變更後，需執行 `tools/fonts/generate_fonts.sh` 更新字型子集，否則可能出現缺字或亂碼。
 - `SCREEN_INFO` 目前語意為「Resource/資源監控頁」；若改頁面名稱，需同步更新 status bar 文案與 README。
 - WiFi driver 的 internal DRAM buffer pool 與通用 heap（含 PSRAM）是獨立的記憶體池。Resource screen 顯示 heap 充裕不代表 WiFi driver 有足夠 buffer。STA 有 active traffic 時切 `WIFI_MODE_APSTA`，會因 WiFi internal buffer 不足導致 `ieee80211_hostap_attach` NULL pointer crash。Portal 啟動前的 drain 等待是必要的（釋放 WiFi internal buffer），不可 fire-and-forget。
+- `/wifi` connect 路徑以 handler 同步 `wifi_manager_connect()` 為基線。除非有明確證據，不要為 connect 新增常駐 worker task/queue；這會增加 Portal 啟動與資源載入期的 DRAM 壓力，導致 `ERR_CONNECTION_RESET` 或 lwIP OOM 風險升高。
+- Portal 測試時若 monitor 出現 `httpd_accept_conn` / `httpd_sock_err send` 的 `error 113`，先判讀為 AP/STA 切換或連線中斷副作用；需和「主流程是否已失效」分開判斷。
+- WiFi 頁面 `connect` 的 fetch 必須有 timeout（避免 pending 卡死），並對 `fetch_timeout` / network reset 顯示可操作訊息（例如提示重連 Portal WiFi 後重試）。
 - Telegram 送出文字前，若來源字串可能來自固定 byte 緩衝截斷，必須先做 UTF-8 safe trim，避免半個中文字導致 `sendMessage` 回 `HTTP 400`。
 - AI provider 回應緩衝需具備 `truncated` 觀測，buffer 滿時要明確記錄 `response truncated`，避免只留下模糊 parse fail。
 - AI 呼叫失敗的最低診斷日志需含：`provider`、`ret`、`detail`，以及 provider 端 `HTTP status / parse failed / missing field / truncated` 其中之一。

@@ -120,6 +120,9 @@ scheduler_service Timer
 - `AGENTS.md` 僅保留分工與路由規則，不再重複列細節表。
 - 連線判讀規則：`WiFi connected (STA)` 不等於 `Provisioning Portal active (AP/HTTP)`；診斷 Portal 頁面時不得只憑 STA 已連線判定正常。
 - Portal 現為 STA/APSTA 雙模式：已連 WiFi 時不切 WiFi（STA 直接服務）；未連 WiFi 時啟用 APSTA（實驗）以支援手機連 Core2 AP 後掃描周邊 WiFi，並持續監控 internal DRAM/scan 失敗率。
+- `/wifi` connect 流程在本專案以 handler 同步 `wifi_manager_connect()` 為基線；避免為 connect 另建常駐 worker task/queue 造成 Portal 啟動與靜態資源載入期的額外 internal DRAM 壓力。
+- Portal 期間若出現 `httpd_accept_conn` / `httpd_sock_err send` 的 `error 113`，通常屬 AP/STA 切換或連線中斷副作用；需先與「主流程是否仍可用」分開判讀。
+- WiFi 頁面 `connect` 請求前端必須有 timeout（避免 pending 卡死）；當 `fetch_timeout` 或 `network reset` 時需回報可操作訊息（例如重連 Portal WiFi 後重試）。
 - sdkconfig 未啟用的功能會讓對應 C API 靜默失敗（如 SO_LINGER、SO_RCVBUF）；排查 lwIP/網路問題時優先檢查 sdkconfig 選項。
 - 修 bug 優先確認根因再動手，避免在根因未確認前建立大型 workaround（如 async state machine + polling endpoint）。
 
