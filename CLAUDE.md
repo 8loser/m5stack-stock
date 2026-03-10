@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |------|------|
 | Task stack 預設用 internal DRAM | 新增 task 前必須確認剩餘 internal DRAM 夠用 |
 | PSRAM 不可作 task stack | NVS/SPI flash 操作時 cache 關閉，PSRAM 不可存取（assert crash） |
-| APSTA 模式不可用 | WiFi AP+STA 同時運行需要大量 internal DRAM，Core2 上會 crash（`ieee80211_hostap_attach`） |
+| APSTA（配網實驗功能） | 僅在「未連 WiFi 的 Portal 配網模式」啟用；可讓手機連 Core2 AP 後直接掃描周邊 AP。Core2 仍有 `ieee80211_hostap_attach` 風險，需監控 internal DRAM 趨勢與 scan 失敗率 |
 | HTTPD handler 禁止 outbound HTTPS fetch | handler 內做 outbound HTTPS 會與 portal inbound sockets 搶 lwIP socket slot → 間歇失敗或 crash；僅允許輕量單次驗證（`twse_client_validate_symbol`）；其餘 HTTPS 呼叫（AI test key、報價抓取等）一律透過 cmd queue 委派給擁有獨立 stack 的 task 執行 |
 | HTTPD handler 堆疊紅線 | stack 4KB，框架開銷後可用 ~2KB；含 `prompt[513]` 的 struct（`stock_alert_config_t` 522B、`at_time_entry_t` 516B）單個就吃半個 stack，陣列直接爆；>128B 的 local struct/array 一律 `calloc` 到 heap |
 | `esp_http_client` 非 thread-safe | 不可從其他 thread 呼叫 `esp_http_client_close/cleanup`；stop 只設 flag，讓 owner task 自行清理 |
@@ -39,7 +39,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | WiFi 狀態 | Portal 模式 | Bot task | 說明 |
 |-----------|------------|----------|------|
 | 已連線 | STA（不切 WiFi） | pause + cmd queue | 非阻塞，外網可用 |
-| 未連線 | 純 AP | stop（釋放 DRAM） | 配網用，無外網 |
+| 未連線 | APSTA（實驗） | stop（釋放 DRAM） | 配網用；手機連 Core2 AP 時可執行 WiFi scan |
 
 ### Portal 期間網路資源協調
 
@@ -116,7 +116,10 @@ scheduler_service Timer
 - 燒錄/連線類 gotchas 由 `m5stack-core2-flash-agent` 維護（例如 monitor 鎖 port）。
 - `CLAUDE.md` 僅保留分工與路由規則，不再重複列細節表。
 - 連線判讀規則：`WiFi connected (STA)` 不等於 `Provisioning Portal active (AP/HTTP)`；診斷 Portal 頁面時不得只憑 STA 已連線判定正常。
-- Portal 現為 STA/AP 雙模式：已連 WiFi 時不切換 WiFi 模式（STA 直接服務），未連 WiFi 時用純 AP。**不可使用 APSTA 模式**。
+- Portal 現為 STA/APSTA 雙模式：已連 WiFi 時不切 WiFi（STA 直接服務）；未連 WiFi 時啟用 APSTA（實驗）以支援手機連 Core2 AP 後掃描周邊 WiFi，並持續監控 internal DRAM/scan 失敗率。
+- `/wifi` connect 流程在本專案以 handler 同步 `wifi_manager_connect()` 為基線；避免為 connect 另建常駐 worker task/queue 造成 Portal 啟動與靜態資源載入期的額外 internal DRAM 壓力。
+- Portal 期間若出現 `httpd_accept_conn` / `httpd_sock_err send` 的 `error 113`，通常屬 AP/STA 切換或連線中斷副作用；需先與「主流程是否仍可用」分開判讀。
+- WiFi 頁面 `connect` 請求前端必須有 timeout（避免 pending 卡死）；當 `fetch_timeout` 或 `network reset` 時需回報可操作訊息（例如重連 Portal WiFi 後重試）。
 - sdkconfig 未啟用的功能會讓對應 C API 靜默失敗（如 SO_LINGER、SO_RCVBUF）；排查 lwIP/網路問題時優先檢查 sdkconfig 選項。
 - 修 bug 優先確認根因再動手，避免在根因未確認前建立大型 workaround（如 async state machine + polling endpoint）。
 

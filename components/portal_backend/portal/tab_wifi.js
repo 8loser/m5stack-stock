@@ -7,6 +7,94 @@ function setScanLoadingState(text) {
   if (manualBox) manualBox.style.display = "none";
 }
 
+function setWifiMsg(msg, ok) {
+  var el = document.getElementById("wifi_msg");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.className = ok ? "ok" : "err";
+}
+
+function setWifiSubmitting(submitting) {
+  var btn = document.getElementById("wifi_connect_btn");
+  if (!btn) return;
+  btn.disabled = !!submitting;
+  btn.textContent = submitting ? "Connecting..." : "Connect";
+}
+
+function wifiConnectErrMsg(code, status) {
+  if (code === "already_connecting") return "Another connect is in progress. Please wait.";
+  if (code === "connect_failed") return "Connect failed. Check SSID/password and try again.";
+  if (code === "timeout") return "Connect timeout. Device may still be switching network.";
+  if (code === "fetch_timeout") return "Request timeout. Reconnect to portal WiFi and check device network state.";
+  if (code === "network_reset") return "Connection dropped while switching network. Reconnect to portal WiFi and retry.";
+  if (code === "ssid_required") return "SSID is required";
+  if (code === "internal_error") {
+    return "System busy. Please retry in a moment.";
+  }
+  if (status) return "Connect failed: HTTP " + status;
+  return "Connect failed: network";
+}
+
+function connectWifiNow() {
+  var btn = document.getElementById("wifi_connect_btn");
+  if (btn && btn.disabled) return;
+
+  var ss = document.getElementById("ss");
+  var manual = document.getElementById("ssid_manual");
+  var pw = document.getElementById("wifi_password");
+  if (!ss || !manual || !pw) return;
+
+  var selectedSsid = ss.value || "";
+  var manualSsid = (manual.value || "").trim();
+  var finalSsid = (selectedSsid === "__manual__" || selectedSsid === "") ? manualSsid : selectedSsid;
+  if (!finalSsid) {
+    setWifiMsg("SSID is required", false);
+    return;
+  }
+
+  var body = "ssid=" + encodeURIComponent(selectedSsid || "__manual__") +
+    "&ssid_manual=" + encodeURIComponent(manualSsid) +
+    "&password=" + encodeURIComponent(pw.value || "");
+
+  setWifiSubmitting(true);
+  setWifiMsg("Submitting WiFi connect request...", true);
+  fetchWithTimeout("/wifi", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body
+  }, 35000)
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        var ok = !!(data && data.ok);
+        if (!r.ok || !ok) {
+          var err = new Error("connect_failed");
+          err.code = (data && data.error) ? data.error : "internal_error";
+          err.status = r.status;
+          throw err;
+        }
+        return data || {};
+      });
+    })
+    .then(function (data) {
+      var ssid = (data && data.ssid) ? data.ssid : "";
+      var msg = ssid ?
+        ("Connected to " + ssid + ". Core2 will switch back to STA mode.") :
+        "Connected. Core2 will switch back to STA mode.";
+      setWifiMsg(msg, true);
+    })
+    .catch(function (e) {
+      if (e && e.message === "fetch_timeout") {
+        e.code = "fetch_timeout";
+      } else if (e && !e.code) {
+        e.code = "network_reset";
+      }
+      setWifiMsg(wifiConnectErrMsg(e && e.code, e && e.status), false);
+    })
+    .finally(function () {
+      setWifiSubmitting(false);
+    });
+}
+
 function loadSavedAps(generation) {
   return fetchWithTimeout("/api/saved_aps", null, PORTAL_API_TIMEOUT_MS)
     .then(function (r) { return r.json(); })
@@ -39,7 +127,22 @@ function loadSavedAps(generation) {
 
 function loadScan(generation) {
   return fetchWithTimeout("/api/scan", null, PORTAL_API_TIMEOUT_MS)
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        if (!r.ok) {
+          var err = new Error("scan_failed");
+          err.code = (data && data.error) ? data.error : "scan_failed";
+          err.status = r.status;
+          throw err;
+        }
+        if (!Array.isArray(data)) {
+          var invalid = new Error("invalid_scan_payload");
+          invalid.code = "invalid_scan_payload";
+          throw invalid;
+        }
+        return data;
+      });
+    })
     .then(function (a) {
       if (is_stale_generation(generation)) return;
       var s = document.getElementById("ss");

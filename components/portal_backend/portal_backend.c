@@ -255,11 +255,22 @@ static esp_err_t send_json_response(httpd_req_t *req, int status, const char *js
 {
     httpd_resp_set_status(req, status == 200 ? "200 OK"
                           : status == 400 ? "400 Bad Request"
+                          : status == 404 ? "404 Not Found"
+                          : status == 409 ? "409 Conflict"
                           : status == 502 ? "502 Bad Gateway"
+                          : status == 504 ? "504 Gateway Timeout"
                           : "500 Internal Server Error");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Connection", "close");
     return httpd_resp_sendstr(req, json ? json : "{}");
+}
+
+static esp_err_t send_json_error(httpd_req_t *req, int status, const char *code)
+{
+    char buf[128] = {0};
+    snprintf(buf, sizeof(buf), "{\"ok\":false,\"error\":\"%s\"}",
+             code ? code : "internal_error");
+    return send_json_response(req, status, buf);
 }
 
 static void mask_secret_tail4(const char *src, char *out, size_t out_size)
@@ -287,33 +298,6 @@ static void mask_secret_tail4(const char *src, char *out, size_t out_size)
 
 /* telegram_get_me removed: now via telegram_bot_cmd_get_me() */
 
-static void wifi_connect_task(void *arg)
-{
-    wifi_connect_req_t *req = (wifi_connect_req_t *)arg;
-    if (!req) {
-        vTaskDelete(NULL);
-        return;
-    }
-
-    ESP_LOGI(TAG, "Portal 提交配網，嘗試連線 SSID=%s", req->ssid);
-    esp_err_t ret = wifi_manager_connect(req->ssid, req->password);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Portal 配網成功");
-        if (s_portal_active) {
-            esp_err_t stop_ret = portal_backend_stop();
-            if (stop_ret != ESP_OK) {
-                ESP_LOGW(TAG, "Portal 停止失敗: %s", esp_err_to_name(stop_ret));
-            }
-        }
-    } else {
-        ESP_LOGW(TAG, "Portal 配網失敗");
-    }
-
-    s_connecting_busy = false;
-    free(req);
-    vTaskDelete(NULL);
-}
-
 static esp_err_t portal_scan_get_handler(httpd_req_t *req)
 {
     int64_t start_us = esp_timer_get_time();
@@ -334,8 +318,7 @@ static esp_err_t portal_scan_get_handler(httpd_req_t *req)
             ESP_LOGW(TAG, "GET /scan failed err=%s elapsed=%lldms",
                      esp_err_to_name(scan_ret),
                      (long long)((esp_timer_get_time() - start_us) / 1000LL));
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "scan failed");
-            return scan_ret;
+            return send_json_error(req, 500, "scan_failed");
         }
         if (count > 0) {
             memcpy(s_scan_cache, fresh_infos, count * sizeof(wifi_ap_info_t));
@@ -1145,26 +1128,22 @@ static esp_err_t portal_tab_interval_js_get_handler(httpd_req_t *req)
 static esp_err_t portal_wifi_post_handler(httpd_req_t *req)
 {
     if (!req || req->content_len <= 0 || req->content_len > PORTAL_BODY_MAX_LEN) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid request");
-        return ESP_FAIL;
+        return send_json_error(req, 400, "invalid_request");
     }
 
     if (s_connecting_busy) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "already connecting");
-        return ESP_FAIL;
+        return send_json_error(req, 409, "already_connecting");
     }
 
     char *body = NULL;
     if (read_request_body_alloc(req, &body) != ESP_OK) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "recv failed");
-        return ESP_FAIL;
+        return send_json_error(req, 400, "invalid_request");
     }
 
-    wifi_connect_req_t *conn_req = calloc(1, sizeof(wifi_connect_req_t));
+    wifi_connect_req_t *conn_req = calloc(1, sizeof(*conn_req));
     if (!conn_req) {
         free(body);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
-        return ESP_ERR_NO_MEM;
+        return send_json_error(req, 500, "no_memory");
     }
 
     get_form_value(body, "ssid", conn_req->ssid, sizeof(conn_req->ssid));
@@ -1178,8 +1157,7 @@ static esp_err_t portal_wifi_post_handler(httpd_req_t *req)
 
     if (conn_req->ssid[0] == '\0') {
         free(conn_req);
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "ssid required");
-        return ESP_FAIL;
+        return send_json_error(req, 400, "ssid_required");
     }
 
     if (conn_req->password[0] == '\0') {
@@ -1197,19 +1175,40 @@ static esp_err_t portal_wifi_post_handler(httpd_req_t *req)
         }
     }
 
+    int64_t start_us = esp_timer_get_time();
     s_connecting_busy = true;
-    if (xTaskCreate(wifi_connect_task, "wifi_portal_conn", STACK_WIFI, conn_req,
-                    TASK_PRIO_WIFI, NULL) != pdPASS) {
-        s_connecting_busy = false;
+    ESP_LOGI(TAG, "Portal WiFi connect begin SSID=%s free_internal=%u",
+             conn_req->ssid,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    esp_err_t connect_ret = wifi_manager_connect(conn_req->ssid, conn_req->password);
+    int64_t elapsed_ms = (esp_timer_get_time() - start_us) / 1000LL;
+    s_connecting_busy = false;
+
+    if (connect_ret != ESP_OK) {
+        ESP_LOGW(TAG, "wifi connect failed ret=%s elapsed=%lldms",
+                 esp_err_to_name(connect_ret), (long long)elapsed_ms);
         free(conn_req);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "task create failed");
-        return ESP_FAIL;
+        return send_json_error(req, 502, "connect_failed");
     }
 
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
-    return httpd_resp_sendstr(req,
-                              "<html><body><h3>已送出，裝置正在嘗試連線。</h3>"
-                              "<p>成功後 Core2 會自動切回 STA 模式。</p></body></html>");
+    char esc_ssid[68] = {0};
+    char json[192] = {0};
+    json_escape(esc_ssid, sizeof(esc_ssid), conn_req->ssid);
+    snprintf(json, sizeof(json),
+             "{\"ok\":true,\"ssid\":\"%s\",\"state\":\"connected\"}",
+             esc_ssid);
+
+    esp_err_t send_ret = send_json_response(req, 200, json);
+    if (s_portal_active) {
+        vTaskDelay(pdMS_TO_TICKS(150));
+        esp_err_t stop_ret = portal_backend_stop();
+        if (stop_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Portal stop after WiFi connect failed: %s",
+                     esp_err_to_name(stop_ret));
+        }
+    }
+    free(conn_req);
+    return send_ret;
 }
 
 /* Set SO_LINGER on accepted portal sockets so close() sends RST instead of
@@ -1486,8 +1485,8 @@ esp_err_t portal_backend_start(void)
         s_portal_sta_mode = true;
         ESP_LOGI(TAG, "WiFi connected, starting portal in STA mode (no AP)");
     } else {
-        /* AP mode: no WiFi connection, start pure AP for provisioning.
-         * Pure AP (not APSTA) avoids internal DRAM exhaustion. */
+        /* APSTA mode: no WiFi connection, keep AP for portal while
+         * allowing station scan during provisioning flow. */
         s_portal_sta_mode = false;
 
         if (!s_ap_netif) {
@@ -1506,9 +1505,9 @@ esp_err_t portal_backend_start(void)
         ap_cfg.ap.max_connection = WIFI_PORTAL_MAX_STA;
         ap_cfg.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
 
-        ret = esp_wifi_set_mode(WIFI_MODE_AP);
+        ret = esp_wifi_set_mode(WIFI_MODE_APSTA);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "切換 AP 模式失敗: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "切換 APSTA 模式失敗: %s", esp_err_to_name(ret));
             return ret;
         }
 
@@ -1518,7 +1517,7 @@ esp_err_t portal_backend_start(void)
             return ret;
         }
 
-        ESP_LOGI(TAG, "No WiFi, starting portal in AP mode: %s", s_portal_ap_ssid);
+        ESP_LOGI(TAG, "No WiFi, starting portal in APSTA mode: %s", s_portal_ap_ssid);
     }
 
     ret = start_portal_http_server();
