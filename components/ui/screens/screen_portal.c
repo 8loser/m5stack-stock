@@ -15,10 +15,29 @@ static lv_obj_t *s_screen     = NULL;
 static lv_obj_t *s_qr_area    = NULL;
 static lv_obj_t *s_qr_obj      = NULL;
 static lv_obj_t *s_qr_hint_lbl = NULL;
+static lv_obj_t *s_ap_ssid_hdr_lbl = NULL;
+static lv_obj_t *s_ap_ssid_lbl = NULL;
+static lv_obj_t *s_ap_pwd_hdr_lbl = NULL;
+static lv_obj_t *s_ap_pwd_lbl = NULL;
+static lv_obj_t *s_ap_ip_hdr_lbl = NULL;
+static lv_obj_t *s_ap_ip_lbl   = NULL;
+static lv_obj_t *s_connected_ap_hdr_lbl = NULL;
+static lv_obj_t *s_connected_ap_lbl = NULL;
 static lv_obj_t *s_sta_ip_hdr_lbl = NULL;
 static lv_obj_t *s_sta_ip_lbl  = NULL;
-static lv_obj_t *s_ap_ip_lbl   = NULL;
 static const char *TAG = "screen_portal";
+
+static void set_obj_visible(lv_obj_t *obj, bool visible)
+{
+    if (!obj) {
+        return;
+    }
+    if (visible) {
+        lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    }
+}
 
 static bool is_softap_enabled(void)
 {
@@ -32,78 +51,88 @@ static bool is_softap_enabled(void)
 
 static void refresh_network_info_labels(void)
 {
-    bool sta_connected = false;
+    bool sta_connected = (network_portal_get_state() == WIFI_STATE_CONNECTED);
+    bool portal_active = network_portal_is_provisioning_portal_active();
+    bool portal_sta_mode = portal_active && network_portal_is_portal_sta_mode();
+    bool portal_ap_mode = portal_active && !portal_sta_mode;
+    bool show_ap_info = portal_ap_mode || is_softap_enabled();
+    const char *connected_ssid = "--";
     const char *sta_ip = "--";
     const char *ap_ip = "--";
 
-    if (network_portal_get_state() == WIFI_STATE_CONNECTED) {
+    if (sta_connected) {
+        const char *ssid = network_portal_get_connected_ssid();
         const char *ip = network_portal_get_ip();
-        sta_connected = true;
+        if (ssid && ssid[0] != '\0') {
+            connected_ssid = ssid;
+        }
         if (ip && ip[0] != '\0') {
             sta_ip = ip;
         }
     }
 
-    if (network_portal_is_provisioning_portal_active() || is_softap_enabled()) {
+    if (show_ap_info) {
         const char *ip = network_portal_get_provisioning_ap_ip();
         if (ip && ip[0] != '\0') {
             ap_ip = ip;
         }
     }
 
+    if (s_ap_ssid_lbl) {
+        lv_label_set_text(s_ap_ssid_lbl, network_portal_get_provisioning_ap_ssid());
+    }
+    if (s_ap_pwd_lbl) {
+        lv_label_set_text(s_ap_pwd_lbl, network_portal_get_provisioning_ap_password());
+    }
     if (s_sta_ip_lbl) {
         lv_label_set_text(s_sta_ip_lbl, sta_ip);
-        if (sta_connected) {
-            lv_obj_clear_flag(s_sta_ip_lbl, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(s_sta_ip_lbl, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-    if (s_sta_ip_hdr_lbl) {
-        if (sta_connected) {
-            lv_obj_clear_flag(s_sta_ip_hdr_lbl, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(s_sta_ip_hdr_lbl, LV_OBJ_FLAG_HIDDEN);
-        }
     }
     if (s_ap_ip_lbl) {
         lv_label_set_text(s_ap_ip_lbl, ap_ip);
+    }
+    if (s_connected_ap_lbl) {
+        lv_label_set_text(s_connected_ap_lbl, connected_ssid);
     }
 }
 
 static void update_portal_ui(bool active)
 {
-    if (active && network_portal_is_portal_sta_mode()) {
-        /* STA mode: no AP, show URL instead of QR */
-        if (s_qr_obj) {
-            lv_obj_add_flag(s_qr_obj, LV_OBJ_FLAG_HIDDEN);
-        }
+    bool sta_mode = active && network_portal_is_portal_sta_mode();
+    bool ap_mode = active && !sta_mode;
+
+    if (sta_mode) {
+        /* STA mode: hide QR and show connected AP + LAN IP. */
+        set_obj_visible(s_qr_obj, false);
         if (s_qr_hint_lbl) {
-            const char *ip = network_portal_get_ip();
-            char buf[80];
-            snprintf(buf, sizeof(buf), "STA Portal\n\nhttp://%s\n\n同網路開啟",
-                     (ip && ip[0]) ? ip : "?.?.?.?");
-            lv_label_set_text(s_qr_hint_lbl, buf);
-            lv_obj_clear_flag(s_qr_hint_lbl, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(s_qr_hint_lbl,
+                              "已連上 WiFi\n\n請看右側\n連線資訊");
         }
-    } else if (active) {
-        /* AP mode: show WiFi QR */
-        if (s_qr_obj) {
-            lv_obj_clear_flag(s_qr_obj, LV_OBJ_FLAG_HIDDEN);
-        }
-        if (s_qr_hint_lbl) {
-            lv_obj_add_flag(s_qr_hint_lbl, LV_OBJ_FLAG_HIDDEN);
-        }
+        set_obj_visible(s_qr_hint_lbl, true);
+    } else if (ap_mode) {
+        /* AP/APSTA provisioning mode: show WiFi QR and AP details. */
+        set_obj_visible(s_qr_obj, true);
+        set_obj_visible(s_qr_hint_lbl, false);
     } else {
-        if (s_qr_obj) {
-            lv_obj_add_flag(s_qr_obj, LV_OBJ_FLAG_HIDDEN);
-        }
+        set_obj_visible(s_qr_obj, false);
         if (s_qr_hint_lbl) {
             lv_label_set_text(s_qr_hint_lbl,
                               "入口未啟動\n\n等待自動啟動，\n再掃描 QR。");
-            lv_obj_clear_flag(s_qr_hint_lbl, LV_OBJ_FLAG_HIDDEN);
         }
+        set_obj_visible(s_qr_hint_lbl, true);
     }
+
+    set_obj_visible(s_ap_ssid_hdr_lbl, ap_mode);
+    set_obj_visible(s_ap_ssid_lbl, ap_mode);
+    set_obj_visible(s_ap_pwd_hdr_lbl, ap_mode);
+    set_obj_visible(s_ap_pwd_lbl, ap_mode);
+    set_obj_visible(s_ap_ip_hdr_lbl, ap_mode);
+    set_obj_visible(s_ap_ip_lbl, ap_mode);
+
+    set_obj_visible(s_connected_ap_hdr_lbl, sta_mode);
+    set_obj_visible(s_connected_ap_lbl, sta_mode);
+    set_obj_visible(s_sta_ip_hdr_lbl, sta_mode);
+    set_obj_visible(s_sta_ip_lbl, sta_mode);
+
     refresh_network_info_labels();
 }
 
@@ -206,37 +235,37 @@ lv_obj_t *screen_portal_create(void)
 #endif
 
     /* 右側說明資訊 */
-    lv_obj_t *hdr_ap = lv_label_create(s_qr_area);
-    lv_obj_set_pos(hdr_ap, 176, 8);
-    lv_label_set_text(hdr_ap, "加入 AP:");
-    lv_obj_set_style_text_color(hdr_ap, lv_color_hex(0x64B5F6), 0);
-    lv_obj_set_style_text_font(hdr_ap, &lv_font_noto_tc_14, 0);
+    s_ap_ssid_hdr_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(s_ap_ssid_hdr_lbl, 176, 8);
+    lv_label_set_text(s_ap_ssid_hdr_lbl, "加入 AP:");
+    lv_obj_set_style_text_color(s_ap_ssid_hdr_lbl, lv_color_hex(0x64B5F6), 0);
+    lv_obj_set_style_text_font(s_ap_ssid_hdr_lbl, &lv_font_noto_tc_14, 0);
 
-    lv_obj_t *ssid_lbl = lv_label_create(s_qr_area);
-    lv_obj_set_pos(ssid_lbl, 176, 22);
-    lv_obj_set_width(ssid_lbl, 138);
-    lv_label_set_long_mode(ssid_lbl, LV_LABEL_LONG_DOT);
-    lv_label_set_text(ssid_lbl, network_portal_get_provisioning_ap_ssid());
-    lv_obj_set_style_text_color(ssid_lbl, lv_color_white(), 0);
-    lv_obj_set_style_text_font(ssid_lbl, &lv_font_noto_tc_14, 0);
+    s_ap_ssid_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(s_ap_ssid_lbl, 176, 22);
+    lv_obj_set_width(s_ap_ssid_lbl, 138);
+    lv_label_set_long_mode(s_ap_ssid_lbl, LV_LABEL_LONG_DOT);
+    lv_label_set_text(s_ap_ssid_lbl, network_portal_get_provisioning_ap_ssid());
+    lv_obj_set_style_text_color(s_ap_ssid_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(s_ap_ssid_lbl, &lv_font_noto_tc_14, 0);
 
-    lv_obj_t *hdr_pwd = lv_label_create(s_qr_area);
-    lv_obj_set_pos(hdr_pwd, 176, 50);
-    lv_label_set_text(hdr_pwd, "密碼:");
-    lv_obj_set_style_text_color(hdr_pwd, lv_color_hex(0x64B5F6), 0);
-    lv_obj_set_style_text_font(hdr_pwd, &lv_font_noto_tc_14, 0);
+    s_ap_pwd_hdr_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(s_ap_pwd_hdr_lbl, 176, 50);
+    lv_label_set_text(s_ap_pwd_hdr_lbl, "密碼:");
+    lv_obj_set_style_text_color(s_ap_pwd_hdr_lbl, lv_color_hex(0x64B5F6), 0);
+    lv_obj_set_style_text_font(s_ap_pwd_hdr_lbl, &lv_font_noto_tc_14, 0);
 
-    lv_obj_t *pwd_lbl = lv_label_create(s_qr_area);
-    lv_obj_set_pos(pwd_lbl, 176, 64);
-    lv_label_set_text(pwd_lbl, network_portal_get_provisioning_ap_password());
-    lv_obj_set_style_text_color(pwd_lbl, lv_color_white(), 0);
-    lv_obj_set_style_text_font(pwd_lbl, &lv_font_noto_tc_14, 0);
+    s_ap_pwd_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(s_ap_pwd_lbl, 176, 64);
+    lv_label_set_text(s_ap_pwd_lbl, network_portal_get_provisioning_ap_password());
+    lv_obj_set_style_text_color(s_ap_pwd_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(s_ap_pwd_lbl, &lv_font_noto_tc_14, 0);
 
-    lv_obj_t *hdr_ap_ip = lv_label_create(s_qr_area);
-    lv_obj_set_pos(hdr_ap_ip, 176, 92);
-    lv_label_set_text(hdr_ap_ip, "配網 IP:");
-    lv_obj_set_style_text_color(hdr_ap_ip, lv_color_hex(0x64B5F6), 0);
-    lv_obj_set_style_text_font(hdr_ap_ip, &lv_font_noto_tc_14, 0);
+    s_ap_ip_hdr_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(s_ap_ip_hdr_lbl, 176, 92);
+    lv_label_set_text(s_ap_ip_hdr_lbl, "配網 IP:");
+    lv_obj_set_style_text_color(s_ap_ip_hdr_lbl, lv_color_hex(0x64B5F6), 0);
+    lv_obj_set_style_text_font(s_ap_ip_hdr_lbl, &lv_font_noto_tc_14, 0);
 
     s_ap_ip_lbl = lv_label_create(s_qr_area);
     lv_obj_set_pos(s_ap_ip_lbl, 176, 106);
@@ -244,14 +273,28 @@ lv_obj_t *screen_portal_create(void)
     lv_obj_set_style_text_color(s_ap_ip_lbl, lv_color_white(), 0);
     lv_obj_set_style_text_font(s_ap_ip_lbl, &lv_font_noto_tc_14, 0);
 
+    s_connected_ap_hdr_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(s_connected_ap_hdr_lbl, 176, 8);
+    lv_label_set_text(s_connected_ap_hdr_lbl, "連線 AP:");
+    lv_obj_set_style_text_color(s_connected_ap_hdr_lbl, lv_color_hex(0x64B5F6), 0);
+    lv_obj_set_style_text_font(s_connected_ap_hdr_lbl, &lv_font_noto_tc_14, 0);
+
+    s_connected_ap_lbl = lv_label_create(s_qr_area);
+    lv_obj_set_pos(s_connected_ap_lbl, 176, 22);
+    lv_obj_set_width(s_connected_ap_lbl, 138);
+    lv_label_set_long_mode(s_connected_ap_lbl, LV_LABEL_LONG_DOT);
+    lv_label_set_text(s_connected_ap_lbl, "--");
+    lv_obj_set_style_text_color(s_connected_ap_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(s_connected_ap_lbl, &lv_font_noto_tc_14, 0);
+
     s_sta_ip_hdr_lbl = lv_label_create(s_qr_area);
-    lv_obj_set_pos(s_sta_ip_hdr_lbl, 176, 122);
+    lv_obj_set_pos(s_sta_ip_hdr_lbl, 176, 50);
     lv_label_set_text(s_sta_ip_hdr_lbl, "內網 IP:");
     lv_obj_set_style_text_color(s_sta_ip_hdr_lbl, lv_color_hex(0x64B5F6), 0);
     lv_obj_set_style_text_font(s_sta_ip_hdr_lbl, &lv_font_noto_tc_14, 0);
 
     s_sta_ip_lbl = lv_label_create(s_qr_area);
-    lv_obj_set_pos(s_sta_ip_lbl, 176, 136);
+    lv_obj_set_pos(s_sta_ip_lbl, 176, 64);
     lv_label_set_text(s_sta_ip_lbl, "--");
     lv_obj_set_style_text_color(s_sta_ip_lbl, lv_color_white(), 0);
     lv_obj_set_style_text_font(s_sta_ip_lbl, &lv_font_noto_tc_14, 0);
