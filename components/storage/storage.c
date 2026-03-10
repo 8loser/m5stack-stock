@@ -694,28 +694,37 @@ esp_err_t storage_stocks_save(const stock_list_t *list)
 
 esp_err_t storage_stocks_load(stock_list_t *list)
 {
+    if (!list) return ESP_ERR_INVALID_ARG;
+    memset(list, 0, sizeof(*list));
+
     nvs_handle_t h;
     esp_err_t ret = nvs_open(NVS_NS_STOCKS, NVS_READONLY, &h);
     if (ret != ESP_OK) {
-        /* 預設股票清單 */
-        const char *defaults[] = DEFAULT_STOCKS;
-        size_t defaults_count = sizeof(defaults) / sizeof(defaults[0]);
-
-        list->count = (uint8_t)defaults_count;
-        if (list->count > MAX_STOCK_COUNT) {
-            list->count = MAX_STOCK_COUNT;
+        if (ret == ESP_ERR_NVS_NOT_FOUND) {
+            return ESP_OK;
         }
-
-        for (uint8_t i = 0; i < list->count; i++) {
-            strlcpy(list->symbols[i], defaults[i], sizeof(list->symbols[i]));
-        }
-        return ESP_OK;
+        return ret;
     }
 
     size_t blob_size = sizeof(list->symbols);
-    nvs_get_blob(h, "symbols", list->symbols, &blob_size);
-    nvs_get_u8(h, "count", &list->count);
+    ret = nvs_get_blob(h, "symbols", list->symbols, &blob_size);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ret = ESP_OK;
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_get_u8(h, "count", &list->count);
+        if (ret == ESP_ERR_NVS_NOT_FOUND) {
+            ret = ESP_OK;
+        }
+    }
     nvs_close(h);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    if (list->count > MAX_STOCK_COUNT) {
+        list->count = MAX_STOCK_COUNT;
+    }
     return ESP_OK;
 }
 

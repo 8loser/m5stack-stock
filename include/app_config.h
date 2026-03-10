@@ -64,7 +64,6 @@
 
 /* --- 股票 --- */
 #define MAX_STOCK_COUNT         15
-#define DEFAULT_STOCKS          {"2330", "2317", "2409", "6770", "1802", "2367"}
 
 /* --- 排程預設值 --- */
 #define DEFAULT_QUOTE_INTERVAL_S    60      /* 報價更新間隔（秒）*/
