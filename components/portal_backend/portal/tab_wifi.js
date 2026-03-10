@@ -7,6 +7,62 @@ function setScanLoadingState(text) {
   if (manualBox) manualBox.style.display = "none";
 }
 
+function setWifiMsg(msg, ok) {
+  var el = document.getElementById("wifi_msg");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.className = ok ? "ok" : "err";
+}
+
+function setWifiSubmitting(submitting) {
+  var btn = document.getElementById("wifi_connect_btn");
+  if (!btn) return;
+  btn.disabled = !!submitting;
+  btn.textContent = submitting ? "Connecting..." : "Connect";
+}
+
+function connectWifiNow() {
+  var btn = document.getElementById("wifi_connect_btn");
+  if (btn && btn.disabled) return;
+
+  var ss = document.getElementById("ss");
+  var manual = document.getElementById("ssid_manual");
+  var pw = document.getElementById("wifi_password");
+  if (!ss || !manual || !pw) return;
+
+  var selectedSsid = ss.value || "";
+  var manualSsid = (manual.value || "").trim();
+  var finalSsid = (selectedSsid === "__manual__" || selectedSsid === "") ? manualSsid : selectedSsid;
+  if (!finalSsid) {
+    setWifiMsg("SSID is required", false);
+    return;
+  }
+
+  var body = "ssid=" + encodeURIComponent(selectedSsid || "__manual__") +
+    "&ssid_manual=" + encodeURIComponent(manualSsid) +
+    "&password=" + encodeURIComponent(pw.value || "");
+
+  setWifiSubmitting(true);
+  setWifiMsg("Submitting WiFi connect request...", true);
+  fetch("/wifi", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body
+  })
+    .then(function (r) {
+      if (!r.ok) {
+        throw new Error("HTTP " + r.status);
+      }
+      setWifiMsg("Connect request submitted. Core2 is trying to switch back to STA mode.", true);
+    })
+    .catch(function (e) {
+      setWifiMsg("Connect failed: " + (e && e.message ? e.message : "network"), false);
+    })
+    .finally(function () {
+      setWifiSubmitting(false);
+    });
+}
+
 function loadSavedAps(generation) {
   return fetchWithTimeout("/api/saved_aps", null, PORTAL_API_TIMEOUT_MS)
     .then(function (r) { return r.json(); })

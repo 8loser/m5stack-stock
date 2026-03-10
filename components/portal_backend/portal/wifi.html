@@ -33,7 +33,7 @@
   <div class="grid">
     <div id="card_wifi" class="card section-card active">
       <div class="section-notice">設定裝置連線網路：儲存後 Core2 會切回 STA 模式，後續 Portal 入口可能改變。</div>
-      <form method="post" action="/wifi">
+      <form onsubmit="connectWifiNow(); return false;">
         <label>SSID</label>
         <select id="ss" name="ssid" onchange="chk(this)">
           <option value="">Click "Scan WiFi" to load networks</option>
@@ -42,13 +42,14 @@
 
         <div id="m" style="display:none">
           <label>Manual SSID</label>
-          <input name="ssid_manual" maxlength="32">
+          <input id="ssid_manual" name="ssid_manual" maxlength="32">
         </div>
 
         <label>Password</label>
-        <input name="password" maxlength="64" type="password">
-        <button type="submit">Connect</button>
+        <input id="wifi_password" name="password" maxlength="64" type="password">
+        <button id="wifi_connect_btn" type="button" onclick="connectWifiNow()">Connect</button>
         <div class="hint">Connect success will switch Core2 back to STA mode.</div>
+        <div id="wifi_msg" class="hint"></div>
       </form>
 
       <h3>Saved Networks</h3>
