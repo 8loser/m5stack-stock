@@ -51,6 +51,28 @@ flowchart LR
 - `scheduler` 將每筆 `stock_quote_t` push 到 `g_quote_queue`。
 - `main` 迴圈批次 drain queue，更新 Dashboard，並同步更新 Telegram quote cache。
 
+## 2.1) Stock Alert 資料流（門檻觸發 AI）
+
+```mermaid
+flowchart LR
+    Q[g_quote_queue]
+    M[main loop]
+    SA[scheduler_service_process_alert_quote]
+    DEDUP[crossing de-dup state<br/>per symbol/per direction]
+    AIT[stock_alert one-shot task]
+    AI[ai_provider<br/>primary provider only]
+    TG[telegram_bot_send_text]
+
+    Q --> M --> SA --> DEDUP --> AIT --> AI --> TG
+```
+
+細節：
+- `main` 每次消費 quote 時呼叫 `scheduler_service_process_alert_quote()`。
+- stock alert 使用「穿越觸發 + 回到門檻內重置」去重，避免連續抓價時重複觸發。
+- 休市快照（`is_market_closed=true`）直接略過，不觸發 AI。
+- AI 呼叫嚴格使用目前選定 provider（primary only，不做 provider fallback）。
+- AI 成功：Telegram 發送「觸發摘要 + AI 回覆」；失敗：發送單次失敗摘要。
+
 ## 3) 事件流（Event Bus）
 
 ```mermaid
@@ -122,7 +144,7 @@ flowchart LR
 - `portal_backend` + `stock_admin_service`: SoftAP 網頁與設定 API。
 - `telegram_bot`: 背景輪詢指令（`/info`/`/help`）與報價快取回覆。
 - `app_event_bus`: 任務間事件廣播（目前偏監控訊號）。
-- `ai_provider`: Provider 抽象與 key 測試；目前主要由 Portal API 使用。
+- `ai_provider`: Provider 抽象與 key 測試；目前由 AtTime 與 Stock Alert 流程呼叫。
 
 ## 7) 目前容易誤解的點
 

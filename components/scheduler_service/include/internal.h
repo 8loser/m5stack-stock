@@ -29,15 +29,34 @@ typedef struct {
 } sched_cmd_item_t;
 
 typedef struct {
+    bool  active;
+    bool  enabled;
+    bool  up_latched;
+    bool  down_latched;
+    char  symbol[8];
+    float up_threshold_pct;
+    float down_threshold_pct;
+} stock_alert_state_t;
+
+typedef struct {
+    stock_quote_t quote;
+    bool          trigger_up;
+    float         threshold_pct;
+} stock_alert_event_t;
+
+typedef struct {
     schedule_config_t config;
     QueueHandle_t     quote_queue;
     QueueHandle_t     cmd_queue;
     TimerHandle_t     quote_timer;
     TaskHandle_t      scheduler_task;
+    SemaphoreHandle_t alert_mutex;
+    volatile bool     stock_alert_in_flight;
     bool              sntp_synced;
     bool              quote_polling_paused;
     volatile bool     quote_fetch_in_flight;
     stock_list_t      stock_list;
+    stock_alert_state_t alert_states[MAX_STOCK_COUNT];
     /* --- AtTime (heap-allocated to save ~4KB .bss) --- */
     at_time_entry_t  *at_time_entries;
     uint8_t           at_time_count;
@@ -64,3 +83,6 @@ void scheduler_service_init_sntp(scheduler_service_ctx_t *ctx);
 void scheduler_service_do_fetch_quotes(scheduler_service_ctx_t *ctx, bool force_fetch);
 void scheduler_service_check_at_time(scheduler_service_ctx_t *ctx);
 void scheduler_service_process_cmd_queue(scheduler_service_ctx_t *ctx);
+esp_err_t scheduler_service_stock_alert_init(scheduler_service_ctx_t *ctx);
+esp_err_t scheduler_service_stock_alert_reload_configs(scheduler_service_ctx_t *ctx);
+void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const stock_quote_t *quote);

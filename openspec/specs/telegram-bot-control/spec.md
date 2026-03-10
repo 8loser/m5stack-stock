@@ -32,3 +32,23 @@ Telegram bot 啟動時 MUST 先同步最新 `update_id`，並將 polling offset 
 #### Scenario: bootstrap sync transient failure
 - **WHEN** bot 啟動 bootstrap sync 發生 HTTP 或 JSON 解析失敗
 - **THEN** bot 延後重試並暫不進入命令處理，避免誤處理 backlog
+
+### Requirement: stock alert trigger SHALL send summary + AI response
+當 stock alert 門檻觸發且 AI 呼叫成功時，系統 MUST 發送 Telegram 訊息，內容包含：
+- 觸發摘要（symbol、方向、門檻、現價、漲跌幅）
+- AI 回覆全文
+
+#### Scenario: stock alert success message
+- **WHEN** 某股票觸發門檻且 AI 分析成功
+- **THEN** Telegram 收到一則包含觸發摘要與 AI 分析結果的訊息
+
+### Requirement: stock alert AI failure SHALL send one failure summary
+當 stock alert 已觸發但 AI 呼叫失敗（例如 key 缺失、HTTP/解析失敗），系統 MUST 發送一則失敗摘要通知，且同一事件 MUST NOT 立即重試第二次 AI 呼叫。
+
+#### Scenario: missing provider key
+- **WHEN** 觸發 stock alert 但目前 primary provider 沒有可用 key
+- **THEN** 發送失敗摘要通知，不做 provider fallback
+
+#### Scenario: AI call failed
+- **WHEN** 觸發 stock alert 且 AI 呼叫返回錯誤
+- **THEN** 發送失敗摘要通知，不做即時重試

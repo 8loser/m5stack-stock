@@ -6,6 +6,7 @@ idf_component_register(
         "time_sync.c"
         "sleep_manager.c"
         "at_time_worker.c"
+        "stock_alert_worker.c"
     INCLUDE_DIRS "include"
     REQUIRES
         esp_timer

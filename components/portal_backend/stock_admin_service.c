@@ -811,6 +811,11 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
     }
     cJSON_Delete(root);
 
+    if (scheduler_service_reload_stock_alert_configs() != ESP_OK) {
+        free(alert_cfg); free(cached_quote);
+        return send_json_error(req, 500, "reload_failed");
+    }
+
     if (storage_stock_alert_config_load(symbol, alert_cfg) != ESP_OK) {
         free(alert_cfg); free(cached_quote);
         return send_json_error(req, 500, "load_failed");

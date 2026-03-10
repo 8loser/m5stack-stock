@@ -105,6 +105,16 @@ esp_err_t scheduler_service_cmd_test_ai_key(int selected_provider,
                                              uint32_t timeout_ms);
 
 /**
+ * @brief 處理一筆最新報價以檢查漲跌門檻觸發（非阻塞）
+ */
+void scheduler_service_process_alert_quote(const stock_quote_t *quote);
+
+/**
+ * @brief 重新載入每檔股票 alert config（更新後立即生效）
+ */
+esp_err_t scheduler_service_reload_stock_alert_configs(void);
+
+/**
  * @brief 取得 AtTime 固定全域 prompt 陣列（唯讀）
  * @param out_prompts 輸出陣列指標（可為 NULL）
  * @return 陣列元素數量

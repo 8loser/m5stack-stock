@@ -76,6 +76,14 @@ esp_err_t ai_provider_analyze_sync(const stock_quote_t *quote,
                                     ai_analysis_result_t *result);
 
 /**
+ * @brief 同步分析（帶股票資料與自訂 prompt）
+ */
+esp_err_t ai_provider_analyze_with_prompt_sync(const stock_quote_t *quote,
+                                                const char *prompt,
+                                                const char *api_key,
+                                                ai_analysis_result_t *result);
+
+/**
  * @brief 同步分析（純 prompt，不帶股票資料）
  */
 esp_err_t ai_provider_analyze_prompt_sync(const char *prompt,

@@ -204,6 +204,10 @@ esp_err_t scheduler_service_init(QueueHandle_t quote_queue)
 
     storage_schedule_load(&s_ctx.config);
     storage_stocks_load(&s_ctx.stock_list);
+    if (scheduler_service_stock_alert_init(&s_ctx) != ESP_OK) {
+        ESP_LOGE(TAG, "Stock alert init failed");
+        return ESP_FAIL;
+    }
     s_ctx.at_time_entries = heap_caps_calloc(MAX_AT_TIME_COUNT, sizeof(at_time_entry_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (s_ctx.at_time_entries) {
         storage_at_time_load_all(s_ctx.at_time_entries, &s_ctx.at_time_count);
@@ -284,6 +288,12 @@ esp_err_t scheduler_service_reload_stock_list(void)
     esp_err_t ret = storage_stocks_load(&s_ctx.stock_list);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "重載股票清單失敗: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = scheduler_service_stock_alert_reload_configs(&s_ctx);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "重載 stock alert 設定失敗: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -399,4 +409,14 @@ esp_err_t scheduler_service_cmd_test_ai_key(int selected_provider,
 
     vSemaphoreDelete(done);
     return ret;
+}
+
+void scheduler_service_process_alert_quote(const stock_quote_t *quote)
+{
+    scheduler_service_stock_alert_on_quote(&s_ctx, quote);
+}
+
+esp_err_t scheduler_service_reload_stock_alert_configs(void)
+{
+    return scheduler_service_stock_alert_reload_configs(&s_ctx);
 }

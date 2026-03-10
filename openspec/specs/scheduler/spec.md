@@ -61,3 +61,28 @@ TBD - created by archiving change twse-portal-stock-management. Update Purpose a
 #### Scenario: 有通知時立即處理
 - **WHEN** `scheduler_service_task` 在 timeout 前收到 `NOTIFY_QUOTE_BIT`
 - **THEN** 任務立即處理報價抓取，且該輪仍會更新心跳
+
+### Requirement: stock alert SHALL use threshold crossing with re-arm de-dup
+系統在處理每筆最新報價時 SHALL 以 per-symbol、per-direction（up/down）狀態做「穿越觸發」去重：
+- 只有從未達標到達標（false -> true crossing）時觸發
+- 連續停留在達標區間時 SHALL NOT 重複觸發
+- 回到門檻內後 SHALL 重新 armed，下一次再次穿越才可再觸發
+
+#### Scenario: up threshold first crossing
+- **WHEN** 某股票 `change_percent` 首次跨過 `up_threshold_pct`
+- **THEN** 觸發一次 stock alert 事件
+
+#### Scenario: stays above threshold
+- **WHEN** 某股票連續多輪都維持在上漲門檻以上
+- **THEN** 不重複觸發
+
+#### Scenario: re-arm after returning inside threshold
+- **WHEN** 某股票先回到門檻內，再次跨過同方向門檻
+- **THEN** 再觸發一次
+
+### Requirement: stock alert SHALL ignore market-closed snapshots
+若報價為休市快照（`quote.is_market_closed == true`），stock alert 判斷流程 SHALL 直接略過，不做門檻觸發。
+
+#### Scenario: market closed quote
+- **WHEN** scheduler/main 收到 `is_market_closed=true` 的 quote
+- **THEN** 不觸發 stock alert AI 呼叫與通知
