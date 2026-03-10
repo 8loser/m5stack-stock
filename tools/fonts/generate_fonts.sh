@@ -102,6 +102,7 @@ fi
 if ! python3 "${EXTRACT_SCRIPT}" \
     --src "${PROJECT_ROOT}/components/ui" \
     --src "${PROJECT_ROOT}/components/twse_client" \
+    --src "${PROJECT_ROOT}/main" \
     --out "${UI_SYMBOLS_FILE}"; then
     echo "Error: failed to update UI symbols" >&2
     exit 1

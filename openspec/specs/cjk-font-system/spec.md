@@ -4,9 +4,9 @@
 為 UI 提供可維護的繁體中文字型子集機制，確保中文字可正確顯示並控制韌體體積。
 ## Requirements
 ### Requirement: UI 字元掃描腳本產生 ui_symbols.txt
-專案 SHALL 包含 `tools/fonts/extract_ui_symbols.py`。該腳本 SHALL 掃描 UI 原始碼字串常量，抽取 UI 所需中文字元與常用符號，去重後輸出到 `tools/fonts/ui_symbols.txt`，供字型產生流程使用。
+專案 SHALL 包含 `tools/fonts/extract_ui_symbols.py`。該腳本 SHALL 掃描指定來源目錄的 C/H 原始碼字串常量，抽取非 ASCII 字元並去重後輸出到 `tools/fonts/ui_symbols.txt`，供字型產生流程使用。`generate_fonts.sh` SHALL 至少掃描 `components/ui`、`components/twse_client`、`main` 三個來源目錄。
 
-#### Scenario: 成功掃描 UI 原始碼
+#### Scenario: 成功掃描多來源原始碼
 - **WHEN** 執行 UI 字元掃描腳本，且輸入目錄存在可解析字串
 - **THEN** 產生非空且去重後的 `ui_symbols.txt`
 
@@ -58,7 +58,7 @@
 - **THEN** 可使用 `&lv_font_noto_tc_14` 和 `&lv_font_noto_tc_16`
 
 ### Requirement: 字型產生腳本
-專案 SHALL 包含字型產生腳本（`generate_fonts.sh`）。腳本 SHALL 先執行 UI 字元掃描流程產生 `ui_symbols.txt`，再依模式處理 TWSE 字元來源：`--online` 模式 SHALL 下載 TWSE JSON 並更新 `twse_symbols.txt`；`--offline` 模式 SHALL 直接使用既有 `twse_symbols.txt`。腳本在未指定模式時 SHALL 預設使用 `--offline`。最終 SHALL 合併 `ui_symbols.txt` 與 `twse_symbols.txt` 作為 `lv_font_conv --symbols` 輸入，並產生 14/16 字型。
+專案 SHALL 包含字型產生腳本（`generate_fonts.sh`）。腳本 SHALL 先執行 UI 字元掃描流程產生 `ui_symbols.txt`，再依模式處理 TWSE 字元來源：`--online` 模式 SHALL 下載 TWSE JSON 並更新 `twse_symbols.txt`；`--offline` 模式 SHALL 直接使用既有 `twse_symbols.txt`。腳本在未指定模式時 SHALL 預設使用 `--offline`。最終 SHALL 合併 `ui_symbols.txt` 與 `twse_symbols.txt`，且在 `industry_symbols.txt` 存在且非空時一併合併，作為 `lv_font_conv --symbols` 輸入，並產生 14/16 字型。
 
 #### Scenario: 預設離線模式產生字型
 - **WHEN** 執行 `./generate_fonts.sh` 且 `twse_symbols.txt` 存在且非空

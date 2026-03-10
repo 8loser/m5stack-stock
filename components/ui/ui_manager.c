@@ -166,6 +166,7 @@ static portMUX_TYPE      s_boot_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t          s_main_heartbeat_ms = 0;
 static uint32_t          s_scheduler_heartbeat_ms = 0;
 static bool              s_boot_active = true;
+static bool              s_status_bar_show_pending = false;
 
 #define MAIN_HEARTBEAT_TIMEOUT_MS      1500U
 #define SCHED_HEARTBEAT_TIMEOUT_MS     3000U
@@ -241,6 +242,16 @@ static void lvgl_task(void *arg)
     while (1) {
         if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             lv_task_handler();
+            bool show_pending = false;
+            taskENTER_CRITICAL(&s_boot_lock);
+            show_pending = s_status_bar_show_pending;
+            if (show_pending) {
+                s_status_bar_show_pending = false;
+            }
+            taskEXIT_CRITICAL(&s_boot_lock);
+            if (show_pending) {
+                status_bar_set_visible(true);
+            }
             uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
 
             bool screen_on = board_is_screen_on();
@@ -299,6 +310,7 @@ esp_err_t ui_manager_init(SemaphoreHandle_t ui_mutex)
     s_last_screen_on = board_is_screen_on();
     taskENTER_CRITICAL(&s_boot_lock);
     s_boot_active = true;
+    s_status_bar_show_pending = false;
     taskEXIT_CRITICAL(&s_boot_lock);
     taskENTER_CRITICAL(&s_heartbeat_lock);
     s_main_heartbeat_ms = now_ms;
@@ -628,6 +640,7 @@ void ui_manager_finish_boot(bool wifi_connected)
     taskENTER_CRITICAL(&s_boot_lock);
     boot_active = s_boot_active;
     s_boot_active = false;
+    s_status_bar_show_pending = true;
     taskEXIT_CRITICAL(&s_boot_lock);
 
     if (!boot_active) {
@@ -637,7 +650,12 @@ void ui_manager_finish_boot(bool wifi_connected)
     ui_manager_switch_screen(target);
     if (xSemaphoreTakeRecursive(s_ui_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         status_bar_set_visible(true);
+        taskENTER_CRITICAL(&s_boot_lock);
+        s_status_bar_show_pending = false;
+        taskEXIT_CRITICAL(&s_boot_lock);
         xSemaphoreGiveRecursive(s_ui_mutex);
+    } else {
+        ESP_LOGW(TAG, "finish_boot: status bar show deferred (ui_mutex busy)");
     }
 }
 

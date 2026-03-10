@@ -76,10 +76,10 @@ wc -c components/ui/fonts/lv_font_noto_tc_14.c components/ui/fonts/lv_font_noto_
 說明：
 
 - `generate_fonts.sh` 支援 `--offline`（預設）與 `--online`。
-- 每次執行都會先掃描 `components/ui` 字串常量，自動更新 `tools/fonts/ui_symbols.txt`。
+- 每次執行都會先掃描 `components/ui`、`components/twse_client`、`main` 的字串常量，自動更新 `tools/fonts/ui_symbols.txt`。
 - `--offline` 直接使用既有 `tools/fonts/twse_symbols.txt`；若檔案缺失或為空會失敗退出，且不執行 `lv_font_conv`。
 - `--online` 會先下載 TWSE JSON 更新 `tools/fonts/twse_symbols.txt`（若憑證驗證失敗會用 `curl -k` 重試）。
-- 腳本會合併 `ui_symbols.txt` 與 `twse_symbols.txt` 作為 `lv_font_conv --symbols` 輸入。
+- 腳本會合併 `ui_symbols.txt` 與 `twse_symbols.txt`（若存在 `industry_symbols.txt` 也會一併合併）作為 `lv_font_conv --symbols` 輸入。
 - 字型工具集中放在 `tools/fonts/`。
 - 完成後請重新執行 `./flash.sh --build-only` 或 `./flash.sh`。
 

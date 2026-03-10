@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_system.h"
+#include "esp_random.h"
 #include "nvs_flash.h"
 
 #include "app_config.h"
@@ -19,6 +20,38 @@
 #include "ui_manager.h"
 
 static const char *TAG = "main";
+static const char *s_boot_fun_messages[] = {
+    "正在熔融塑膠顆粒，請別太心急...",
+    "模具鎖模中，手請離開危險區域！",
+    "正在微調射出壓力，等待完美成品...",
+    "冷卻時間比你的產能目標還長...",
+    "正在呼叫主力籌碼中...",
+    "K 線正在繪製，請勿在此時進行停損...",
+    "正在幫您祈禱不要觸發熔斷機制...",
+    "別擔心，這只是盤前的試搓階段...",
+    "正在除濕乾燥中，水分太高會毀了零件...",
+    "檢查模具溫度，過熱容易發生毛邊...",
+    "脫模劑塗抹中，請確保成品順利取出...",
+    "調整保壓參數，正在優化產品縮水率...",
+    "正在掛單，等待流動性撮合中...",
+    "檢查融資維持率，目前尚未達到追繳門檻...",
+    "正在計算除權息後的參考價...",
+    "系統正在幫您盯盤，請安心去睡覺...",
+};
+
+static void run_boot_fun_messages_4s(void)
+{
+    const size_t msg_count = sizeof(s_boot_fun_messages) / sizeof(s_boot_fun_messages[0]);
+    if (msg_count == 0) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < 4; i++) {
+        uint32_t idx = esp_random() % (uint32_t)msg_count;
+        ui_manager_set_boot_progress(s_boot_fun_messages[idx]);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
 
 static void on_scheduler_tick_event(const app_event_t *evt, void *ctx)
 {
@@ -185,7 +218,7 @@ void app_main(void)
     ESP_ERROR_CHECK(scheduler_service_init(g_quote_queue));
 
     ESP_LOGI(TAG, "=== 系統啟動完成 ===");
-    ui_manager_set_boot_progress("Ready");
+    run_boot_fun_messages_4s();
     ui_manager_log_sys(LOG_LEVEL_INFO, "System ready");
     ui_manager_finish_boot(network_portal_is_connected());
 
