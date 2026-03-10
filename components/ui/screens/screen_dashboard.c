@@ -54,6 +54,9 @@ static bool is_limit_down_price(float price, const stock_quote_t *q);
 #define CARD_LEFT_PAD     4
 #define CARD_RIGHT_PAD    4
 #define CARD_COL_GAP      4
+#define CARD_MIN_CONTENT_W 220
+#define CARD_MIN_WIDTH     (CARD_LEFT_PAD + CARD_RIGHT_PAD + (CARD_COL_GAP * (CARD_COL_COUNT - 1)) + CARD_MIN_CONTENT_W)
+#define INDUSTRY_MIN_W     56
 
 static lv_coord_t s_col_x[CARD_COL_COUNT] = {0};
 static lv_coord_t s_col_w[CARD_COL_COUNT] = {0};
@@ -78,12 +81,18 @@ static void compute_card_layout(void)
 {
     lv_coord_t card_w = (LCD_WIDTH - 8);
     if (s_cards[0]) {
-        card_w = lv_obj_get_width(s_cards[0]);
+        lv_coord_t measured = lv_obj_get_width(s_cards[0]);
+        if (measured >= CARD_MIN_WIDTH) {
+            card_w = measured;
+        } else {
+            ESP_LOGW(TAG, "ignore abnormal card width=%d, fallback=%d",
+                     (int)measured, (int)card_w);
+        }
     }
 
     lv_coord_t content_w = card_w - CARD_LEFT_PAD - CARD_RIGHT_PAD - (CARD_COL_GAP * (CARD_COL_COUNT - 1));
-    if (content_w < 220) {
-        content_w = 220;
+    if (content_w < CARD_MIN_CONTENT_W) {
+        content_w = CARD_MIN_CONTENT_W;
     }
 
     lv_coord_t w_name = 74;
@@ -91,8 +100,8 @@ static void compute_card_layout(void)
     lv_coord_t w_change = 66;
     lv_coord_t used = w_name + w_price + w_change;
     lv_coord_t w_industry = content_w - used;
-    if (w_industry < 0) {
-        w_industry = 0;
+    if (w_industry < INDUSTRY_MIN_W) {
+        w_industry = INDUSTRY_MIN_W;
     }
 
     s_col_w[0] = w_name;
@@ -105,6 +114,30 @@ static void compute_card_layout(void)
     s_col_x[2] = s_col_x[1] + s_col_w[1] + CARD_COL_GAP;
     s_col_x[3] = s_col_x[2] + s_col_w[2] + CARD_COL_GAP;
     s_layout_ready = true;
+}
+
+static void refresh_card_layout(void)
+{
+    compute_card_layout();
+
+    for (int i = 0; i < DASHBOARD_VISIBLE_ROWS; i++) {
+        if (s_name_labels[i]) {
+            lv_obj_set_pos(s_name_labels[i], s_col_x[0], 0);
+            lv_obj_set_size(s_name_labels[i], s_col_w[0], 32);
+        }
+        if (s_industry_labels[i]) {
+            lv_obj_set_pos(s_industry_labels[i], s_col_x[3], 0);
+            lv_obj_set_size(s_industry_labels[i], s_col_w[3], 32);
+        }
+        if (s_price_labels[i]) {
+            lv_obj_set_pos(s_price_labels[i], s_col_x[1] - 2, 4);
+            lv_obj_set_size(s_price_labels[i], s_col_w[1] + 4, 22);
+        }
+        if (s_change_labels[i]) {
+            lv_obj_set_pos(s_change_labels[i], s_col_x[2], 6);
+            lv_obj_set_size(s_change_labels[i], s_col_w[2], 16);
+        }
+    }
 }
 
 static void ensure_card_widgets(int idx)
@@ -526,6 +559,7 @@ void screen_dashboard_refresh(void)
 
 void screen_dashboard_on_enter(void)
 {
+    refresh_card_layout();
     reset_slot_rotation_state();
     render_dashboard_slots();
     if (s_rotation_timer) {
