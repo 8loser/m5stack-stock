@@ -83,6 +83,7 @@ flowchart TD
 
 補充：
 - 進入 `SCREEN_PORTAL` 時自動 `portal_backend_start()`（APSTA + HTTP）。
+- 若已連 WiFi，Portal 走 STA（不切 mode）；若未連 WiFi，Portal 強制 APSTA（實驗）以支援手機連 Core2 AP 後執行 WiFi scan。
 - 離開 `SCREEN_PORTAL` 時自動 `portal_backend_stop()`（回 STA）。
 
 ## 5) 股票清單與設定回寫流（Portal API）
