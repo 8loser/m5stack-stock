@@ -100,7 +100,9 @@ function loadSavedAps(generation) {
     .then(function (r) { return r.json(); })
     .then(function (a) {
       if (is_stale_generation(generation)) return;
-      s_saved_ssids = (a || []).map(function (x) { return x.ssid || ""; }).filter(function (x) { return x.length > 0; });
+      var savedItems = Array.isArray(a) ? a : [];
+      s_saved_ssids = savedItems.map(function (x) { return (x && x.ssid) ? x.ssid : ""; })
+        .filter(function (x) { return x.length > 0; });
 
       var box = document.getElementById("saved_aps_list");
       if (!box) return;
@@ -110,9 +112,14 @@ function loadSavedAps(generation) {
       }
 
       var h = "";
-      s_saved_ssids.forEach(function (ssid) {
+      savedItems.forEach(function (item) {
+        var ssid = (item && item.ssid) ? item.ssid : "";
+        if (!ssid) return;
+        var connected = !!(item && item.connected);
         var safe = ssid.replace(/'/g, "\\'");
-        h += "<div class='stock-row'><div><span class='stock-symbol'>" + escHtml(ssid) + "</span></div>" +
+        h += "<div class='stock-row'><div><span class='stock-symbol'>" + escHtml(ssid) +
+          (connected ? " <span class='saved-ap-connected'>Connected</span>" : "") +
+          "</span></div>" +
           "<button type='button' style='width:auto;padding:6px 10px;background:#c33' onclick=\"removeSavedAp('" + safe + "')\">Remove</button></div>";
       });
       box.innerHTML = h;

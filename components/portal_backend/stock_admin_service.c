@@ -2,6 +2,7 @@
 #include "storage.h"
 #include "scheduler_service.h"
 #include "twse_client.h"
+#include "wifi_manager.h"
 #include "app_config.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
@@ -926,6 +927,9 @@ static esp_err_t portal_saved_aps_get_handler(httpd_req_t *req)
     char buf[256];
     size_t pos = 0;
     uint8_t count = storage_wifi_ap_count();
+    bool sta_connected = wifi_manager_is_connected();
+    const char *connected_ssid = wifi_manager_get_connected_ssid();
+    bool has_connected_ssid = (sta_connected && connected_ssid && connected_ssid[0] != '\0');
 
     buf[pos++] = '[';
     for (uint8_t i = 0; i < count && pos < sizeof(buf) - 2; i++) {
@@ -937,8 +941,12 @@ static esp_err_t portal_saved_aps_get_handler(httpd_req_t *req)
 
         char esc[68] = {0};
         json_escape(esc, sizeof(esc), ssid);
+        bool is_connected = has_connected_ssid && (strcmp(ssid, connected_ssid) == 0);
         int n = snprintf(buf + pos, sizeof(buf) - pos,
-                         "%s{\"ssid\":\"%s\"}", (pos > 1) ? "," : "", esc);
+                         "%s{\"ssid\":\"%s\",\"connected\":%s}",
+                         (pos > 1) ? "," : "",
+                         esc,
+                         is_connected ? "true" : "false");
         if (n <= 0 || (size_t)n >= sizeof(buf) - pos) {
             break;
         }
