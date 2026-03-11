@@ -17,6 +17,7 @@
 
 typedef enum {
     SCHED_CMD_TEST_AI_KEY,
+    SCHED_CMD_TEST_STOCK_ALERT,
 } sched_cmd_type_t;
 
 typedef struct {
@@ -26,6 +27,9 @@ typedef struct {
     /* --- CMD_TEST_AI_KEY params --- */
     int              selected_provider;
     char             api_key[128];    /* 使用者提供的 key（空字串=用 NVS） */
+    char             symbol[8];
+    stock_quote_t    quote;
+    stock_alert_config_t alert_cfg;
 } sched_cmd_item_t;
 
 typedef struct {
@@ -86,5 +90,5 @@ esp_err_t scheduler_service_stock_alert_reload_configs(scheduler_service_ctx_t *
 void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const stock_quote_t *quote);
 esp_err_t scheduler_service_stock_alert_trigger_test(scheduler_service_ctx_t *ctx,
                                                      const stock_quote_t *quote,
-                                                     bool trigger_up,
-                                                     float threshold_pct);
+                                                     const stock_alert_config_t *cfg,
+                                                     sched_stock_alert_test_result_t *result);

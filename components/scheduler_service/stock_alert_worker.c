@@ -94,23 +94,56 @@ static char *build_ai_prompt(const stock_alert_event_t *evt,
     }
 
     const char *gp = global_prompt ? global_prompt : "";
-    // global prompt
     size_t gp_len = strlen(gp);
+    const char *const *fixed_prompts = NULL;
+    size_t fixed_count = scheduler_service_get_at_time_fixed_global_prompts(&fixed_prompts);
+    size_t fp_len = 0;
+    size_t fp_non_empty = 0;
+    for (size_t i = 0; i < fixed_count; i++) {
+        const char *fixed = fixed_prompts ? fixed_prompts[i] : NULL;
+        if (!fixed || fixed[0] == '\0') {
+            continue;
+        }
+        fp_len += strlen(fixed);
+        fp_non_empty++;
+    }
+
     size_t prompt_len = strlen(cfg->alert_prompt);
     size_t name_len = strlen(evt->quote.name);
-    size_t need = gp_len + prompt_len + name_len + 384U;
+    size_t fixed_separators = fp_non_empty;
+    size_t need = gp_len + fp_len + fixed_separators + prompt_len + name_len + 384U;
     char *prompt = calloc(1, need);
     if (!prompt) {
         return NULL;
     }
 
-    snprintf(prompt, need,
-             "%s\n"
+    size_t off = 0;
+    if (gp_len > 0) {
+        memcpy(prompt + off, gp, gp_len);
+        off += gp_len;
+    }
+    for (size_t i = 0; i < fixed_count; i++) {
+        const char *fixed = fixed_prompts ? fixed_prompts[i] : NULL;
+        size_t fixed_len;
+        if (!fixed || fixed[0] == '\0') {
+            continue;
+        }
+        fixed_len = strlen(fixed);
+        if (off > 0) {
+            prompt[off++] = '\n';
+        }
+        memcpy(prompt + off, fixed, fixed_len);
+        off += fixed_len;
+    }
+    if (off > 0) {
+        prompt[off++] = '\n';
+    }
+
+    snprintf(prompt + off, need - off,
              "股票: %s %s\n"
              "現價: %.2f\n"
              "漲跌幅: %.2f%%\n"
              "%s",
-             gp,
              evt->quote.symbol,
              evt->quote.name,
              evt->quote.current_price,
@@ -191,6 +224,8 @@ static void process_alert_event(const stock_alert_event_t *evt)
         send_alert_failure_telegram(evt, "prompt_build_failed");
         goto cleanup;
     }
+    ESP_LOGW(TAG, "AI prompt symbol=%s provider=%s:\n%s",
+             evt->quote.symbol, ai_provider_get_name(), prompt);
 
     ai_analysis_result_t result = {0};
     esp_err_t ai_ret = ai_provider_analyze_with_prompt_sync(&evt->quote, prompt, api_key, &result);
@@ -227,6 +262,17 @@ cleanup:
     if (should_resume_polling) {
         telegram_bot_resume_polling();
     }
+}
+
+static bool has_telegram_test_config(void)
+{
+    bool enabled = false;
+    char token[128] = {0};
+    char chat_id[64] = {0};
+    storage_tg_load_enabled(&enabled);
+    storage_tg_load_bot_token(token, sizeof(token));
+    storage_tg_load_chat_id(chat_id, sizeof(chat_id));
+    return enabled && token[0] != '\0' && chat_id[0] != '\0';
 }
 
 static void stock_alert_fire_task(void *arg)
@@ -378,4 +424,107 @@ void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const 
              trigger_up ? "up" : "down",
              quote->change_percent,
              state->threshold_pct);
+}
+
+esp_err_t scheduler_service_stock_alert_trigger_test(scheduler_service_ctx_t *ctx,
+                                                     const stock_quote_t *quote,
+                                                     const stock_alert_config_t *cfg,
+                                                     sched_stock_alert_test_result_t *result)
+{
+    if (!ctx || !quote || !cfg || !result || quote->symbol[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(result, 0, sizeof(*result));
+    if (cfg->alert_prompt[0] == '\0') {
+        strlcpy(result->detail, "missing_prompt", sizeof(result->detail));
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char api_key[128] = {0};
+    if (load_primary_provider_key(api_key, sizeof(api_key)) != ESP_OK) {
+        strlcpy(result->detail, "missing_api_key", sizeof(result->detail));
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (!has_telegram_test_config()) {
+        strlcpy(result->detail, "missing_telegram_config", sizeof(result->detail));
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!scheduler_service_is_wifi_connected()) {
+        strlcpy(result->detail, "no_internet", sizeof(result->detail));
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    strlcpy(result->provider, ai_provider_get_name(), sizeof(result->provider));
+
+    bool should_resume_polling = false;
+    if (telegram_bot_is_running()) {
+        if (!telegram_bot_is_polling_paused()) {
+            telegram_bot_pause_polling();
+            should_resume_polling = true;
+        }
+        if (telegram_bot_wait_http_idle(STOCK_ALERT_IDLE_WAIT_MS) != ESP_OK) {
+            strlcpy(result->detail, "wait_http_idle_timeout", sizeof(result->detail));
+            if (should_resume_polling) {
+                telegram_bot_resume_polling();
+            }
+            return ESP_ERR_TIMEOUT;
+        }
+    }
+
+    stock_alert_event_t evt = {0};
+    evt.quote = *quote;
+    evt.trigger_up = (cfg->threshold_pct >= 0.0f);
+    evt.threshold_pct = fabsf(cfg->threshold_pct);
+
+    char global_prompt[513] = {0};
+    storage_ai_load_global_prompt(global_prompt, sizeof(global_prompt));
+
+    char *prompt = build_ai_prompt(&evt, cfg, global_prompt);
+    if (!prompt) {
+        strlcpy(result->detail, "prompt_build_failed", sizeof(result->detail));
+        if (should_resume_polling) {
+            telegram_bot_resume_polling();
+        }
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGW(TAG, "AI test prompt symbol=%s provider=%s:\n%s",
+             evt.quote.symbol, ai_provider_get_name(), prompt);
+
+    ai_analysis_result_t ai_result = {0};
+    esp_err_t ai_ret = ai_provider_analyze_with_prompt_sync(&evt.quote, prompt, api_key, &ai_result);
+    free(prompt);
+    result->ai_err = ai_ret;
+    result->ai_ok = (ai_ret == ESP_OK);
+    if (ai_ret != ESP_OK) {
+        strlcpy(result->detail, "ai_request_failed", sizeof(result->detail));
+        if (should_resume_polling) {
+            telegram_bot_resume_polling();
+        }
+        return ai_ret;
+    }
+
+    char *msg = build_telegram_message(&evt, &ai_result);
+    if (!msg) {
+        strlcpy(result->detail, "telegram_msg_build_failed", sizeof(result->detail));
+        if (should_resume_polling) {
+            telegram_bot_resume_polling();
+        }
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t tg_ret = telegram_bot_send_text(msg);
+    free(msg);
+    result->telegram_err = tg_ret;
+    result->telegram_ok = (tg_ret == ESP_OK);
+    if (tg_ret != ESP_OK) {
+        strlcpy(result->detail, "telegram_send_failed", sizeof(result->detail));
+    } else {
+        strlcpy(result->detail, "ok", sizeof(result->detail));
+    }
+
+    if (should_resume_polling) {
+        telegram_bot_resume_polling();
+    }
+    return tg_ret;
 }

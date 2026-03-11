@@ -24,6 +24,7 @@
 #define ERR_NOT_FOUND            "not_found"
 #define ERR_INVALID_THRESHOLD    "invalid_threshold"
 #define ERR_PROMPT_TOO_LONG      "prompt_too_long"
+#define ERR_TEST_FAILED          "test_failed"
 
 #define ALERT_PROMPT_MAX_BYTES   512
 #define ALERT_THRESHOLD_MAX      99.99f
@@ -492,6 +493,44 @@ static bool is_alert_threshold_valid(double value)
     return isfinite(value) && value >= -ALERT_THRESHOLD_MAX && value <= ALERT_THRESHOLD_MAX;
 }
 
+static void fill_test_quote_from_cache_and_meta(const char *symbol,
+                                                stock_quote_t *out_quote,
+                                                float fallback_threshold)
+{
+    if (!symbol || !out_quote) {
+        return;
+    }
+
+    memset(out_quote, 0, sizeof(*out_quote));
+    strlcpy(out_quote->symbol, symbol, sizeof(out_quote->symbol));
+
+    ensure_stock_meta_cached(symbol);
+    stock_meta_cache_t *meta = find_stock_meta(symbol);
+    if (meta) {
+        strlcpy(out_quote->name, meta->name, sizeof(out_quote->name));
+        strlcpy(out_quote->industry, meta->industry, sizeof(out_quote->industry));
+    }
+    if (out_quote->name[0] == '\0') {
+        strlcpy(out_quote->name, symbol, sizeof(out_quote->name));
+    }
+
+    stock_quote_cache_t cached = {0};
+    if (get_cached_quote(symbol, &cached) && cached.available) {
+        out_quote->is_valid = true;
+        out_quote->is_market_closed = cached.is_market_closed;
+        out_quote->current_price = cached.price;
+        out_quote->yesterday_close = cached.price;
+        out_quote->change_percent = cached.change_percent;
+        return;
+    }
+
+    out_quote->is_valid = true;
+    out_quote->is_market_closed = false;
+    out_quote->current_price = 100.0f;
+    out_quote->yesterday_close = 100.0f;
+    out_quote->change_percent = fallback_threshold;
+}
+
 static esp_err_t parse_alert_config_from_json(cJSON *alert_obj, stock_alert_config_t *cfg, const char **error_code)
 {
     if (!cJSON_IsObject(alert_obj) || !cfg) {
@@ -873,6 +912,128 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
     return send_ret;
 }
 
+static esp_err_t portal_stocks_test_post_handler(httpd_req_t *req)
+{
+    char *body = NULL;
+    if (read_request_body_alloc(req, &body) != ESP_OK) {
+        return send_json_error(req, 400, ERR_INVALID_FORMAT);
+    }
+
+    cJSON *root = cJSON_Parse(body);
+    free(body);
+    if (!root) {
+        return send_json_error(req, 400, ERR_INVALID_FORMAT);
+    }
+
+    cJSON *sym = cJSON_GetObjectItem(root, "symbol");
+    cJSON *alert_obj = cJSON_GetObjectItem(root, "alert_config");
+    if (!cJSON_IsString(sym) || !is_symbol_format_valid(sym->valuestring)) {
+        cJSON_Delete(root);
+        return send_json_error(req, 400, ERR_INVALID_FORMAT);
+    }
+
+    stock_alert_config_t *alert_cfg = calloc(1, sizeof(stock_alert_config_t));
+    if (!alert_cfg) {
+        cJSON_Delete(root);
+        return send_json_error(req, 500, "no_memory");
+    }
+    const char *parse_error = NULL;
+    esp_err_t parse_ret = parse_alert_config_from_json(alert_obj, alert_cfg, &parse_error);
+    if (parse_ret != ESP_OK) {
+        free(alert_cfg);
+        cJSON_Delete(root);
+        return send_json_error(req, 400, parse_error);
+    }
+    if (alert_cfg->alert_prompt[0] == '\0') {
+        free(alert_cfg);
+        cJSON_Delete(root);
+        return send_json_error(req, 400, ERR_INVALID_FORMAT);
+    }
+
+    char symbol[8] = {0};
+    strlcpy(symbol, sym->valuestring, sizeof(symbol));
+    cJSON_Delete(root);
+
+    stock_list_t *list = calloc(1, sizeof(stock_list_t));
+    if (!list) {
+        free(alert_cfg);
+        return send_json_error(req, 500, "no_memory");
+    }
+    if (storage_stocks_load(list) != ESP_OK) {
+        free(list);
+        free(alert_cfg);
+        return send_json_error(req, 500, "load_failed");
+    }
+    if (stock_list_find_symbol(list, symbol) < 0) {
+        free(list);
+        free(alert_cfg);
+        return send_json_error(req, 404, ERR_NOT_FOUND);
+    }
+    free(list);
+
+    stock_quote_t *quote = calloc(1, sizeof(stock_quote_t));
+    sched_stock_alert_test_result_t *result = calloc(1, sizeof(sched_stock_alert_test_result_t));
+    if (!quote || !result) {
+        free(quote);
+        free(result);
+        free(alert_cfg);
+        return send_json_error(req, 500, "no_memory");
+    }
+    fill_test_quote_from_cache_and_meta(symbol, quote, alert_cfg->threshold_pct);
+
+    esp_err_t submit = scheduler_service_cmd_test_stock_alert(symbol,
+                                                              quote,
+                                                              alert_cfg,
+                                                              result,
+                                                              70000);
+    free(quote);
+    free(alert_cfg);
+    if (submit == ESP_ERR_TIMEOUT) {
+        free(result);
+        return send_json_response(req, 504, "{\"ok\":false,\"error\":\"timeout\"}");
+    }
+    if (submit == ESP_ERR_INVALID_STATE) {
+        free(result);
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"scheduler_unavailable\"}");
+    }
+    if (submit != ESP_OK) {
+        free(result);
+        return send_json_response(req, 500, "{\"ok\":false,\"error\":\"internal_error\"}");
+    }
+
+    if (!result->ai_ok || !result->telegram_ok) {
+        char provider_escaped[40] = {0};
+        char detail_escaped[192] = {0};
+        json_escape(provider_escaped, sizeof(provider_escaped), result->provider);
+        json_escape(detail_escaped, sizeof(detail_escaped), result->detail);
+
+        char *json = calloc(1, 512);
+        if (!json) {
+            free(result);
+            return send_json_error(req, 500, "no_memory");
+        }
+        snprintf(json, 512,
+                 "{\"ok\":false,\"error\":\"%s\","
+                 "\"provider\":\"%s\",\"detail\":\"%s\","
+                 "\"ai_ok\":%s,\"telegram_ok\":%s,"
+                 "\"ai_err\":\"%s\",\"telegram_err\":\"%s\"}",
+                 ERR_TEST_FAILED,
+                 provider_escaped,
+                 detail_escaped[0] ? detail_escaped : "failed",
+                 result->ai_ok ? "true" : "false",
+                 result->telegram_ok ? "true" : "false",
+                 esp_err_to_name(result->ai_err),
+                 esp_err_to_name(result->telegram_err));
+        esp_err_t ret = send_json_response(req, 502, json);
+        free(json);
+        free(result);
+        return ret;
+    }
+
+    free(result);
+    return send_json_response(req, 200, "{\"ok\":true}");
+}
+
 static esp_err_t portal_stocks_remove_post_handler(httpd_req_t *req)
 {
     char *body = NULL;
@@ -1088,6 +1249,13 @@ esp_err_t stock_admin_service_register_handlers(httpd_handle_t httpd)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t stocks_test_uri = {
+        .uri = "/api/stocks/test",
+        .method = HTTP_POST,
+        .handler = portal_stocks_test_post_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_uri_t saved_aps_get_uri = {
         .uri = "/api/saved_aps",
         .method = HTTP_GET,
@@ -1106,6 +1274,7 @@ esp_err_t stock_admin_service_register_handlers(httpd_handle_t httpd)
     httpd_register_uri_handler(httpd, &stocks_add_uri);
     httpd_register_uri_handler(httpd, &stocks_remove_uri);
     httpd_register_uri_handler(httpd, &stocks_update_uri);
+    httpd_register_uri_handler(httpd, &stocks_test_uri);
     httpd_register_uri_handler(httpd, &saved_aps_get_uri);
     httpd_register_uri_handler(httpd, &saved_aps_remove_uri);
 

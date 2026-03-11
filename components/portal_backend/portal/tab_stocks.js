@@ -131,6 +131,7 @@ function renderStocksList() {
           "<button type='button' class='secondary' onclick=\"saveStockEdit('" + sym + "')\">Save</button>" +
           "<button type='button' class='btn-warning' onclick=\"clearStockAlert('" + sym + "')\">Clear</button>" +
           "<button type='button' class='btn-cancel' onclick=\"cancelStockEdit()\">Cancel</button>" +
+          "<button type='button' class='secondary' onclick=\"testStockEdit('" + sym + "')\">Test</button>" +
         "</div>" +
       "</div>";
     }
@@ -234,6 +235,64 @@ function clearStockAlert(sym) {
     })
     .catch(function (e) {
       setStocksMsg("Request failed: " + (e && e.message ? e.message : "network"), false);
+    });
+}
+
+function setStocksTestOverlay(visible) {
+  var el = document.getElementById("stocks_test_overlay");
+  if (!el) return;
+  el.className = visible ? "init-overlay loading" : "init-overlay hidden";
+}
+
+function testStockEdit(sym) {
+  var thresholdEl = document.getElementById("alert_threshold_" + sym);
+  var promptEl = document.getElementById("alert_prompt_" + sym);
+  if (!thresholdEl || !promptEl) return;
+
+  var threshold = parseFloat(thresholdEl.value);
+  if (!isFinite(threshold) || threshold < -99.99 || threshold > 99.99) {
+    setStocksMsg(stockErr("invalid_threshold"), false);
+    return;
+  }
+  threshold = Math.round(threshold * 100) / 100;
+  if (Math.abs(threshold) < 0.005) threshold = 0;
+
+  var prompt = (promptEl.value || "").trim();
+  if (!prompt) {
+    setStocksMsg("Test 需要 Alert Prompt。", false);
+    return;
+  }
+
+  setStocksMsg("測試中：呼叫 AI 並發送 Telegram...", true);
+  setStocksTestOverlay(true);
+  fetchWithTimeout("/api/stocks/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      symbol: sym,
+      alert_config: {
+        threshold_pct: threshold,
+        alert_prompt: prompt
+      }
+    })
+  }, 75000)
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, body: b }; });
+    })
+    .then(function (x) {
+      if (!x.ok || !x.body.ok) {
+        var detail = x.body && x.body.detail ? (" | " + x.body.detail) : "";
+        var msg = stockErr(x.body && x.body.error);
+        setStocksMsg("測試失敗：" + msg + detail, false);
+        return;
+      }
+      setStocksMsg("測試成功：AI 呼叫完成，Telegram 已送出。", true);
+    })
+    .catch(function (e) {
+      setStocksMsg("Request failed: " + (e && e.message ? e.message : "network"), false);
+    })
+    .finally(function () {
+      setStocksTestOverlay(false);
     });
 }
 

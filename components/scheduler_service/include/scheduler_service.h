@@ -29,6 +29,15 @@ typedef struct {
     sched_ai_test_provider_result_t openai;
 } sched_ai_test_result_t;
 
+typedef struct {
+    bool ai_ok;
+    bool telegram_ok;
+    esp_err_t ai_err;
+    esp_err_t telegram_err;
+    char provider[16];
+    char detail[128];
+} sched_stock_alert_test_result_t;
+
 /**
  * @brief 初始化排程器（含 SNTP 時間同步）
  */
@@ -103,6 +112,12 @@ esp_err_t scheduler_service_cmd_test_ai_key(int selected_provider,
                                              const char *provided_api_key,
                                              sched_ai_test_result_t *result,
                                              uint32_t timeout_ms);
+
+esp_err_t scheduler_service_cmd_test_stock_alert(const char *symbol,
+                                                 const stock_quote_t *quote,
+                                                 const stock_alert_config_t *cfg,
+                                                 sched_stock_alert_test_result_t *result,
+                                                 uint32_t timeout_ms);
 
 /**
  * @brief 處理一筆最新報價以檢查漲跌門檻觸發（非阻塞）

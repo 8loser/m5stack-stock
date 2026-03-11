@@ -109,6 +109,24 @@ static void execute_cmd_test_ai_key(const sched_cmd_item_t *cmd)
     }
 }
 
+static void execute_cmd_test_stock_alert(const sched_cmd_item_t *cmd)
+{
+    sched_stock_alert_test_result_t *r = (sched_stock_alert_test_result_t *)cmd->result;
+    if (!r) {
+        return;
+    }
+
+    memset(r, 0, sizeof(*r));
+    scheduler_service_ctx_t *ctx = scheduler_service_ctx();
+    esp_err_t ret = scheduler_service_stock_alert_trigger_test(ctx,
+                                                               &cmd->quote,
+                                                               &cmd->alert_cfg,
+                                                               r);
+    if (ret != ESP_OK && r->detail[0] == '\0') {
+        strlcpy(r->detail, esp_err_to_name(ret), sizeof(r->detail));
+    }
+}
+
 void scheduler_service_process_cmd_queue(scheduler_service_ctx_t *ctx)
 {
     sched_cmd_item_t cmd;
@@ -116,6 +134,9 @@ void scheduler_service_process_cmd_queue(scheduler_service_ctx_t *ctx)
         switch (cmd.type) {
         case SCHED_CMD_TEST_AI_KEY:
             execute_cmd_test_ai_key(&cmd);
+            break;
+        case SCHED_CMD_TEST_STOCK_ALERT:
+            execute_cmd_test_stock_alert(&cmd);
             break;
         }
         if (cmd.done) {
@@ -394,6 +415,51 @@ esp_err_t scheduler_service_cmd_test_ai_key(int selected_provider,
     if (provided_api_key && provided_api_key[0] != '\0') {
         strlcpy(cmd.api_key, provided_api_key, sizeof(cmd.api_key));
     }
+
+    if (xQueueSend(s_ctx.cmd_queue, &cmd, 0) != pdTRUE) {
+        vSemaphoreDelete(done);
+        return ESP_FAIL;
+    }
+
+    xTaskNotify(s_ctx.scheduler_task, SCHEDULER_SERVICE_NOTIFY_CMD_BIT, eSetBits);
+
+    esp_err_t ret = ESP_OK;
+    if (xSemaphoreTake(done, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+        ret = ESP_ERR_TIMEOUT;
+    }
+
+    vSemaphoreDelete(done);
+    return ret;
+}
+
+esp_err_t scheduler_service_cmd_test_stock_alert(const char *symbol,
+                                                 const stock_quote_t *quote,
+                                                 const stock_alert_config_t *cfg,
+                                                 sched_stock_alert_test_result_t *result,
+                                                 uint32_t timeout_ms)
+{
+    if (!s_ctx.cmd_queue || !s_ctx.scheduler_task) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!symbol || !quote || !cfg || !result) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    SemaphoreHandle_t done = xSemaphoreCreateBinary();
+    if (!done) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    memset(result, 0, sizeof(*result));
+
+    sched_cmd_item_t cmd = {
+        .type = SCHED_CMD_TEST_STOCK_ALERT,
+        .result = result,
+        .done = done,
+    };
+    strlcpy(cmd.symbol, symbol, sizeof(cmd.symbol));
+    cmd.quote = *quote;
+    cmd.alert_cfg = *cfg;
 
     if (xQueueSend(s_ctx.cmd_queue, &cmd, 0) != pdTRUE) {
         vSemaphoreDelete(done);

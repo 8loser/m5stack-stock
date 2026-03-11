@@ -71,6 +71,7 @@ flowchart LR
 - stock alert 使用「穿越觸發 + 回到門檻內重置」去重，避免連續抓價時重複觸發。
 - 休市快照（`is_market_closed=true`）直接略過，不觸發 AI。
 - AI 呼叫嚴格使用目前選定 provider（primary only，不做 provider fallback）。
+- 送往 AI 的 prompt 組成為：`global_prompt` + `AT_TIME_FIXED_GLOBAL_PROMPT` + `alert_prompt` + quote context。
 - AI 成功：Telegram 發送「觸發摘要 + AI 回覆」；失敗：發送單次失敗摘要。
 
 ## 3) 事件流（Event Bus）
@@ -116,7 +117,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    WEB[Portal JS<br/>/stocks add/remove/update]
+    WEB[Portal JS<br/>/stocks add/remove/update/test]
     API[stock_admin_service]
     ST[storage]
     SCH[scheduler]
@@ -130,6 +131,7 @@ flowchart LR
 說明：
 - `/stocks/add`：驗證代號 -> 存 NVS -> `scheduler_reload_stock_list()` -> `scheduler_trigger_quote_now()`。
 - `/stocks/remove`：刪除 NVS -> `scheduler_reload_stock_list()`。
+- `/stocks/test`：不寫入 NVS，將目前編輯中的門檻與 prompt 送入 scheduler command，走一次完整 AI + Telegram 流程。
 - `main` 註冊的 `on_stock_list_changed` 會刷新 Dashboard symbols。
 
 ## 6) 模組責任地圖（簡版）

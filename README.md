@@ -163,6 +163,7 @@ Web Portal 分成 6 個分頁：
 - `AI Provider`：設定 Gemini / Claude / OpenAI API Key 與 Prompt Template
 - `Telegram`：設定 Bot Token / Chat ID，並可送測試訊息
 - `Stocks`：管理股票清單（TWSE only，最多 15 檔）
+  - 編輯單檔 Alert 時可按 `Test` 進行整合測試（AI + Telegram），測試期間會顯示等待畫面
 - `At Time`：定時 AI 任務（可設定啟用、時間、星期與 Prompt，寫入裝置）
 - `Interval`：固定間隔 AI 觸發 UI（目前為前端示意，後端尚未實作）
 
@@ -178,6 +179,9 @@ Stocks API 驗證規則：
 - 代號必須為 4 位數字
 - 新增時會先向 TWSE 驗證，且僅接受 `tse`
 - 常見錯誤碼：`invalid_format`、`duplicate_symbol`、`limit_exceeded`、`not_found_or_not_tse`、`validate_failed`、`not_found`
+- `POST /api/stocks/test`：以目前編輯值測試完整流程（不寫入 NVS）
+  - prompt 組成：`global_prompt` + `AT_TIME_FIXED_GLOBAL_PROMPT` + `alert_prompt`
+  - 執行流程：AI 分析完成後送 Telegram
 
 ## 排程與資料流
 
