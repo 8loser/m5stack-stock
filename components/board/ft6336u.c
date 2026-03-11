@@ -57,7 +57,9 @@ esp_err_t ft6336u_read(touch_point_t *point)
 
 bool ft6336u_is_touched(void)
 {
-    touch_point_t p;
-    ft6336u_read(&p);
+    touch_point_t p = {0};
+    if (ft6336u_read(&p) != ESP_OK) {
+        return false;
+    }
     return p.pressed;
 }

@@ -1,7 +1,7 @@
 # 倉庫貢獻指南
 
 ## 專案結構與模組規劃
-本專案是 M5Stack Core2 的 ESP-IDF（`v5.1.x`）韌體專案。
+本專案是 M5Stack Core2 的 ESP-IDF（`v5.5.x`）韌體專案。
 
 - `main/`：程式入口與共用設定（`main.c`、`app_config.h`）
 - `components/`：功能模組（board HAL、app_core event bus、network_portal façade、wifi_manager、portal_backend、storage、TWSE client、AI provider、scheduler_service、UI）

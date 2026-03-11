@@ -76,7 +76,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-ESP-IDF (C) 專案，含 app_core event bus，FreeRTOS 多核心任務。
+ESP-IDF v5.5.x (C) 專案，含 app_core event bus，FreeRTOS 多核心任務。
 
 ```
 main/app_config.h        # 所有硬體 pin、任務優先級、NVS namespace 常數

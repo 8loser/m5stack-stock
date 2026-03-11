@@ -1,6 +1,6 @@
 # M5Stack Core2 台股監測韌體
 
-本專案是以 **ESP-IDF v5.1.x** 開發的 M5Stack Core2 韌體，提供：
+本專案是以 **ESP-IDF v5.5.x** 開發的 M5Stack Core2 韌體，提供：
 
 - 台股（TWSE）報價輪詢
 - AI 分析（Gemini / Claude / OpenAI）

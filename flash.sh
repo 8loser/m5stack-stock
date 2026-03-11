@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-IDF_IMAGE="docker.io/espressif/idf:v5.1.4"
+IDF_IMAGE="docker.io/espressif/idf:v5.5.3"
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BAUD=460800
 MONITOR_BAUD=115200
