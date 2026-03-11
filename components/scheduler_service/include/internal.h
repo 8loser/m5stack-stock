@@ -31,11 +31,9 @@ typedef struct {
 typedef struct {
     bool  active;
     bool  enabled;
-    bool  up_latched;
-    bool  down_latched;
+    bool  latched;
     char  symbol[8];
-    float up_threshold_pct;
-    float down_threshold_pct;
+    float threshold_pct;
 } stock_alert_state_t;
 
 typedef struct {
@@ -86,3 +84,7 @@ void scheduler_service_process_cmd_queue(scheduler_service_ctx_t *ctx);
 esp_err_t scheduler_service_stock_alert_init(scheduler_service_ctx_t *ctx);
 esp_err_t scheduler_service_stock_alert_reload_configs(scheduler_service_ctx_t *ctx);
 void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const stock_quote_t *quote);
+esp_err_t scheduler_service_stock_alert_trigger_test(scheduler_service_ctx_t *ctx,
+                                                     const stock_quote_t *quote,
+                                                     bool trigger_up,
+                                                     float threshold_pct);

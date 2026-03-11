@@ -3,6 +3,7 @@
 #include "telegram_bot.h"
 #include "storage.h"
 #include "esp_log.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -18,20 +19,15 @@ typedef struct {
     stock_alert_event_t evt;
 } stock_alert_task_param_t;
 
-static bool is_up_breach(float change_percent, float threshold_pct)
+static bool is_threshold_breach(float change_percent, float threshold_pct)
 {
     if (threshold_pct > 0.0f) {
         return change_percent >= threshold_pct;
     }
-    return change_percent > 0.0f;
-}
-
-static bool is_down_breach(float change_percent, float threshold_pct)
-{
-    if (threshold_pct > 0.0f) {
-        return change_percent <= -threshold_pct;
+    if (threshold_pct < 0.0f) {
+        return change_percent <= threshold_pct;
     }
-    return change_percent < 0.0f;
+    return false;
 }
 
 static stock_alert_state_t *find_alert_state_by_symbol(scheduler_service_ctx_t *ctx,
@@ -161,7 +157,7 @@ static void process_alert_event(const stock_alert_event_t *evt)
 
     stock_alert_config_t cfg = {0};
     esp_err_t load_ret = storage_stock_alert_config_load(evt->quote.symbol, &cfg);
-    if (load_ret != ESP_OK || !cfg.enabled || cfg.alert_prompt[0] == '\0') {
+    if (load_ret != ESP_OK || cfg.alert_prompt[0] == '\0' || cfg.threshold_pct == 0.0f) {
         return;
     }
 
@@ -294,11 +290,9 @@ esp_err_t scheduler_service_stock_alert_reload_configs(scheduler_service_ctx_t *
             continue;
         }
 
-        state->enabled = (cfg.enabled && cfg.alert_prompt[0] != '\0');
-        state->up_threshold_pct = cfg.up_threshold_pct;
-        state->down_threshold_pct = cfg.down_threshold_pct;
-        state->up_latched = false;
-        state->down_latched = false;
+        state->enabled = (cfg.alert_prompt[0] != '\0' && cfg.threshold_pct != 0.0f);
+        state->threshold_pct = cfg.threshold_pct;
+        state->latched = false;
     }
 
     xSemaphoreGive(ctx->alert_mutex);
@@ -322,15 +316,12 @@ void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const 
         return;
     }
 
-    bool up_breach = is_up_breach(quote->change_percent, state->up_threshold_pct);
-    bool down_breach = is_down_breach(quote->change_percent, state->down_threshold_pct);
-    bool trigger_up = up_breach && !state->up_latched;
-    bool trigger_down = down_breach && !state->down_latched;
+    bool breach = is_threshold_breach(quote->change_percent, state->threshold_pct);
+    bool trigger = breach && !state->latched;
+    bool trigger_up = (state->threshold_pct > 0.0f);
+    state->latched = breach;
 
-    state->up_latched = up_breach;
-    state->down_latched = down_breach;
-
-    if (!(trigger_up || trigger_down)) {
+    if (!trigger) {
         xSemaphoreGive(ctx->alert_mutex);
         return;
     }
@@ -345,8 +336,7 @@ void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const 
     stock_alert_task_param_t *param = calloc(1, sizeof(*param));
     if (!param) {
         ctx->stock_alert_in_flight = false;
-        if (trigger_up) state->up_latched = false;
-        if (trigger_down) state->down_latched = false;
+        state->latched = false;
         xSemaphoreGive(ctx->alert_mutex);
         return;
     }
@@ -354,7 +344,7 @@ void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const 
     param->ctx = ctx;
     param->evt.quote = *quote;
     param->evt.trigger_up = trigger_up;
-    param->evt.threshold_pct = trigger_up ? state->up_threshold_pct : state->down_threshold_pct;
+    param->evt.threshold_pct = fabsf(state->threshold_pct);
 
     ctx->stock_alert_in_flight = true;
     xSemaphoreGive(ctx->alert_mutex);
@@ -372,8 +362,7 @@ void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const 
         if (ctx->alert_mutex &&
             xSemaphoreTake(ctx->alert_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             ctx->stock_alert_in_flight = false;
-            if (trigger_up) state->up_latched = false;
-            if (trigger_down) state->down_latched = false;
+            state->latched = false;
             xSemaphoreGive(ctx->alert_mutex);
         } else {
             ctx->stock_alert_in_flight = false;
@@ -381,10 +370,9 @@ void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const 
         return;
     }
 
-    ESP_LOGI(TAG, "alert triggered symbol=%s dir=%s cp=%.2f up=%.2f down=%.2f",
+    ESP_LOGI(TAG, "alert triggered symbol=%s dir=%s cp=%.2f th=%.2f",
              quote->symbol,
              trigger_up ? "up" : "down",
              quote->change_percent,
-             state->up_threshold_pct,
-             state->down_threshold_pct);
+             state->threshold_pct);
 }

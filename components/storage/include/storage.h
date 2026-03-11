@@ -59,9 +59,7 @@ esp_err_t storage_stock_meta_load(const char *symbol, stock_meta_t *meta);
 esp_err_t storage_stock_meta_remove(const char *symbol);
 
 typedef struct {
-    bool enabled;
-    float up_threshold_pct;
-    float down_threshold_pct;
+    float threshold_pct; /* signed threshold: +up / -down / 0=disabled */
     char alert_prompt[513];
 } stock_alert_config_t;
 

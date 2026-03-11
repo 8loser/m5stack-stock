@@ -482,16 +482,14 @@ static void add_alert_config_to_stock_item(cJSON *item, const stock_alert_config
     if (!obj) {
         return;
     }
-    cJSON_AddBoolToObject(obj, "enabled", cfg->enabled);
-    cJSON_AddNumberToObject(obj, "up_threshold_pct", roundf(cfg->up_threshold_pct * 100.0f) / 100.0f);
-    cJSON_AddNumberToObject(obj, "down_threshold_pct", roundf(cfg->down_threshold_pct * 100.0f) / 100.0f);
+    cJSON_AddNumberToObject(obj, "threshold_pct", roundf(cfg->threshold_pct * 100.0f) / 100.0f);
     cJSON_AddStringToObject(obj, "alert_prompt", cfg->alert_prompt);
     cJSON_AddItemToObject(item, "alert_config", obj);
 }
 
 static bool is_alert_threshold_valid(double value)
 {
-    return isfinite(value) && value >= 0.0 && value <= ALERT_THRESHOLD_MAX;
+    return isfinite(value) && value >= -ALERT_THRESHOLD_MAX && value <= ALERT_THRESHOLD_MAX;
 }
 
 static esp_err_t parse_alert_config_from_json(cJSON *alert_obj, stock_alert_config_t *cfg, const char **error_code)
@@ -503,22 +501,20 @@ static esp_err_t parse_alert_config_from_json(cJSON *alert_obj, stock_alert_conf
         return ESP_ERR_INVALID_ARG;
     }
 
-    cJSON *enabled = cJSON_GetObjectItem(alert_obj, "enabled");
-    cJSON *up = cJSON_GetObjectItem(alert_obj, "up_threshold_pct");
-    cJSON *down = cJSON_GetObjectItem(alert_obj, "down_threshold_pct");
+    cJSON *threshold = cJSON_GetObjectItem(alert_obj, "threshold_pct");
     cJSON *prompt = cJSON_GetObjectItem(alert_obj, "alert_prompt");
     if (!cJSON_IsString(prompt)) {
         /* Backward compatible old field name. */
         prompt = cJSON_GetObjectItem(alert_obj, "ai_prompt");
     }
-    if (!cJSON_IsBool(enabled) || !cJSON_IsNumber(up) || !cJSON_IsNumber(down) || !cJSON_IsString(prompt)) {
+    if (!cJSON_IsNumber(threshold) || !cJSON_IsString(prompt)) {
         if (error_code) {
             *error_code = ERR_INVALID_FORMAT;
         }
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (!is_alert_threshold_valid(up->valuedouble) || !is_alert_threshold_valid(down->valuedouble)) {
+    if (!is_alert_threshold_valid(threshold->valuedouble)) {
         if (error_code) {
             *error_code = ERR_INVALID_THRESHOLD;
         }
@@ -534,9 +530,7 @@ static esp_err_t parse_alert_config_from_json(cJSON *alert_obj, stock_alert_conf
     }
 
     memset(cfg, 0, sizeof(*cfg));
-    cfg->enabled = cJSON_IsTrue(enabled);
-    cfg->up_threshold_pct = roundf((float)up->valuedouble * 100.0f) / 100.0f;
-    cfg->down_threshold_pct = roundf((float)down->valuedouble * 100.0f) / 100.0f;
+    cfg->threshold_pct = roundf((float)threshold->valuedouble * 100.0f) / 100.0f;
     strlcpy(cfg->alert_prompt, prompt->valuestring, sizeof(cfg->alert_prompt));
     return ESP_OK;
 }
@@ -807,10 +801,18 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
             cJSON_Delete(root);
             return send_json_error(req, 400, parse_error);
         }
-        if (storage_stock_alert_config_save(symbol, alert_cfg) != ESP_OK) {
-            free(alert_cfg); free(cached_quote);
-            cJSON_Delete(root);
-            return send_json_error(req, 500, "save_failed");
+        if (alert_cfg->threshold_pct == 0.0f && alert_cfg->alert_prompt[0] == '\0') {
+            if (storage_stock_alert_config_remove(symbol) != ESP_OK) {
+                free(alert_cfg); free(cached_quote);
+                cJSON_Delete(root);
+                return send_json_error(req, 500, "save_failed");
+            }
+        } else {
+            if (storage_stock_alert_config_save(symbol, alert_cfg) != ESP_OK) {
+                free(alert_cfg); free(cached_quote);
+                cJSON_Delete(root);
+                return send_json_error(req, 500, "save_failed");
+            }
         }
     }
     cJSON_Delete(root);

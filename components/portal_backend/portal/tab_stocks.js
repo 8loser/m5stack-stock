@@ -25,33 +25,41 @@ function quoteSummary(q) {
 
 function alertSummary(cfg) {
   cfg = cfg || {};
-  var enabled = !!cfg.enabled;
-  var up = (typeof cfg.up_threshold_pct === "number" && isFinite(cfg.up_threshold_pct)) ? cfg.up_threshold_pct.toFixed(2) : "0.00";
-  var down = (typeof cfg.down_threshold_pct === "number" && isFinite(cfg.down_threshold_pct)) ? cfg.down_threshold_pct.toFixed(2) : "0.00";
+  var threshold = (typeof cfg.threshold_pct === "number" && isFinite(cfg.threshold_pct)) ? (Math.round(cfg.threshold_pct * 100) / 100) : 0;
   var p = cfg.alert_prompt || cfg.ai_prompt || "";
   var promptText = p ? ("Prompt: " + p) : "Prompt: (empty)";
-  return (enabled ? "告警: 啟用" : "告警: 停用") + " | 上漲 " + up + "% | 下跌 " + down + "% | " + promptText;
+  if (threshold > 0) {
+    return "告警: 啟用 | 上漲 +" + threshold.toFixed(2) + "% | " + promptText;
+  }
+  if (threshold < 0) {
+    return "告警: 啟用 | 下跌 " + threshold.toFixed(2) + "% | " + promptText;
+  }
+  return "告警: 停用 | 門檻 0.00% | " + promptText;
 }
 
 function hasAlertConfigForDisplay(cfg) {
   if (!cfg) return false;
-  return !!((cfg.alert_prompt || cfg.ai_prompt || "").trim());
+  var threshold = (typeof cfg.threshold_pct === "number" && isFinite(cfg.threshold_pct)) ? cfg.threshold_pct : 0;
+  var prompt = (cfg.alert_prompt || cfg.ai_prompt || "").trim();
+  return threshold !== 0 || !!prompt;
 }
 
 function thresholdInputValue(v) {
   if (typeof v !== "number" || !isFinite(v)) return "0.00";
-  return (Math.round(v * 100) / 100).toFixed(2);
+  var rounded = Math.round(v * 100) / 100;
+  if (Math.abs(rounded) < 0.005) rounded = 0;
+  return rounded.toFixed(2);
 }
 
 function clampThresholdValue(v) {
   if (!isFinite(v)) return 0;
-  if (v < 0) return 0;
+  if (v < -99.99) return -99.99;
   if (v > 99.99) return 99.99;
   return Math.round(v * 100) / 100;
 }
 
-function adjustStockThreshold(sym, field, delta) {
-  var inputId = field === "up" ? ("alert_up_" + sym) : ("alert_down_" + sym);
+function adjustStockThreshold(sym, delta) {
+  var inputId = "alert_threshold_" + sym;
   var inputEl = document.getElementById(inputId);
   if (!inputEl) return;
 
@@ -105,26 +113,18 @@ function renderStocksList() {
 
     if (s_stock_editing_symbol === sym) {
       html += "<div class='stock-edit'>" +
-        "<label class='stock-edit-toggle'><input id='alert_enabled_" + sym + "' type='checkbox'" + (cfg.enabled ? " checked" : "") + ">Enable</label>" +
         "<div class='stock-edit-group'>" +
           "<div class='stock-threshold-grid'>" +
-            "<label class='threshold-label' for='alert_up_" + sym + "'>上漲門檻 (%)</label>" +
-            "<label class='threshold-label' for='alert_down_" + sym + "'>下跌門檻 (%)</label>" +
+            "<label class='threshold-label' for='alert_threshold_" + sym + "'>漲跌幅門檻 (%)</label>" +
             "<div class='threshold-input-inline'>" +
-              "<input id='alert_up_" + sym + "' type='number' min='0' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.up_threshold_pct)) + "'>" +
+              "<input id='alert_threshold_" + sym + "' type='number' min='-99.99' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.threshold_pct)) + "'>" +
               "<div class='threshold-stepper'>" +
-                "<button type='button' class='threshold-step-btn threshold-step-minus' title='-0.01' aria-label='decrease by 0.01' onclick=\"adjustStockThreshold('" + sym + "','up',-0.01)\">−</button>" +
-                "<button type='button' class='threshold-step-btn threshold-step-plus' title='+0.01' aria-label='increase by 0.01' onclick=\"adjustStockThreshold('" + sym + "','up',0.01)\">+</button>" +
-              "</div>" +
-            "</div>" +
-            "<div class='threshold-input-inline'>" +
-              "<input id='alert_down_" + sym + "' type='number' min='0' max='99.99' step='0.01' value='" + escHtml(thresholdInputValue(cfg.down_threshold_pct)) + "'>" +
-              "<div class='threshold-stepper'>" +
-                "<button type='button' class='threshold-step-btn threshold-step-minus' title='-0.01' aria-label='decrease by 0.01' onclick=\"adjustStockThreshold('" + sym + "','down',-0.01)\">−</button>" +
-                "<button type='button' class='threshold-step-btn threshold-step-plus' title='+0.01' aria-label='increase by 0.01' onclick=\"adjustStockThreshold('" + sym + "','down',0.01)\">+</button>" +
+                "<button type='button' class='threshold-step-btn threshold-step-minus' title='-0.01' aria-label='decrease by 0.01' onclick=\"adjustStockThreshold('" + sym + "',-0.01)\">−</button>" +
+                "<button type='button' class='threshold-step-btn threshold-step-plus' title='+0.01' aria-label='increase by 0.01' onclick=\"adjustStockThreshold('" + sym + "',0.01)\">+</button>" +
               "</div>" +
             "</div>" +
           "</div>" +
+          "<div class='hint'>輸入正值代表上漲門檻，負值代表下跌門檻；0 代表停用。</div>" +
           "<label class='prompt-group-label'>Alert Prompt<textarea id='alert_prompt_" + sym + "' maxlength='512'>" + escHtml(cfg.alert_prompt || cfg.ai_prompt || "") + "</textarea></label>" +
         "</div>" +
         "<div class='stock-edit-actions'>" +
@@ -152,35 +152,33 @@ function cancelStockEdit() {
 }
 
 function saveStockEdit(sym) {
-  var enabledEl = document.getElementById("alert_enabled_" + sym);
-  var upEl = document.getElementById("alert_up_" + sym);
-  var downEl = document.getElementById("alert_down_" + sym);
+  var thresholdEl = document.getElementById("alert_threshold_" + sym);
   var promptEl = document.getElementById("alert_prompt_" + sym);
-  if (!enabledEl || !upEl || !downEl || !promptEl) return;
+  if (!thresholdEl || !promptEl) return;
 
-  var up = parseFloat(upEl.value);
-  var down = parseFloat(downEl.value);
-  if (!isFinite(up) || !isFinite(down) || up < 0 || down < 0 || up > 99.99 || down > 99.99) {
+  var threshold = parseFloat(thresholdEl.value);
+  if (!isFinite(threshold) || threshold < -99.99 || threshold > 99.99) {
     setStocksMsg(stockErr("invalid_threshold"), false);
     return;
   }
+  threshold = Math.round(threshold * 100) / 100;
+  if (Math.abs(threshold) < 0.005) threshold = 0;
 
-  var cfg = {
-    enabled: !!enabledEl.checked,
-    up_threshold_pct: up,
-    down_threshold_pct: down,
-    alert_prompt: (promptEl.value || "").trim()
-  };
+  var prompt = (promptEl.value || "").trim();
 
-  if (!cfg.alert_prompt) {
-    setStocksMsg("Alert Prompt 不可空白；若要移除 Alert，請使用 Clear Alert。", false);
+  if (threshold !== 0 && !prompt) {
+    setStocksMsg("門檻非 0 時 Alert Prompt 不可空白。", false);
     return;
   }
+
+  var requestBody = (threshold === 0 && !prompt)
+    ? { symbol: sym, clear_alert: true }
+    : { symbol: sym, alert_config: { threshold_pct: threshold, alert_prompt: prompt } };
 
   fetch("/api/stocks/update", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbol: sym, alert_config: cfg })
+    body: JSON.stringify(requestBody)
   })
     .then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, body: b }; });
@@ -195,7 +193,7 @@ function saveStockEdit(sym) {
         name: item.name || "",
         industry: item.industry || "",
         quote: item.quote || null,
-        alert_config: item.alert_config || cfg
+        alert_config: item.alert_config || { threshold_pct: threshold, alert_prompt: prompt }
       };
       s_stock_editing_symbol = "";
       renderStocksList();
@@ -228,7 +226,7 @@ function clearStockAlert(sym) {
         name: item.name || "",
         industry: item.industry || "",
         quote: item.quote || null,
-        alert_config: item.alert_config || { enabled: false, up_threshold_pct: 0, down_threshold_pct: 0, alert_prompt: "" }
+        alert_config: item.alert_config || { threshold_pct: 0, alert_prompt: "" }
       };
       s_stock_editing_symbol = "";
       renderStocksList();
@@ -254,7 +252,7 @@ function loadStocks(generation) {
           name: it.name || "",
           industry: it.industry || "",
           quote: it.quote || null,
-          alert_config: it.alert_config || { enabled: false, up_threshold_pct: 0, down_threshold_pct: 0, alert_prompt: "" }
+          alert_config: it.alert_config || { threshold_pct: 0, alert_prompt: "" }
         };
       });
       if (s_stock_editing_symbol && !s_stock_items[s_stock_editing_symbol]) {

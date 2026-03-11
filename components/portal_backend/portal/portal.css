@@ -238,7 +238,7 @@ button, .menu-btn { cursor: pointer; }
   background: transparent;
   padding: 0;
 }
-.stock-threshold-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
+.stock-threshold-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: end; }
 .threshold-label { margin-top: 0; font-size: 12px; font-weight: 700; color: #3c4f64; }
 .stock-threshold-grid input { margin-top: 0; }
 .threshold-input-inline {
@@ -346,7 +346,7 @@ button, .menu-btn { cursor: pointer; }
     border-radius: 11px;
   }
   .stock-threshold-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
   .threshold-label {
