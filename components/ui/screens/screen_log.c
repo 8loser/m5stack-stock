@@ -8,7 +8,7 @@
 #include <time.h>
 
 #define COLOR_BG            lv_color_hex(0x101826)
-#define LOG_RING_SIZE       32
+#define LOG_RING_SIZE       8
 #define LOG_MSG_MAX         56
 #define LOG_VISIBLE_LINES   LOG_RING_SIZE
 #define LOG_TS_MAX          20
@@ -110,7 +110,7 @@ static const lv_font_t *log_line_font(void)
 static const char *log_tag_to_str(log_tag_t tag)
 {
     switch (tag) {
-    case LOG_TAG_STOCK: return "股票";
+    case LOG_TAG_STOCK: return "抓價";
     case LOG_TAG_WIFI:  return "WiFi";
     case LOG_TAG_AI:    return "AI";
     case LOG_TAG_SYS:   return "系統";
