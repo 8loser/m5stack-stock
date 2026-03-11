@@ -28,14 +28,14 @@ function alertSummary(cfg) {
   var enabled = !!cfg.enabled;
   var up = (typeof cfg.up_threshold_pct === "number" && isFinite(cfg.up_threshold_pct)) ? cfg.up_threshold_pct.toFixed(2) : "0.00";
   var down = (typeof cfg.down_threshold_pct === "number" && isFinite(cfg.down_threshold_pct)) ? cfg.down_threshold_pct.toFixed(2) : "0.00";
-  var p = cfg.ai_prompt || "";
+  var p = cfg.alert_prompt || cfg.ai_prompt || "";
   var promptText = p ? ("Prompt: " + p) : "Prompt: (empty)";
   return (enabled ? "告警: 啟用" : "告警: 停用") + " | 上漲 " + up + "% | 下跌 " + down + "% | " + promptText;
 }
 
 function hasAlertConfigForDisplay(cfg) {
   if (!cfg) return false;
-  return !!((cfg.ai_prompt || "").trim());
+  return !!((cfg.alert_prompt || cfg.ai_prompt || "").trim());
 }
 
 function thresholdInputValue(v) {
@@ -125,7 +125,7 @@ function renderStocksList() {
               "</div>" +
             "</div>" +
           "</div>" +
-          "<label class='prompt-group-label'>AI Prompt<textarea id='alert_prompt_" + sym + "' maxlength='512'>" + escHtml(cfg.ai_prompt || "") + "</textarea></label>" +
+          "<label class='prompt-group-label'>Alert Prompt<textarea id='alert_prompt_" + sym + "' maxlength='512'>" + escHtml(cfg.alert_prompt || cfg.ai_prompt || "") + "</textarea></label>" +
         "</div>" +
         "<div class='stock-edit-actions'>" +
           "<button type='button' class='secondary' onclick=\"saveStockEdit('" + sym + "')\">Save</button>" +
@@ -169,11 +169,11 @@ function saveStockEdit(sym) {
     enabled: !!enabledEl.checked,
     up_threshold_pct: up,
     down_threshold_pct: down,
-    ai_prompt: (promptEl.value || "").trim()
+    alert_prompt: (promptEl.value || "").trim()
   };
 
-  if (!cfg.ai_prompt) {
-    setStocksMsg("AI Prompt 不可空白；若要移除 Alert，請使用 Clear Alert。", false);
+  if (!cfg.alert_prompt) {
+    setStocksMsg("Alert Prompt 不可空白；若要移除 Alert，請使用 Clear Alert。", false);
     return;
   }
 
@@ -228,7 +228,7 @@ function clearStockAlert(sym) {
         name: item.name || "",
         industry: item.industry || "",
         quote: item.quote || null,
-        alert_config: item.alert_config || { enabled: false, up_threshold_pct: 0, down_threshold_pct: 0, ai_prompt: "" }
+        alert_config: item.alert_config || { enabled: false, up_threshold_pct: 0, down_threshold_pct: 0, alert_prompt: "" }
       };
       s_stock_editing_symbol = "";
       renderStocksList();
@@ -254,7 +254,7 @@ function loadStocks(generation) {
           name: it.name || "",
           industry: it.industry || "",
           quote: it.quote || null,
-          alert_config: it.alert_config || { enabled: false, up_threshold_pct: 0, down_threshold_pct: 0, ai_prompt: "" }
+          alert_config: it.alert_config || { enabled: false, up_threshold_pct: 0, down_threshold_pct: 0, alert_prompt: "" }
         };
       });
       if (s_stock_editing_symbol && !s_stock_items[s_stock_editing_symbol]) {

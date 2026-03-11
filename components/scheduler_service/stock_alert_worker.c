@@ -88,36 +88,37 @@ static esp_err_t load_primary_provider_key(char *api_key, size_t api_key_size)
     return (api_key[0] != '\0') ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
-static char *build_ai_prompt(const stock_alert_event_t *evt, const stock_alert_config_t *cfg)
+static char *build_ai_prompt(const stock_alert_event_t *evt,
+                             const stock_alert_config_t *cfg,
+                             const char *global_prompt)
 {
-    if (!evt || !cfg || cfg->ai_prompt[0] == '\0') {
+    if (!evt || !cfg || cfg->alert_prompt[0] == '\0') {
         return NULL;
     }
 
-    const char *direction = evt->trigger_up ? "上漲" : "下跌";
-    size_t prompt_len = strlen(cfg->ai_prompt);
+    const char *gp = global_prompt ? global_prompt : "";
+    // global prompt
+    size_t gp_len = strlen(gp);
+    size_t prompt_len = strlen(cfg->alert_prompt);
     size_t name_len = strlen(evt->quote.name);
-    size_t need = prompt_len + name_len + 320U;
+    size_t need = gp_len + prompt_len + name_len + 384U;
     char *prompt = calloc(1, need);
     if (!prompt) {
         return NULL;
     }
 
     snprintf(prompt, need,
-             "你是台股分析助理，請用繁體中文在320字內、純文字回覆。\n"
+             "%s\n"
              "股票: %s %s\n"
              "現價: %.2f\n"
              "漲跌幅: %.2f%%\n"
-             "觸發事件: %s門檻 %.2f%%\n"
-             "請先簡述目前情境，再給出可執行建議。\n"
-             "使用者策略:\n%s",
+             "%s",
+             gp,
              evt->quote.symbol,
              evt->quote.name,
              evt->quote.current_price,
              evt->quote.change_percent,
-             direction,
-             evt->threshold_pct,
-             cfg->ai_prompt);
+             cfg->alert_prompt);
 
     return prompt;
 }
@@ -160,7 +161,7 @@ static void process_alert_event(const stock_alert_event_t *evt)
 
     stock_alert_config_t cfg = {0};
     esp_err_t load_ret = storage_stock_alert_config_load(evt->quote.symbol, &cfg);
-    if (load_ret != ESP_OK || !cfg.enabled || cfg.ai_prompt[0] == '\0') {
+    if (load_ret != ESP_OK || !cfg.enabled || cfg.alert_prompt[0] == '\0') {
         return;
     }
 
@@ -185,7 +186,10 @@ static void process_alert_event(const stock_alert_event_t *evt)
         }
     }
 
-    char *prompt = build_ai_prompt(evt, &cfg);
+    char global_prompt[513] = {0};
+    storage_ai_load_global_prompt(global_prompt, sizeof(global_prompt));
+
+    char *prompt = build_ai_prompt(evt, &cfg, global_prompt);
     if (!prompt) {
         send_alert_failure_telegram(evt, "prompt_build_failed");
         goto cleanup;
@@ -290,7 +294,7 @@ esp_err_t scheduler_service_stock_alert_reload_configs(scheduler_service_ctx_t *
             continue;
         }
 
-        state->enabled = (cfg.enabled && cfg.ai_prompt[0] != '\0');
+        state->enabled = (cfg.enabled && cfg.alert_prompt[0] != '\0');
         state->up_threshold_pct = cfg.up_threshold_pct;
         state->down_threshold_pct = cfg.down_threshold_pct;
         state->up_latched = false;

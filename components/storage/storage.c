@@ -825,7 +825,7 @@ esp_err_t storage_stock_alert_config_load(const char *symbol, stock_alert_config
     }
     if (ret != ESP_OK) return ret;
     if (sz != sizeof(*config)) return ESP_ERR_INVALID_SIZE;
-    config->ai_prompt[sizeof(config->ai_prompt) - 1] = '\0';
+    config->alert_prompt[sizeof(config->alert_prompt) - 1] = '\0';
     return ESP_OK;
 }
 

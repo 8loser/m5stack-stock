@@ -62,7 +62,7 @@ typedef struct {
     bool enabled;
     float up_threshold_pct;
     float down_threshold_pct;
-    char ai_prompt[513];
+    char alert_prompt[513];
 } stock_alert_config_t;
 
 esp_err_t storage_stock_alert_config_save(const char *symbol, const stock_alert_config_t *config);

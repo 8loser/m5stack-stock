@@ -485,7 +485,7 @@ static void add_alert_config_to_stock_item(cJSON *item, const stock_alert_config
     cJSON_AddBoolToObject(obj, "enabled", cfg->enabled);
     cJSON_AddNumberToObject(obj, "up_threshold_pct", roundf(cfg->up_threshold_pct * 100.0f) / 100.0f);
     cJSON_AddNumberToObject(obj, "down_threshold_pct", roundf(cfg->down_threshold_pct * 100.0f) / 100.0f);
-    cJSON_AddStringToObject(obj, "ai_prompt", cfg->ai_prompt);
+    cJSON_AddStringToObject(obj, "alert_prompt", cfg->alert_prompt);
     cJSON_AddItemToObject(item, "alert_config", obj);
 }
 
@@ -506,7 +506,11 @@ static esp_err_t parse_alert_config_from_json(cJSON *alert_obj, stock_alert_conf
     cJSON *enabled = cJSON_GetObjectItem(alert_obj, "enabled");
     cJSON *up = cJSON_GetObjectItem(alert_obj, "up_threshold_pct");
     cJSON *down = cJSON_GetObjectItem(alert_obj, "down_threshold_pct");
-    cJSON *prompt = cJSON_GetObjectItem(alert_obj, "ai_prompt");
+    cJSON *prompt = cJSON_GetObjectItem(alert_obj, "alert_prompt");
+    if (!cJSON_IsString(prompt)) {
+        /* Backward compatible old field name. */
+        prompt = cJSON_GetObjectItem(alert_obj, "ai_prompt");
+    }
     if (!cJSON_IsBool(enabled) || !cJSON_IsNumber(up) || !cJSON_IsNumber(down) || !cJSON_IsString(prompt)) {
         if (error_code) {
             *error_code = ERR_INVALID_FORMAT;
@@ -533,7 +537,7 @@ static esp_err_t parse_alert_config_from_json(cJSON *alert_obj, stock_alert_conf
     cfg->enabled = cJSON_IsTrue(enabled);
     cfg->up_threshold_pct = roundf((float)up->valuedouble * 100.0f) / 100.0f;
     cfg->down_threshold_pct = roundf((float)down->valuedouble * 100.0f) / 100.0f;
-    strlcpy(cfg->ai_prompt, prompt->valuestring, sizeof(cfg->ai_prompt));
+    strlcpy(cfg->alert_prompt, prompt->valuestring, sizeof(cfg->alert_prompt));
     return ESP_OK;
 }
 

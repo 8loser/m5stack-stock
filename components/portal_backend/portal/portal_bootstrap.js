@@ -62,7 +62,7 @@ function stockErr(code) {
     validate_failed: "TWSE 驗證失敗，請稍後再試",
     not_found: "清單內找不到此代號",
     invalid_threshold: "門檻需為 0..99.99 的數字",
-    prompt_too_long: "AI prompt 最多 512 bytes"
+    prompt_too_long: "Alert prompt 最多 512 bytes"
   };
   return m[code] || ("Error: " + (code || "unknown"));
 }
