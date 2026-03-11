@@ -2,6 +2,7 @@
 #include "ai_provider.h"
 #include "telegram_bot.h"
 #include "storage.h"
+#include "alert_feedback.h"
 #include "esp_log.h"
 #include <math.h>
 #include <stdio.h>
@@ -332,6 +333,8 @@ void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const 
         xSemaphoreGive(ctx->alert_mutex);
         return;
     }
+
+    alert_feedback_play(trigger_up ? ALERT_FEEDBACK_UP : ALERT_FEEDBACK_DOWN);
 
     stock_alert_task_param_t *param = calloc(1, sizeof(*param));
     if (!param) {

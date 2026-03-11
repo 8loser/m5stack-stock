@@ -4,6 +4,7 @@
 #include "driver/i2s_std.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include <math.h>
 #include <string.h>
@@ -18,6 +19,7 @@ static const char *TAG = "audio";
 #define FADE_MS         8
 
 static i2s_chan_handle_t s_tx_chan = NULL;
+static SemaphoreHandle_t s_audio_mutex = NULL;
 
 esp_err_t audio_init(void)
 {
@@ -51,27 +53,44 @@ esp_err_t audio_init(void)
     ret = i2s_channel_init_std_mode(s_tx_chan, &std_cfg);
     if (ret != ESP_OK) return ret;
 
-    ret = i2s_channel_enable(s_tx_chan);
+    if (!s_audio_mutex) {
+        s_audio_mutex = xSemaphoreCreateMutex();
+        if (!s_audio_mutex) {
+            ESP_LOGE(TAG, "audio mutex create failed");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
     ESP_LOGI(TAG, "I2S 音效初始化完成");
-    return ret;
+    return ESP_OK;
 }
 
 void audio_beep(uint32_t freq_hz, uint32_t duration_ms)
 {
     if (!s_tx_chan || freq_hz == 0) return;
+    if (!s_audio_mutex) return;
+    if (xSemaphoreTake(s_audio_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) return;
 
     /* 每次播放前確保喇叭與 I2S TX 都在啟用狀態 */
     if (axp192_set_speaker_enable(true) != ESP_OK) {
+        xSemaphoreGive(s_audio_mutex);
         return;
     }
     esp_err_t ret = i2s_channel_enable(s_tx_chan);
-    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+    if (ret != ESP_OK) {
+        axp192_set_speaker_enable(false);
+        xSemaphoreGive(s_audio_mutex);
         return;
     }
 
     uint32_t total_samples = SAMPLE_RATE * duration_ms / 1000;
     int16_t *buf = (int16_t *)malloc(BUF_SAMPLES * 2 * sizeof(int16_t));
-    if (!buf) return;
+    if (!buf) {
+        i2s_channel_disable(s_tx_chan);
+        axp192_set_speaker_enable(false);
+        xSemaphoreGive(s_audio_mutex);
+        return;
+    }
 
     uint32_t written_samples = 0;
     uint32_t sample_idx = 0;
@@ -121,20 +140,7 @@ void audio_beep(uint32_t freq_hz, uint32_t duration_ms)
         ESP_LOGW(TAG, "I2S disable 失敗: %s", esp_err_to_name(ret));
     }
     axp192_set_speaker_enable(false);
-}
-
-void audio_alert_up(void)
-{
-    audio_beep(880, 100);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    audio_beep(1320, 150);
-}
-
-void audio_alert_down(void)
-{
-    audio_beep(880, 100);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    audio_beep(587, 150);
+    xSemaphoreGive(s_audio_mutex);
 }
 
 void audio_notify(void)
@@ -146,9 +152,20 @@ void audio_notify(void)
 
 void audio_deinit(void)
 {
+    if (s_audio_mutex &&
+        xSemaphoreTake(s_audio_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return;
+    }
+
     if (s_tx_chan) {
         i2s_channel_disable(s_tx_chan);
         i2s_del_channel(s_tx_chan);
         s_tx_chan = NULL;
+    }
+
+    if (s_audio_mutex) {
+        xSemaphoreGive(s_audio_mutex);
+        vSemaphoreDelete(s_audio_mutex);
+        s_audio_mutex = NULL;
     }
 }

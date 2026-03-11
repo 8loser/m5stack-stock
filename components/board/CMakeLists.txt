@@ -7,6 +7,7 @@ idf_component_register(
         "rtc_bm8563.c"
         "vibration.c"
         "audio.c"
+        "alert_feedback.c"
     INCLUDE_DIRS "include"
     REQUIRES
         driver

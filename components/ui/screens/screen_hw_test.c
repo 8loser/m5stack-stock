@@ -1,15 +1,12 @@
 #include "screen_hw_test.h"
-#include "audio.h"
+#include "alert_feedback.h"
 #include "app_config.h"
 #include "ui_compat.h"
-#include "vibration.h"
 #include <stdint.h>
 
 #define COLOR_BG           lv_color_hex(0x121826)
-#define COLOR_VIB_SECTION  lv_color_hex(0x4FC3F7)
-#define COLOR_AUDIO_SECTION lv_color_hex(0xCE93D8)
-#define COLOR_VIB_BTN      lv_color_hex(0x1565C0)
-#define COLOR_AUDIO_BTN    lv_color_hex(0x4A148C)
+#define COLOR_VIB_BTN_UP   lv_color_hex(0x1565C0)
+#define COLOR_VIB_BTN_DOWN lv_color_hex(0x0D47A1)
 
 static const lv_font_t *hw_test_text_font(void)
 {
@@ -37,46 +34,30 @@ static lv_obj_t *create_test_button(lv_obj_t *parent, int x, int y, int w, int h
     return btn;
 }
 
-static void on_alert_clicked(lv_event_t *e)
+static void on_alert_up_clicked(lv_event_t *e)
 {
     (void)e;
-    vibration_alert();
+    alert_feedback_play(ALERT_FEEDBACK_UP);
 }
 
-static void on_beep_clicked(lv_event_t *e)
+static void on_alert_down_clicked(lv_event_t *e)
 {
     (void)e;
-    audio_beep(880, 80);
-    audio_beep(1047, 80);
-    audio_beep(1319, 80);
-    audio_beep(1568, 80);
+    alert_feedback_play(ALERT_FEEDBACK_DOWN);
 }
 
 lv_obj_t *screen_hw_test_create(void)
 {
-    const int content_top = UI_CONTENT_TOP_Y + 50;
+    const int content_top = UI_CONTENT_TOP_Y + 72;
 
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, COLOR_BG, 0);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *vibration_label = lv_label_create(screen);
-    lv_label_set_text(vibration_label, "震動測試");
-    lv_obj_set_style_text_font(vibration_label, hw_test_text_font(), 0);
-    lv_obj_set_style_text_color(vibration_label, COLOR_VIB_SECTION, 0);
-    lv_obj_set_pos(vibration_label, 12, content_top + 0);
-
-    create_test_button(screen, 12, content_top + 16, 298, 40, COLOR_VIB_BTN, "震動",
-                       on_alert_clicked);
-
-    lv_obj_t *audio_label = lv_label_create(screen);
-    lv_label_set_text(audio_label, "音效測試");
-    lv_obj_set_style_text_font(audio_label, hw_test_text_font(), 0);
-    lv_obj_set_style_text_color(audio_label, COLOR_AUDIO_SECTION, 0);
-    lv_obj_set_pos(audio_label, 12, content_top + 60);
-
-    create_test_button(screen, 12, content_top + 76, 298, 40, COLOR_AUDIO_BTN, "嗶聲",
-                       on_beep_clicked);
+    create_test_button(screen, 12, content_top + 0, 298, 42, COLOR_VIB_BTN_UP, "上漲",
+                       on_alert_up_clicked);
+    create_test_button(screen, 12, content_top + 56, 298, 42, COLOR_VIB_BTN_DOWN, "下跌",
+                       on_alert_down_clicked);
 
     return screen;
 }
