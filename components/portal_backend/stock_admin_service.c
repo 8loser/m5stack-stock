@@ -832,6 +832,11 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
             cJSON_Delete(root);
             return send_json_error(req, 500, "save_failed");
         }
+        if (storage_stock_alert_dedup_remove(symbol) != ESP_OK) {
+            free(alert_cfg); free(cached_quote);
+            cJSON_Delete(root);
+            return send_json_error(req, 500, "save_failed");
+        }
     } else {
         const char *parse_error = NULL;
         esp_err_t parse_ret = parse_alert_config_from_json(alert_obj, alert_cfg, &parse_error);
@@ -842,6 +847,11 @@ static esp_err_t portal_stocks_update_post_handler(httpd_req_t *req)
         }
         if (alert_cfg->threshold_pct == 0.0f && alert_cfg->alert_prompt[0] == '\0') {
             if (storage_stock_alert_config_remove(symbol) != ESP_OK) {
+                free(alert_cfg); free(cached_quote);
+                cJSON_Delete(root);
+                return send_json_error(req, 500, "save_failed");
+            }
+            if (storage_stock_alert_dedup_remove(symbol) != ESP_OK) {
                 free(alert_cfg); free(cached_quote);
                 cJSON_Delete(root);
                 return send_json_error(req, 500, "save_failed");
@@ -1081,6 +1091,9 @@ static esp_err_t portal_stocks_remove_post_handler(httpd_req_t *req)
         return send_json_error(req, 500, "save_failed");
     }
     if (storage_stock_alert_config_remove(symbol) != ESP_OK) {
+        return send_json_error(req, 500, "save_failed");
+    }
+    if (storage_stock_alert_dedup_remove(symbol) != ESP_OK) {
         return send_json_error(req, 500, "save_failed");
     }
 

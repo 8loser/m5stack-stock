@@ -12,13 +12,9 @@
 #define STOCK_ALERT_TASK_STACK   8192
 #define STOCK_ALERT_TASK_PRIO    3
 #define STOCK_ALERT_IDLE_WAIT_MS 20000U
+#define STOCK_ALERT_QUEUE_LEN    1
 
 static const char *TAG = "stock_alert";
-
-typedef struct {
-    scheduler_service_ctx_t *ctx;
-    stock_alert_event_t evt;
-} stock_alert_task_param_t;
 
 static bool is_threshold_breach(float change_percent, float threshold_pct)
 {
@@ -48,6 +44,22 @@ static stock_alert_state_t *find_alert_state_by_symbol(scheduler_service_ctx_t *
         }
     }
     return NULL;
+}
+
+static void persist_dedup_state(const char *symbol, bool latched, float threshold_pct)
+{
+    if (!symbol || symbol[0] == '\0') {
+        return;
+    }
+
+    stock_alert_dedup_state_t dedup = {
+        .latched = latched,
+        .threshold_pct = threshold_pct,
+    };
+    esp_err_t ret = storage_stock_alert_dedup_save(symbol, &dedup);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "dedup save failed symbol=%s err=%s", symbol, esp_err_to_name(ret));
+    }
 }
 
 static void send_alert_failure_telegram(const stock_alert_event_t *evt, const char *reason)
@@ -275,27 +287,29 @@ static bool has_telegram_test_config(void)
     return enabled && token[0] != '\0' && chat_id[0] != '\0';
 }
 
-static void stock_alert_fire_task(void *arg)
+static void stock_alert_worker_task(void *arg)
 {
-    stock_alert_task_param_t *param = (stock_alert_task_param_t *)arg;
-    if (!param || !param->ctx) {
-        free(param);
-        vTaskDelete(NULL);
+    scheduler_service_ctx_t *ctx = (scheduler_service_ctx_t *)arg;
+    if (!ctx || !ctx->stock_alert_queue) {
         return;
     }
 
-    process_alert_event(&param->evt);
+    stock_alert_event_t evt = {0};
+    while (1) {
+        if (xQueueReceive(ctx->stock_alert_queue, &evt, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
 
-    if (param->ctx->alert_mutex &&
-        xSemaphoreTake(param->ctx->alert_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-        param->ctx->stock_alert_in_flight = false;
-        xSemaphoreGive(param->ctx->alert_mutex);
-    } else {
-        param->ctx->stock_alert_in_flight = false;
+        process_alert_event(&evt);
+
+        if (ctx->alert_mutex &&
+            xSemaphoreTake(ctx->alert_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+            ctx->stock_alert_in_flight = false;
+            xSemaphoreGive(ctx->alert_mutex);
+        } else {
+            ctx->stock_alert_in_flight = false;
+        }
     }
-
-    free(param);
-    vTaskDelete(NULL);
 }
 
 esp_err_t scheduler_service_stock_alert_init(scheduler_service_ctx_t *ctx)
@@ -306,6 +320,28 @@ esp_err_t scheduler_service_stock_alert_init(scheduler_service_ctx_t *ctx)
         ctx->alert_mutex = xSemaphoreCreateMutex();
         if (!ctx->alert_mutex) {
             ESP_LOGE(TAG, "alert mutex create failed");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (!ctx->stock_alert_queue) {
+        ctx->stock_alert_queue = xQueueCreate(STOCK_ALERT_QUEUE_LEN, sizeof(stock_alert_event_t));
+        if (!ctx->stock_alert_queue) {
+            ESP_LOGE(TAG, "stock alert queue create failed");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (!ctx->stock_alert_task) {
+        BaseType_t ok = xTaskCreatePinnedToCore(stock_alert_worker_task,
+                                                "stock_alert_wk",
+                                                STOCK_ALERT_TASK_STACK,
+                                                ctx,
+                                                STOCK_ALERT_TASK_PRIO,
+                                                &ctx->stock_alert_task,
+                                                1);
+        if (ok != pdPASS) {
+            ESP_LOGE(TAG, "stock alert worker task create failed");
             return ESP_ERR_NO_MEM;
         }
     }
@@ -340,6 +376,29 @@ esp_err_t scheduler_service_stock_alert_reload_configs(scheduler_service_ctx_t *
         state->enabled = (cfg.alert_prompt[0] != '\0' && cfg.threshold_pct != 0.0f);
         state->threshold_pct = cfg.threshold_pct;
         state->latched = false;
+
+        if (!state->enabled) {
+            esp_err_t rm_ret = storage_stock_alert_dedup_remove(symbol);
+            if (rm_ret != ESP_OK) {
+                ESP_LOGW(TAG, "dedup remove failed symbol=%s err=%s", symbol, esp_err_to_name(rm_ret));
+            }
+            continue;
+        }
+
+        stock_alert_dedup_state_t dedup = {0};
+        esp_err_t load_ret = storage_stock_alert_dedup_load(symbol, &dedup);
+        if (load_ret != ESP_OK) {
+            ESP_LOGW(TAG, "dedup load failed symbol=%s err=%s", symbol, esp_err_to_name(load_ret));
+            dedup.latched = false;
+            dedup.threshold_pct = 0.0f;
+        }
+
+        if (fabsf(dedup.threshold_pct - cfg.threshold_pct) > 0.0001f) {
+            state->latched = false;
+            persist_dedup_state(symbol, false, cfg.threshold_pct);
+        } else {
+            state->latched = dedup.latched;
+        }
     }
 
     xSemaphoreGive(ctx->alert_mutex);
@@ -363,10 +422,14 @@ void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const 
         return;
     }
 
+    bool prev_latched = state->latched;
     bool breach = is_threshold_breach(quote->change_percent, state->threshold_pct);
-    bool trigger = breach && !state->latched;
+    bool trigger = breach && !prev_latched;
     bool trigger_up = (state->threshold_pct > 0.0f);
     state->latched = breach;
+    if (breach != prev_latched) {
+        persist_dedup_state(state->symbol, breach, state->threshold_pct);
+    }
 
     if (!trigger) {
         xSemaphoreGive(ctx->alert_mutex);
@@ -381,43 +444,22 @@ void scheduler_service_stock_alert_on_quote(scheduler_service_ctx_t *ctx, const 
     }
 
     alert_feedback_play(trigger_up ? ALERT_FEEDBACK_UP : ALERT_FEEDBACK_DOWN);
-
-    stock_alert_task_param_t *param = calloc(1, sizeof(*param));
-    if (!param) {
+    stock_alert_event_t evt = {0};
+    evt.quote = *quote;
+    evt.trigger_up = trigger_up;
+    evt.threshold_pct = fabsf(state->threshold_pct);
+    ctx->stock_alert_in_flight = true;
+    if (!ctx->stock_alert_queue || xQueueSend(ctx->stock_alert_queue, &evt, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "enqueue stock alert failed");
         ctx->stock_alert_in_flight = false;
-        state->latched = false;
+        state->latched = prev_latched;
+        if (state->latched != breach) {
+            persist_dedup_state(state->symbol, state->latched, state->threshold_pct);
+        }
         xSemaphoreGive(ctx->alert_mutex);
         return;
     }
-
-    param->ctx = ctx;
-    param->evt.quote = *quote;
-    param->evt.trigger_up = trigger_up;
-    param->evt.threshold_pct = fabsf(state->threshold_pct);
-
-    ctx->stock_alert_in_flight = true;
     xSemaphoreGive(ctx->alert_mutex);
-
-    BaseType_t ok = xTaskCreatePinnedToCore(stock_alert_fire_task,
-                                            "stock_alert_once",
-                                            STOCK_ALERT_TASK_STACK,
-                                            param,
-                                            STOCK_ALERT_TASK_PRIO,
-                                            NULL,
-                                            1);
-    if (ok != pdPASS) {
-        ESP_LOGW(TAG, "create stock alert task failed");
-        free(param);
-        if (ctx->alert_mutex &&
-            xSemaphoreTake(ctx->alert_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            ctx->stock_alert_in_flight = false;
-            state->latched = false;
-            xSemaphoreGive(ctx->alert_mutex);
-        } else {
-            ctx->stock_alert_in_flight = false;
-        }
-        return;
-    }
 
     ESP_LOGI(TAG, "alert triggered symbol=%s dir=%s cp=%.2f th=%.2f",
              quote->symbol,

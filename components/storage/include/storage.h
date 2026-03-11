@@ -67,6 +67,15 @@ esp_err_t storage_stock_alert_config_save(const char *symbol, const stock_alert_
 esp_err_t storage_stock_alert_config_load(const char *symbol, stock_alert_config_t *config);
 esp_err_t storage_stock_alert_config_remove(const char *symbol);
 
+typedef struct {
+    bool  latched;
+    float threshold_pct;
+} stock_alert_dedup_state_t;
+
+esp_err_t storage_stock_alert_dedup_save(const char *symbol, const stock_alert_dedup_state_t *state);
+esp_err_t storage_stock_alert_dedup_load(const char *symbol, stock_alert_dedup_state_t *state);
+esp_err_t storage_stock_alert_dedup_remove(const char *symbol);
+
 /* ====== AtTime 排程 ====== */
 typedef struct {
     bool     enabled;

@@ -50,8 +50,10 @@ typedef struct {
     schedule_config_t config;
     QueueHandle_t     quote_queue;
     QueueHandle_t     cmd_queue;
+    QueueHandle_t     stock_alert_queue;
     TimerHandle_t     quote_timer;
     TaskHandle_t      scheduler_task;
+    TaskHandle_t      stock_alert_task;
     SemaphoreHandle_t alert_mutex;
     volatile bool     stock_alert_in_flight;
     bool              sntp_synced;
