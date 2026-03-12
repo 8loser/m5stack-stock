@@ -1,6 +1,6 @@
 #pragma once
 #include "esp_err.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "axp192.h"  /* 供 sleep_manager 存取 axp192_set_lcd_power */
 #include <time.h>
 
@@ -15,7 +15,7 @@ typedef struct {
     uint16_t year;
 } rtc_time_t;
 
-esp_err_t rtc_bm8563_init(i2c_port_t port, uint8_t addr);
+esp_err_t rtc_bm8563_init(i2c_master_bus_handle_t bus, uint8_t addr);
 esp_err_t rtc_bm8563_get_time(rtc_time_t *t);
 esp_err_t rtc_bm8563_set_time(const rtc_time_t *t);
 esp_err_t rtc_bm8563_set_alarm(const rtc_time_t *alarm);

@@ -5,8 +5,7 @@
 #include <string.h>
 
 static const char *TAG = "axp192";
-static i2c_port_t s_port;
-static uint8_t    s_addr;
+static i2c_master_dev_handle_t s_dev = NULL;
 
 /* REG 0x12 power enable bits */
 #define PWR_EN_DCDC1    (1U << 0)
@@ -24,20 +23,25 @@ static uint8_t    s_addr;
 esp_err_t axp192_write_reg(uint8_t reg, uint8_t val)
 {
     uint8_t buf[2] = {reg, val};
-    return i2c_master_write_to_device(s_port, s_addr, buf, 2, pdMS_TO_TICKS(100));
+    return i2c_master_transmit(s_dev, buf, sizeof(buf), 100);
 }
 
 esp_err_t axp192_read_reg(uint8_t reg, uint8_t *val)
 {
-    return i2c_master_write_read_device(s_port, s_addr, &reg, 1, val, 1, pdMS_TO_TICKS(100));
+    return i2c_master_transmit_receive(s_dev, &reg, 1, val, 1, 100);
 }
 
-esp_err_t axp192_init(i2c_port_t port, uint8_t addr)
+esp_err_t axp192_init(i2c_master_bus_handle_t bus, uint8_t addr)
 {
-    s_port = port;
-    s_addr = addr;
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = addr,
+        .scl_speed_hz = I2C_FREQ_HZ,
+    };
+    esp_err_t ret = i2c_master_bus_add_device(bus, &dev_cfg, &s_dev);
+    if (ret != ESP_OK) return ret;
 
-    esp_err_t ret;
+    ret = ESP_OK;
 
     /* DCDC1 = 3.35V (ESP32 VDD) */
     ret = axp192_write_reg(AXP192_REG_DCDC1_VOLT, 0x68);

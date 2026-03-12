@@ -1,6 +1,6 @@
 #pragma once
 #include "esp_err.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -10,6 +10,6 @@ typedef struct {
     bool     pressed;
 } touch_point_t;
 
-esp_err_t    ft6336u_init(i2c_port_t port, uint8_t addr);
+esp_err_t    ft6336u_init(i2c_master_bus_handle_t bus, uint8_t addr);
 esp_err_t    ft6336u_read(touch_point_t *point);
 bool         ft6336u_is_touched(void);

@@ -2,13 +2,14 @@
 #include "app_config.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "driver/gpio.h"
 
 static const char *TAG = "board";
 
 static esp_lcd_panel_handle_t    s_panel = NULL;
 static esp_lcd_panel_io_handle_t s_io    = NULL;
+static i2c_master_bus_handle_t   s_i2c_bus = NULL;
 static bool s_screen_on = true;
 static int64_t s_power_key_arm_us = 0;
 static uint8_t s_lcd_brightness_percent = 100;
@@ -23,17 +24,16 @@ static uint8_t brightness_percent_to_raw(uint8_t level)
 /* 共用 I2C 匯流排初始化 */
 static esp_err_t init_i2c(void)
 {
-    i2c_config_t conf = {
-        .mode             = I2C_MODE_MASTER,
-        .sda_io_num       = TOUCH_SDA_GPIO,
-        .scl_io_num       = TOUCH_SCL_GPIO,
-        .sda_pullup_en    = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en    = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = I2C_FREQ_HZ,
+    i2c_master_bus_config_t bus_cfg = {
+        .i2c_port = I2C_PORT_NUM,
+        .sda_io_num = TOUCH_SDA_GPIO,
+        .scl_io_num = TOUCH_SCL_GPIO,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .trans_queue_depth = 0,
+        .flags.enable_internal_pullup = true,
     };
-    esp_err_t ret = i2c_param_config(I2C_PORT_NUM, &conf);
-    if (ret != ESP_OK) return ret;
-    return i2c_driver_install(I2C_PORT_NUM, I2C_MODE_MASTER, 0, 0, 0);
+    return i2c_new_master_bus(&bus_cfg, &s_i2c_bus);
 }
 
 esp_err_t board_init(void)
@@ -48,7 +48,7 @@ esp_err_t board_init(void)
     }
 
     /* 2. AXP192 電源管理 */
-    ret = axp192_init(I2C_PORT_NUM, AXP192_I2C_ADDR);
+    ret = axp192_init(s_i2c_bus, AXP192_I2C_ADDR);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "AXP192 初始化失敗");
         return ret;
@@ -78,14 +78,14 @@ esp_err_t board_init(void)
     s_power_key_arm_us = esp_timer_get_time() + 2000000;
 
     /* 4. 觸控 */
-    ret = ft6336u_init(I2C_PORT_NUM, TOUCH_ADDR);
+    ret = ft6336u_init(s_i2c_bus, TOUCH_ADDR);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "觸控初始化失敗");
         return ret;
     }
 
     /* 5. RTC */
-    ret = rtc_bm8563_init(I2C_PORT_NUM, BM8563_I2C_ADDR);
+    ret = rtc_bm8563_init(s_i2c_bus, BM8563_I2C_ADDR);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "RTC 初始化失敗");
         return ret;

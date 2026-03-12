@@ -3,8 +3,7 @@
 #include "esp_log.h"
 
 static const char *TAG = "bm8563";
-static i2c_port_t s_port;
-static uint8_t    s_addr;
+static i2c_master_dev_handle_t s_dev = NULL;
 
 /* BM8563 暫存器（BM_REG_ALARM_MIN 定義在 rtc_bm8563.h）*/
 #define BM_REG_CTRL1    0x00
@@ -17,22 +16,26 @@ static uint8_t dec2bcd(uint8_t dec) { return ((dec / 10) << 4) | (dec % 10); }
 static esp_err_t bm_write(uint8_t reg, uint8_t val)
 {
     uint8_t buf[2] = {reg, val};
-    return i2c_master_write_to_device(s_port, s_addr, buf, 2, pdMS_TO_TICKS(100));
+    return i2c_master_transmit(s_dev, buf, sizeof(buf), 100);
 }
 
 static esp_err_t bm_read(uint8_t reg, uint8_t *buf, size_t len)
 {
-    return i2c_master_write_read_device(s_port, s_addr, &reg, 1, buf, len,
-                                        pdMS_TO_TICKS(100));
+    return i2c_master_transmit_receive(s_dev, &reg, 1, buf, len, 100);
 }
 
-esp_err_t rtc_bm8563_init(i2c_port_t port, uint8_t addr)
+esp_err_t rtc_bm8563_init(i2c_master_bus_handle_t bus, uint8_t addr)
 {
-    s_port = port;
-    s_addr = addr;
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = addr,
+        .scl_speed_hz = I2C_FREQ_HZ,
+    };
+    esp_err_t ret = i2c_master_bus_add_device(bus, &dev_cfg, &s_dev);
+    if (ret != ESP_OK) return ret;
 
     /* 清除控制暫存器 */
-    esp_err_t ret = bm_write(BM_REG_CTRL1, 0x00);
+    ret = bm_write(BM_REG_CTRL1, 0x00);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "BM8563 初始化失敗: %s", esp_err_to_name(ret));
         return ret;
@@ -71,7 +74,7 @@ esp_err_t rtc_bm8563_set_time(const rtc_time_t *t)
     buf[6] = dec2bcd(t->month);
     buf[7] = dec2bcd((uint8_t)(t->year - 2000));
 
-    return i2c_master_write_to_device(s_port, s_addr, buf, 8, pdMS_TO_TICKS(100));
+    return i2c_master_transmit(s_dev, buf, sizeof(buf), 100);
 }
 
 esp_err_t rtc_bm8563_set_alarm(const rtc_time_t *alarm)
@@ -83,8 +86,7 @@ esp_err_t rtc_bm8563_set_alarm(const rtc_time_t *alarm)
     buf[3] = 0x80;                         /* 日期不使能 */
     buf[4] = 0x80;                         /* 星期不使能 */
 
-    esp_err_t ret = i2c_master_write_to_device(s_port, s_addr, buf, 5,
-                                               pdMS_TO_TICKS(100));
+    esp_err_t ret = i2c_master_transmit(s_dev, buf, sizeof(buf), 100);
     if (ret != ESP_OK) return ret;
 
     /* 啟用 alarm interrupt */

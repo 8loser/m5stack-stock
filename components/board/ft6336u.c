@@ -1,9 +1,9 @@
 #include "ft6336u.h"
+#include "app_config.h"
 #include "esp_log.h"
 
 static const char *TAG = "ft6336u";
-static i2c_port_t s_port;
-static uint8_t    s_addr;
+static i2c_master_dev_handle_t s_dev = NULL;
 
 /* FT6336U 暫存器 */
 #define FT_REG_TD_STATUS    0x02
@@ -14,18 +14,22 @@ static uint8_t    s_addr;
 
 static esp_err_t ft_read_regs(uint8_t reg, uint8_t *buf, size_t len)
 {
-    return i2c_master_write_read_device(s_port, s_addr, &reg, 1, buf, len,
-                                        pdMS_TO_TICKS(100));
+    return i2c_master_transmit_receive(s_dev, &reg, 1, buf, len, 100);
 }
 
-esp_err_t ft6336u_init(i2c_port_t port, uint8_t addr)
+esp_err_t ft6336u_init(i2c_master_bus_handle_t bus, uint8_t addr)
 {
-    s_port = port;
-    s_addr = addr;
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = addr,
+        .scl_speed_hz = I2C_FREQ_HZ,
+    };
+    esp_err_t ret = i2c_master_bus_add_device(bus, &dev_cfg, &s_dev);
+    if (ret != ESP_OK) return ret;
 
     /* 讀取韌體 ID 確認通訊 */
     uint8_t id = 0;
-    esp_err_t ret = ft_read_regs(0xA6, &id, 1);
+    ret = ft_read_regs(0xA6, &id, 1);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "FT6336U 通訊失敗: %s", esp_err_to_name(ret));
         return ret;

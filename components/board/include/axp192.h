@@ -1,6 +1,6 @@
 #pragma once
 #include "esp_err.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 
 /* AXP192 暫存器 */
 #define AXP192_REG_POWER_STATUS     0x00
@@ -18,7 +18,7 @@
 #define AXP192_REG_BATT_VOLT_H      0x78
 #define AXP192_REG_BATT_VOLT_L      0x79
 
-esp_err_t axp192_init(i2c_port_t port, uint8_t addr);
+esp_err_t axp192_init(i2c_master_bus_handle_t bus, uint8_t addr);
 esp_err_t axp192_set_lcd_power(bool enable);
 esp_err_t axp192_set_lcd_backlight(uint8_t brightness); /* 0-255 */
 esp_err_t axp192_set_lcd_backlight_power(bool enable);
