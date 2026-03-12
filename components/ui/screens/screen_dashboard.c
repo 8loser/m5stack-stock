@@ -1,6 +1,7 @@
 #include "screen_dashboard.h"
 #include "app_config.h"
 #include "scheduler_service.h"
+#include "storage.h"
 #include "twse_models.h"
 #include "ui_compat.h"
 #include "esp_log.h"
@@ -19,6 +20,7 @@
 #define COLOR_BG    lv_color_hex(0x1A1A2E)   /* 深藍背景 */
 #define COLOR_CARD  lv_color_hex(0x1C2A4A)   /* 卡片背景 */
 #define DASHBOARD_VISIBLE_ROWS 5
+#define ALERT_CFG_REFRESH_MS 3000U
 
 static lv_obj_t *s_screen  = NULL;
 static lv_obj_t *s_card_list = NULL;
@@ -27,6 +29,7 @@ static lv_obj_t *s_name_labels[DASHBOARD_VISIBLE_ROWS] = {NULL};
 static lv_obj_t *s_industry_labels[DASHBOARD_VISIBLE_ROWS] = {NULL};
 static lv_obj_t *s_price_labels[DASHBOARD_VISIBLE_ROWS] = {NULL};
 static lv_obj_t *s_change_labels[DASHBOARD_VISIBLE_ROWS] = {NULL};
+static lv_obj_t *s_alert_labels[DASHBOARD_VISIBLE_ROWS] = {NULL};
 static lv_obj_t *s_empty_label = NULL;
 static lv_obj_t *s_update_label = NULL;
 static lv_obj_t *s_next_label = NULL;
@@ -40,15 +43,27 @@ static stock_quote_t s_cached_quotes[MAX_STOCK_COUNT];
 static bool          s_cached_valid[MAX_STOCK_COUNT] = {false};
 static stock_quote_t s_reordered_quotes[MAX_STOCK_COUNT];
 static bool          s_reordered_valid[MAX_STOCK_COUNT] = {false};
+static float         s_alert_threshold_pct[MAX_STOCK_COUNT] = {0.0f};
+static bool          s_alert_enabled[MAX_STOCK_COUNT] = {false};
+static bool          s_alert_loaded[MAX_STOCK_COUNT] = {false};
+static uint32_t      s_alert_last_load_ms[MAX_STOCK_COUNT] = {0};
+static float         s_reordered_alert_threshold_pct[MAX_STOCK_COUNT] = {0.0f};
+static bool          s_reordered_alert_enabled[MAX_STOCK_COUNT] = {false};
+static bool          s_reordered_alert_loaded[MAX_STOCK_COUNT] = {false};
+static uint32_t      s_reordered_alert_last_load_ms[MAX_STOCK_COUNT] = {0};
 static uint32_t      s_last_missing_log_ms[MAX_STOCK_COUNT] = {0};
 static int           s_slot_stock_idx[DASHBOARD_VISIBLE_ROWS] = {0};
 static int           s_next_slot_idx = 0;
 static int           s_next_stock_idx = 0;
 
-static void apply_card_widgets(int idx, const stock_quote_t *q);
+static void apply_card_widgets(int idx, int stock_idx, const stock_quote_t *q);
 static void render_dashboard_slots(void);
 static bool is_limit_up_price(float price, const stock_quote_t *q);
 static bool is_limit_down_price(float price, const stock_quote_t *q);
+static bool is_threshold_breach(float change_percent, float threshold_pct);
+static void invalidate_alert_cache(int idx);
+static void load_alert_state_for_index(int stock_idx);
+static bool is_card_alert_active(const stock_quote_t *q, int stock_idx);
 
 #define CARD_COL_COUNT    4
 #define CARD_LEFT_PAD     4
@@ -75,6 +90,75 @@ static bool is_limit_up_price(float price, const stock_quote_t *q)
 static bool is_limit_down_price(float price, const stock_quote_t *q)
 {
     return q && q->has_limit_bounds && float_nearly_equal(price, q->limit_down_price);
+}
+
+static bool is_threshold_breach(float change_percent, float threshold_pct)
+{
+    if (threshold_pct > 0.0f) {
+        return change_percent >= threshold_pct;
+    }
+    if (threshold_pct < 0.0f) {
+        return change_percent <= threshold_pct;
+    }
+    return false;
+}
+
+static void invalidate_alert_cache(int idx)
+{
+    if (idx < 0 || idx >= MAX_STOCK_COUNT) {
+        return;
+    }
+    s_alert_threshold_pct[idx] = 0.0f;
+    s_alert_enabled[idx] = false;
+    s_alert_loaded[idx] = false;
+    s_alert_last_load_ms[idx] = 0;
+}
+
+static void load_alert_state_for_index(int stock_idx)
+{
+    if (stock_idx < 0 || stock_idx >= MAX_STOCK_COUNT) {
+        return;
+    }
+    uint32_t now_ms = (uint32_t)esp_log_timestamp();
+    if (s_alert_loaded[stock_idx] &&
+        (now_ms - s_alert_last_load_ms[stock_idx] < ALERT_CFG_REFRESH_MS)) {
+        return;
+    }
+
+    s_alert_loaded[stock_idx] = true;
+    s_alert_last_load_ms[stock_idx] = now_ms;
+    s_alert_enabled[stock_idx] = false;
+    s_alert_threshold_pct[stock_idx] = 0.0f;
+
+    if (s_symbols_order[stock_idx][0] == '\0') {
+        return;
+    }
+
+    stock_alert_config_t cfg = {0};
+    if (storage_stock_alert_config_load(s_symbols_order[stock_idx], &cfg) != ESP_OK) {
+        return;
+    }
+
+    if (cfg.threshold_pct == 0.0f || cfg.alert_prompt[0] == '\0') {
+        return;
+    }
+
+    s_alert_enabled[stock_idx] = true;
+    s_alert_threshold_pct[stock_idx] = cfg.threshold_pct;
+}
+
+static bool is_card_alert_active(const stock_quote_t *q, int stock_idx)
+{
+    if (!q || stock_idx < 0 || stock_idx >= MAX_STOCK_COUNT) {
+        return false;
+    }
+
+    load_alert_state_for_index(stock_idx);
+    if (!s_alert_enabled[stock_idx]) {
+        return false;
+    }
+
+    return is_threshold_breach(q->change_percent, s_alert_threshold_pct[stock_idx]);
 }
 
 static void compute_card_layout(void)
@@ -136,6 +220,10 @@ static void refresh_card_layout(void)
         if (s_change_labels[i]) {
             lv_obj_set_pos(s_change_labels[i], s_col_x[2], 6);
             lv_obj_set_size(s_change_labels[i], s_col_w[2], 16);
+        }
+        if (s_alert_labels[i]) {
+            lv_obj_set_pos(s_alert_labels[i], s_col_x[1] - 12, 7);
+            lv_obj_set_size(s_alert_labels[i], 10, 20);
         }
     }
 }
@@ -199,6 +287,17 @@ static void ensure_card_widgets(int idx)
         lv_obj_set_style_text_color(s_change_labels[idx], lv_color_white(), 0);
         lv_obj_set_style_text_font(s_change_labels[idx], &lv_font_montserrat_10, 0);
     }
+
+    if (!s_alert_labels[idx]) {
+        s_alert_labels[idx] = lv_label_create(s_cards[idx]);
+        lv_obj_set_pos(s_alert_labels[idx], s_col_x[1] - 12, 7);
+        lv_obj_set_size(s_alert_labels[idx], 10, 20);
+        lv_obj_set_style_text_align(s_alert_labels[idx], LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_text(s_alert_labels[idx], "⚠");
+        lv_obj_set_style_text_color(s_alert_labels[idx], COLOR_UP, 0);
+        lv_obj_set_style_text_font(s_alert_labels[idx], &lv_font_noto_tc_14, 0);
+        lv_obj_add_flag(s_alert_labels[idx], LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void reset_slot_rotation_state(void)
@@ -233,7 +332,7 @@ static void render_slot_with_stock(int slot, int stock_idx)
     ensure_card_widgets(slot);
     lv_obj_clear_flag(s_cards[slot], LV_OBJ_FLAG_HIDDEN);
     if (s_cached_valid[stock_idx]) {
-        apply_card_widgets(slot, &s_cached_quotes[stock_idx]);
+        apply_card_widgets(slot, stock_idx, &s_cached_quotes[stock_idx]);
     } else {
         uint32_t now_ms = (uint32_t)esp_log_timestamp();
         if (stock_idx >= 0 && stock_idx < MAX_STOCK_COUNT &&
@@ -253,8 +352,14 @@ static void render_slot_with_stock(int slot, int stock_idx)
         lv_obj_set_style_bg_opa(s_price_labels[slot], LV_OPA_TRANSP, 0);
         lv_obj_set_style_text_color(s_price_labels[slot], lv_color_white(), 0);
         lv_obj_set_style_text_color(s_change_labels[slot], lv_color_white(), 0);
+        lv_obj_set_style_border_side(s_cards[slot], LV_BORDER_SIDE_LEFT, 0);
+        lv_obj_set_style_border_width(s_cards[slot], 4, 0);
+        lv_obj_set_style_outline_width(s_cards[slot], 0, 0);
         lv_obj_set_style_border_color(s_cards[slot], COLOR_CARD, 0);
         lv_obj_set_style_bg_color(s_cards[slot], COLOR_CARD, 0);
+        if (s_alert_labels[slot]) {
+            lv_obj_add_flag(s_alert_labels[slot], LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 
@@ -347,7 +452,7 @@ lv_obj_t *screen_dashboard_create(void)
 }
 
 /* 將一筆報價套用到對應的卡片 LVGL widget（只在 active 時呼叫）*/
-static void apply_card_widgets(int idx, const stock_quote_t *q)
+static void apply_card_widgets(int idx, int stock_idx, const stock_quote_t *q)
 {
     ensure_card_widgets(idx);
     lv_label_set_text_fmt(s_name_labels[idx], "%s\n%s", q->symbol, q->name);
@@ -392,8 +497,18 @@ static void apply_card_widgets(int idx, const stock_quote_t *q)
     }
     lv_label_set_text(s_change_labels[idx], change_str);
 
+    bool alert_active = is_card_alert_active(q, stock_idx);
+    if (s_alert_labels[idx]) {
+        if (alert_active) {
+            lv_obj_clear_flag(s_alert_labels[idx], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_alert_labels[idx], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     lv_obj_set_style_text_color(s_change_labels[idx], accent, 0);
     lv_obj_set_style_border_color(s_cards[idx], accent, 0);
+    lv_obj_set_style_outline_width(s_cards[idx], 0, 0);
     lv_obj_set_style_bg_color(s_cards[idx], COLOR_CARD, 0);
 
     char time_str[40];
@@ -423,6 +538,7 @@ void screen_dashboard_set_card_count(uint8_t n)
     for (int i = visible_count; i < MAX_STOCK_COUNT; i++) {
         s_symbols_order[i][0] = '\0';
         s_cached_valid[i] = false;
+        invalidate_alert_cache(i);
     }
 
     if (visible_count == 0) {
@@ -448,13 +564,19 @@ void screen_dashboard_set_symbols(const char symbols[][8], uint8_t count)
     int next_count = (count <= MAX_STOCK_COUNT) ? (int)count : MAX_STOCK_COUNT;
     char old_symbols[MAX_STOCK_COUNT][8] = {0};
     int old_to_new[MAX_STOCK_COUNT];
+    int old_symbol_to_new[MAX_STOCK_COUNT];
 
     memcpy(old_symbols, s_symbols_order, sizeof(old_symbols));
     for (int i = 0; i < MAX_STOCK_COUNT; i++) {
         old_to_new[i] = -1;
+        old_symbol_to_new[i] = -1;
     }
     memset(s_reordered_quotes, 0, sizeof(s_reordered_quotes));
     memset(s_reordered_valid, 0, sizeof(s_reordered_valid));
+    memset(s_reordered_alert_threshold_pct, 0, sizeof(s_reordered_alert_threshold_pct));
+    memset(s_reordered_alert_enabled, 0, sizeof(s_reordered_alert_enabled));
+    memset(s_reordered_alert_loaded, 0, sizeof(s_reordered_alert_loaded));
+    memset(s_reordered_alert_last_load_ms, 0, sizeof(s_reordered_alert_last_load_ms));
 
     for (int i = 0; i < next_count; i++) {
         s_symbols_order[i][0] = '\0';
@@ -475,6 +597,18 @@ void screen_dashboard_set_symbols(const char symbols[][8], uint8_t count)
     }
 
     for (int old_idx = 0; old_idx < MAX_STOCK_COUNT; old_idx++) {
+        if (old_symbols[old_idx][0] == '\0') {
+            continue;
+        }
+        for (int new_idx = 0; new_idx < next_count; new_idx++) {
+            if (strcmp(old_symbols[old_idx], s_symbols_order[new_idx]) == 0) {
+                old_symbol_to_new[old_idx] = new_idx;
+                break;
+            }
+        }
+    }
+
+    for (int old_idx = 0; old_idx < MAX_STOCK_COUNT; old_idx++) {
         int new_idx = old_to_new[old_idx];
         if (new_idx >= 0 && new_idx < MAX_STOCK_COUNT) {
             s_reordered_quotes[new_idx] = s_cached_quotes[old_idx];
@@ -482,8 +616,26 @@ void screen_dashboard_set_symbols(const char symbols[][8], uint8_t count)
         }
     }
 
+    for (int old_idx = 0; old_idx < MAX_STOCK_COUNT; old_idx++) {
+        int new_idx = old_symbol_to_new[old_idx];
+        if (new_idx < 0 || new_idx >= MAX_STOCK_COUNT) {
+            continue;
+        }
+        if (!s_alert_loaded[old_idx]) {
+            continue;
+        }
+        s_reordered_alert_threshold_pct[new_idx] = s_alert_threshold_pct[old_idx];
+        s_reordered_alert_enabled[new_idx] = s_alert_enabled[old_idx];
+        s_reordered_alert_loaded[new_idx] = true;
+        s_reordered_alert_last_load_ms[new_idx] = s_alert_last_load_ms[old_idx];
+    }
+
     memcpy(s_cached_quotes, s_reordered_quotes, sizeof(s_cached_quotes));
     memcpy(s_cached_valid, s_reordered_valid, sizeof(s_cached_valid));
+    memcpy(s_alert_threshold_pct, s_reordered_alert_threshold_pct, sizeof(s_alert_threshold_pct));
+    memcpy(s_alert_enabled, s_reordered_alert_enabled, sizeof(s_alert_enabled));
+    memcpy(s_alert_loaded, s_reordered_alert_loaded, sizeof(s_alert_loaded));
+    memcpy(s_alert_last_load_ms, s_reordered_alert_last_load_ms, sizeof(s_alert_last_load_ms));
 
     screen_dashboard_set_card_count((uint8_t)next_count);
 }
@@ -508,6 +660,7 @@ void screen_dashboard_update(const stock_quote_t *q)
             if (s_symbols_order[i][0] == '\0') {
                 idx = i;
                 strlcpy(s_symbols_order[i], q->symbol, sizeof(s_symbols_order[i]));
+                invalidate_alert_cache(i);
                 mapping_action = "assign_empty";
                 break;
             }
@@ -517,6 +670,7 @@ void screen_dashboard_update(const stock_quote_t *q)
         screen_dashboard_set_card_count((uint8_t)(s_card_count + 1));
         idx = s_card_count - 1;
         strlcpy(s_symbols_order[idx], q->symbol, sizeof(s_symbols_order[idx]));
+        invalidate_alert_cache(idx);
         mapping_action = "expand";
     }
     if (idx < 0 || idx >= MAX_STOCK_COUNT) {
