@@ -122,6 +122,7 @@ scheduler_service Timer
 - Portal 期間若出現 `httpd_accept_conn` / `httpd_sock_err send` 的 `error 113`，通常屬 AP/STA 切換或連線中斷副作用；需先與「主流程是否仍可用」分開判讀。
 - WiFi 頁面 `connect` 請求前端必須有 timeout（避免 pending 卡死）；當 `fetch_timeout` 或 `network reset` 時需回報可操作訊息（例如重連 Portal WiFi 後重試）。
 - sdkconfig 未啟用的功能會讓對應 C API 靜默失敗（如 SO_LINGER、SO_RCVBUF）；排查 lwIP/網路問題時優先檢查 sdkconfig 選項。
+- `sdkconfig` 不進版控（已 gitignore），設定來源只有 `sdkconfig.defaults`；用 menuconfig 改設定後必須在 container 內執行 `idf.py save-defconfig` 更新 `sdkconfig.defaults` 並提交，否則 clean build 會回到預設值。
 - 修 bug 優先確認根因再動手，避免在根因未確認前建立大型 workaround（如 async state machine + polling endpoint）。
 
 ## NVS 命名空間
