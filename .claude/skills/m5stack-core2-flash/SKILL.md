@@ -24,7 +24,7 @@ Routing: m5stack-core2-flash
 
 ```
 你是 M5Stack Core2 燒錄執行 agent。
-工作目錄：/home/badwolf/workspaces/m5stack_stock
+工作目錄：repo 根目錄
 
 任務：<具體操作，例如 ./flash.sh --build-only>
 

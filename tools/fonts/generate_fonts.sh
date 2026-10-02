@@ -201,18 +201,21 @@ echo "使用擴充字符集（UI + TWSE 股票名稱 + 產業別），模式: ${
 run_conv() {
     local size="$1"
     local output="$2"
-    lv_font_conv \
+    # 以相對路徑呼叫，避免 lv_font_conv 把本機絕對路徑寫進產出檔頭註解
+    local font_abs
+    font_abs="$(realpath "${FONT_PATH}")"
+    (cd "${PROJECT_ROOT}" && lv_font_conv \
         --no-compress \
         --no-prefilter \
         --bpp 4 \
         --size "${size}" \
-        --font "${FONT_PATH}" \
+        --font "${font_abs#"${PROJECT_ROOT}"/}" \
         -r 0x20-0x7F \
         --symbols "${SYMBOLS}" \
         --format lvgl \
         --lv-include lvgl.h \
-        -o "${output}" \
-        --force-fast-kern-format
+        -o "${output#"${PROJECT_ROOT}"/}" \
+        --force-fast-kern-format)
 }
 
 run_conv 14 "${OUT_14}"
